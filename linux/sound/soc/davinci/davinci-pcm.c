@@ -50,7 +50,7 @@ static struct snd_pcm_hardware pcm_hardware_playback = {
 	.info = (SNDRV_PCM_INFO_INTERLEAVED | SNDRV_PCM_INFO_BLOCK_TRANSFER |
 		 SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_MMAP_VALID |
 		 SNDRV_PCM_INFO_PAUSE | SNDRV_PCM_INFO_RESUME),
-	.formats = (SNDRV_PCM_FMTBIT_S16_LE),
+	.formats = (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE),
 	.rates = (SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
 		  SNDRV_PCM_RATE_22050 | SNDRV_PCM_RATE_32000 |
 		  SNDRV_PCM_RATE_44100 | SNDRV_PCM_RATE_48000 |
@@ -59,7 +59,7 @@ static struct snd_pcm_hardware pcm_hardware_playback = {
 	.rate_min = 8000,
 	.rate_max = 96000,
 	.channels_min = 2,
-	.channels_max = 2,
+	.channels_max = 8,	/* 4 serializers × 2 channels each */
 	.buffer_bytes_max = 128 * 1024,
 	.period_bytes_min = 32,
 	.period_bytes_max = 8 * 1024,
@@ -72,7 +72,7 @@ static struct snd_pcm_hardware pcm_hardware_capture = {
 	.info = (SNDRV_PCM_INFO_INTERLEAVED | SNDRV_PCM_INFO_BLOCK_TRANSFER |
 		 SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_MMAP_VALID |
 		 SNDRV_PCM_INFO_PAUSE),
-	.formats = (SNDRV_PCM_FMTBIT_S16_LE),
+	.formats = (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE),
 	.rates = (SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
 		  SNDRV_PCM_RATE_22050 | SNDRV_PCM_RATE_32000 |
 		  SNDRV_PCM_RATE_44100 | SNDRV_PCM_RATE_48000 |
@@ -168,6 +168,13 @@ static void davinci_pcm_enqueue_dma(struct snd_pcm_substream *substream)
 
 	data_type = prtd->params->data_type;
 	count = period_size / data_type;
+
+	/* Broadcast mode: channels=2, num_serializers=1 (NUMDMA=1, all serializers share data)
+	 * Multichannel mode: channels=8, num_serializers=4 (NUMDMA=4, each serializer gets different data) */
+	int num_serializers = runtime->channels / 2;  /* I2S: 2 channels per serializer */
+	if (num_serializers < 1)
+		num_serializers = 1;
+
 	if (fifo_level)
 		count /= fifo_level;
 
@@ -176,7 +183,7 @@ static void davinci_pcm_enqueue_dma(struct snd_pcm_substream *substream)
 		dst = prtd->params->dma_addr;
 		src_bidx = data_type;
 		dst_bidx = 0;
-		src_cidx = data_type * fifo_level;
+		src_cidx = data_type * fifo_level * num_serializers;
 		dst_cidx = 0;
 	} else {
 		src = prtd->params->dma_addr;
@@ -184,21 +191,25 @@ static void davinci_pcm_enqueue_dma(struct snd_pcm_substream *substream)
 		src_bidx = 0;
 		dst_bidx = data_type;
 		src_cidx = 0;
-		dst_cidx = data_type * fifo_level;
+		dst_cidx = data_type * fifo_level * num_serializers;
 	}
 
 	acnt = prtd->params->acnt;
+
 	edma_set_src(link, src, INCR, W8BIT);
 	edma_set_dest(link, dst, INCR, W8BIT);
 
 	edma_set_src_index(link, src_bidx, src_cidx);
 	edma_set_dest_index(link, dst_bidx, dst_cidx);
 
-	if (!fifo_level)
+	if (!fifo_level) {
 		edma_set_transfer_params(link, acnt, count, 1, 0, ASYNC);
-	else
-		edma_set_transfer_params(link, acnt, fifo_level, count,
-							fifo_level, ABSYNC);
+	} else {
+		/* With FIFO: bcnt = num_serializers (NUMDMA), ccnt = events */
+		int bcnt = fifo_level * num_serializers;
+		int ccnt = count / num_serializers;
+		edma_set_transfer_params(link, acnt, bcnt, ccnt, bcnt, ABSYNC);
+	}
 
 	prtd->period++;
 	if (unlikely(prtd->period >= runtime->periods))
@@ -277,6 +288,7 @@ static int ping_pong_dma_setup(struct snd_pcm_substream *substream)
 	int link = prtd->asp_link[1];
 	unsigned int fifo_level = prtd->params->fifo_level;
 	unsigned int count;
+
 	if ((data_type == 0) || (data_type > 4)) {
 		printk(KERN_ERR "%s: data_type=%i\n", __func__, data_type);
 		return -EINVAL;
