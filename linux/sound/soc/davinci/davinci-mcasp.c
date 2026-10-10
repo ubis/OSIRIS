@@ -433,7 +433,8 @@ static int davinci_mcasp_set_dai_fmt(struct snd_soc_dai *cpu_dai,
 		mcasp_set_bits(base + DAVINCI_MCASP_ACLKRCTL_REG, ACLKRE);
 		mcasp_set_bits(base + DAVINCI_MCASP_RXFMCTL_REG, AFSRE);
 
-		mcasp_set_bits(base + DAVINCI_MCASP_PDIR_REG, (0x7 << 26));
+		/* ACLKX + AFSX out; AHCLKX (bit 27) stays input, MCLK comes from PCM9211 */
+		mcasp_set_bits(base + DAVINCI_MCASP_PDIR_REG, (0x5 << 26));
 		break;
 	case SND_SOC_DAIFMT_CBM_CFS:
 		/* codec is clock master and frame slave */
@@ -635,16 +636,27 @@ static void davinci_hw_param(struct davinci_audio_dev *dev, int stream)
 	for (i = 0; i < active_slots; i++)
 		mask |= (1 << i);
 
-	mcasp_clr_bits(dev->base + DAVINCI_MCASP_ACLKXCTL_REG, TX_ASYNC);
+	/* I2S on the NR515: RX clocks come from the PCM9211, TX clocks from us,
+	 * so the two halves must run independently (OEM ACLKXCTL = 0xE3, ASYNC set) */
+	if (dev->op_mode == DAVINCI_MCASP_IIS_MODE)
+		mcasp_set_bits(dev->base + DAVINCI_MCASP_ACLKXCTL_REG, TX_ASYNC);
+	else
+		mcasp_clr_bits(dev->base + DAVINCI_MCASP_ACLKXCTL_REG, TX_ASYNC);
 
 	if (stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		/* bit stream is MSB first  with no delay */
-		/* DSP_B mode */
-		mcasp_set_bits(dev->base + DAVINCI_MCASP_AHCLKXCTL_REG,
-				AHCLKXE);
+		/* For I2S mode: use external AHCLKX from PCM9211, don't enable internal clock
+		 * For DIT mode: enable internal clock */
+		if (dev->op_mode != DAVINCI_MCASP_IIS_MODE)
+			mcasp_set_bits(dev->base + DAVINCI_MCASP_AHCLKXCTL_REG, AHCLKXE);
 		mcasp_set_reg(dev->base + DAVINCI_MCASP_TXTDM_REG, mask);
 		mcasp_set_bits(dev->base + DAVINCI_MCASP_TXFMT_REG, TXORD);
 
+		/* Set 1-bit delay for true I2S mode (not DSP mode) */
+		mcasp_mod_bits(dev->base + DAVINCI_MCASP_TXFMT_REG,
+				FSXDLY(1), FSXDLY(3));
+
+		/* I2S mode: FSXMOD = number of slots (2 for stereo, or more for multichannel) */
 		if ((dev->tdm_slots >= 2) || (dev->tdm_slots <= 32))
 			mcasp_mod_bits(dev->base + DAVINCI_MCASP_TXFMCTL_REG,
 					FSXMOD(dev->tdm_slots), FSXMOD(0x1FF));
@@ -652,7 +664,15 @@ static void davinci_hw_param(struct davinci_audio_dev *dev, int stream)
 			printk(KERN_ERR "playback tdm slot %d not supported\n",
 				dev->tdm_slots);
 
-		mcasp_clr_bits(dev->base + DAVINCI_MCASP_TXFMCTL_REG, FSXDUR);
+		/*
+		 * FSXDUR=1 makes the frame sync one slot (word) wide, which
+		 * with two slots is the 50 % duty LRCK I2S needs; FSXDUR=0 is
+		 * a one-bit pulse, as used for TDM.
+		 */
+		if (dev->tdm_slots == 2)
+			mcasp_set_bits(dev->base + DAVINCI_MCASP_TXFMCTL_REG, FSXDUR);
+		else
+			mcasp_clr_bits(dev->base + DAVINCI_MCASP_TXFMCTL_REG, FSXDUR);
 	} else {
 		/* bit stream is MSB first with no delay */
 		/* DSP_B mode */
@@ -669,6 +689,17 @@ static void davinci_hw_param(struct davinci_audio_dev *dev, int stream)
 				dev->tdm_slots);
 
 		mcasp_clr_bits(dev->base + DAVINCI_MCASP_RXFMCTL_REG, FSRDUR);
+
+		if (dev->op_mode == DAVINCI_MCASP_IIS_MODE) {
+			/* PCM9211 is master on the receive side (OEM: ACLKRCTL = 0x80,
+			 * AFSRCTL = 0x111): external BCK/LRCK, I2S 1-bit delay, word-wide LRCK */
+			mcasp_clr_bits(dev->base + DAVINCI_MCASP_AHCLKRCTL_REG, AHCLKRE);
+			mcasp_clr_bits(dev->base + DAVINCI_MCASP_ACLKRCTL_REG, ACLKRE);
+			mcasp_set_bits(dev->base + DAVINCI_MCASP_ACLKRCTL_REG, ACLKRPOL);
+			mcasp_clr_bits(dev->base + DAVINCI_MCASP_RXFMCTL_REG, AFSRE);
+			mcasp_set_bits(dev->base + DAVINCI_MCASP_RXFMCTL_REG, FSRDUR | FSRPOL);
+			mcasp_mod_bits(dev->base + DAVINCI_MCASP_RXFMT_REG, FSRDLY(1), FSRDLY(3));
+		}
 	}
 }
 
@@ -722,6 +753,43 @@ static int davinci_mcasp_hw_params(struct snd_pcm_substream *substream,
 	else
 		fifo_level = dev->rxnumevt;
 
+	/* Configure clock dividers BEFORE enabling for I2S mode */
+	if (dev->op_mode == DAVINCI_MCASP_IIS_MODE) {
+		unsigned int sample_rate = params_rate(params);
+		unsigned int ahclk_freq = 12288000; /* External 12.288 MHz from PCM9211 on AHCLKX1 */
+		unsigned int bclk_freq;
+		unsigned int aclk_div;
+		int bits_per_sample;
+
+		/* PCM1690 expects fixed 32-bit slots (24-bit data) */
+		bits_per_sample = 32;
+
+		/* BCLK = sample_rate * tdm_slots * slot_width */
+		bclk_freq = sample_rate * dev->tdm_slots * bits_per_sample;
+
+		/* Use external AHCLKX (12.288 MHz from PCM9211), divide with ACLKXDIV to get BCLK
+		 * ACLKXDIV is 5 bits (0-31), divides AHCLK by (ACLKXDIV+1)
+		 * For 48kHz: BCLK = 3.072 MHz, div = 12.288/3.072 - 1 = 3 */
+		aclk_div = (ahclk_freq / bclk_freq) - 1;
+		if (aclk_div > 31) aclk_div = 31;  /* Clamp to 5-bit max */
+
+		/* Use EXTERNAL clock on AHCLKX1 pin - clear AHCLKXE
+		 * The 12.288 MHz from PCM9211 feeds AHCLKX1 directly */
+		mcasp_clr_bits(dev->base + DAVINCI_MCASP_AHCLKXCTL_REG, AHCLKXE);
+		mcasp_mod_bits(dev->base + DAVINCI_MCASP_AHCLKXCTL_REG,
+				AHCLKXDIV(0), AHCLKXDIV(0xfff));
+		/* OEM DSP firmware uses AHCLKXCTL = 0x4000 (external, inverted) */
+		mcasp_set_bits(dev->base + DAVINCI_MCASP_AHCLKXCTL_REG, AHCLKXPOL);
+
+		/* AHCLKX pin must be INPUT for external clock - clear bit 27 in PDIR
+		 * Keep ACLKX (bit 26) and AFSX (bit 28) as outputs */
+		mcasp_clr_bits(dev->base + DAVINCI_MCASP_PDIR_REG, AHCLKX);
+
+		/* Divide external 12.288 MHz by (aclk_div+1) to get BCLK */
+		mcasp_mod_bits(dev->base + DAVINCI_MCASP_ACLKXCTL_REG,
+				ACLKXDIV(aclk_div), ACLKXDIV(0x1f));
+	}
+
 	if (dev->op_mode == DAVINCI_MCASP_DIT_MODE)
 		davinci_hw_dit_param(dev);
 	else
@@ -754,7 +822,22 @@ static int davinci_mcasp_hw_params(struct snd_pcm_substream *substream,
 		dma_params->acnt = dma_params->data_type;
 
 	dma_params->fifo_level = fifo_level;
-	davinci_config_channel_size(dev, word_length);
+
+	/* PCM1690 requires 32-bit slots even for 16-bit samples */
+	if (dev->op_mode == DAVINCI_MCASP_IIS_MODE) {
+		/* Set 32-bit slot size, TXROT=0 (no rotation) */
+		davinci_config_channel_size(dev, DAVINCI_AUDIO_WORD_32);
+
+		/*
+		 * S32_LE is MSB aligned and fills the slot as is (TXROT=0);
+		 * S16_LE needs rotating into the upper half of the slot.
+		 */
+		if (word_length == DAVINCI_AUDIO_WORD_16)
+			mcasp_mod_bits(dev->base + DAVINCI_MCASP_TXFMT_REG,
+					TXROT(4), TXROT(7));
+	} else {
+		davinci_config_channel_size(dev, word_length);
+	}
 
 	return 0;
 }
@@ -812,7 +895,7 @@ struct snd_soc_dai davinci_mcasp_dai[] = {
 		.id 		= 0,
 		.playback	= {
 			.channels_min	= 2,
-			.channels_max 	= 2,
+			.channels_max 	= 8,	/* 4 serializers × 2 channels each */
 			.rates 		= DAVINCI_MCASP_RATES,
 			.formats 	= SNDRV_PCM_FMTBIT_S8 |
 						SNDRV_PCM_FMTBIT_S16_LE |
