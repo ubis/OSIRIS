@@ -390,6 +390,43 @@ int do_nand(cmd_tbl_t * cmdtp, int flag, int argc, char *argv[])
 				ret = nand->read_oob(nand, off, &ops);
 			else
 				ret = nand->write_oob(nand, off, &ops);
+		} else if (!strcmp(s, ".raw")) {
+			/* Write raw NAND pages with data+OOB interleaved (for YAFFS) */
+			size_t page_size = nand->writesize;
+			size_t oob_size = nand->oobsize;
+			size_t total_size = page_size + oob_size;
+			size_t pages = size / total_size;
+			loff_t page_off = off;
+			u_char *buf_ptr = (u_char *)addr;
+			size_t i;
+
+			if (size % total_size != 0) {
+				printf("Size must be multiple of %zu (page+oob)\n", total_size);
+				return 1;
+			}
+
+			for (i = 0; i < pages; i++) {
+				mtd_oob_ops_t ops = {
+					.datbuf = buf_ptr,
+					.oobbuf = buf_ptr + page_size,
+					.len = page_size,
+					.ooblen = oob_size,
+					.mode = MTD_OOB_RAW
+				};
+
+				if (read)
+					ret = nand->read_oob(nand, page_off, &ops);
+				else
+					ret = nand->write_oob(nand, page_off, &ops);
+
+				if (ret)
+					break;
+
+				page_off += page_size;
+				buf_ptr += total_size;
+			}
+
+			printf(" %zu pages (%zu bytes)\n", i, i * total_size);
 		} else {
 			printf("Unknown nand command suffix '%s'.\n", s);
 			return 1;
@@ -483,6 +520,9 @@ U_BOOT_CMD(nand, CONFIG_SYS_MAXARGS, 1, do_nand,
 	"nand write - addr off|partition size\n"
 	"    read/write 'size' bytes starting at offset 'off'\n"
 	"    to/from memory address 'addr', skipping bad blocks.\n"
+	"nand read.raw - addr off|partition size\n"
+	"nand write.raw - addr off|partition size\n"
+	"    read/write raw pages with data+OOB interleaved (YAFFS)\n"
 	"nand erase [clean] [off size] - erase 'size' bytes from\n"
 	"    offset 'off' (entire device if not specified)\n"
 	"nand bad - show bad blocks\n"
