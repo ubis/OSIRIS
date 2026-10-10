@@ -518,6 +518,22 @@ static struct nand_ecclayout hwecc4_2048 __initconst = {
 	},
 };
 
+static struct nand_ecclayout rom_hwecc4_2048 __initconst = {
+	.eccbytes = 40,
+	.eccpos = {
+		 6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+		22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+		38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+		54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+	},
+	.oobfree = {
+		{ .offset = 2, .length = 4 },
+		{ .offset = 16, .length = 6 },
+		{ .offset = 32, .length = 6 },
+		{ .offset = 48, .length = 6 },
+	},
+};
+
 static int __init nand_davinci_probe(struct platform_device *pdev)
 {
 	struct davinci_nand_pdata	*pdata = pdev->dev.platform_data;
@@ -719,7 +735,7 @@ static int __init nand_davinci_probe(struct platform_device *pdev)
 			goto syndrome_done;
 		}
 		if (chunks == 4) {
-			info->ecclayout = hwecc4_2048;
+			info->ecclayout = rom_hwecc4_2048;
 			info->chip.ecc.mode = NAND_ECC_HW_OOB_FIRST;
 			goto syndrome_done;
 		}
