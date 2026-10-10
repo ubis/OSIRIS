@@ -407,6 +407,7 @@ TftpHandler (uchar * pkt, unsigned dest, unsigned src, unsigned len)
 		TftpLastBlock = TftpBlock;
 		TftpTimeoutMSecs = TIMEOUT;
 		TftpTimeoutCountMax = TIMEOUT_COUNT;
+		TftpTimeoutCount = 0;	/* only consecutive timeouts count */
 		NetSetTimeout (TftpTimeoutMSecs, TftpTimeout);
 
 		store_block (TftpBlock - 1, pkt + 2, len);
