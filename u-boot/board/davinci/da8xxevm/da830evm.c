@@ -38,6 +38,8 @@
 #include <asm/io.h>
 #include <nand.h>
 #include <asm/arch/nand_defs.h>
+#include <asm/arch/emac_defs.h>
+#include <asm/arch/gpio_defs.h>
 #include "../common/misc.h"
 
 DECLARE_GLOBAL_DATA_PTR;
@@ -63,17 +65,43 @@ const struct pinmux_config uart_pins[] = {
 
 #ifdef CONFIG_DRIVER_TI_EMAC
 const struct pinmux_config emac_pins[] = {
-	{ pinmux[9], 0, 5 },
-	{ pinmux[10], 2, 1 },
-	{ pinmux[10], 2, 2 },
-	{ pinmux[10], 2, 3 },
-	{ pinmux[10], 2, 4 },
-	{ pinmux[10], 2, 5 },
-	{ pinmux[10], 2, 6 },
-	{ pinmux[10], 2, 7 },
-	{ pinmux[11], 2, 0 },
-	{ pinmux[11], 2, 1 }
+	{ pinmux[9], 2, 5 },	/* RMII_MHZ_50_CLK */
+	{ pinmux[10], 2, 1 },	/* RMII_TXD[0] */
+	{ pinmux[10], 2, 2 },	/* RMII_TXD[1] */
+	{ pinmux[10], 2, 3 },	/* RMII_TXEN */
+	{ pinmux[10], 2, 4 },	/* RMII_CRS_DV */
+	{ pinmux[10], 2, 5 },	/* RMII_RXD[0] */
+	{ pinmux[10], 2, 6 },	/* RMII_RXD[1] */
+	{ pinmux[10], 2, 7 },	/* RMII_RXER */
+	{ pinmux[11], 2, 0 },	/* MDIO_CLK */
+	{ pinmux[11], 2, 1 },	/* MDIO_D */
+	{ pinmux[9], 8, 7 },	/* GP3[12]: PHY interrupt */
+	{ pinmux[12], 8, 3 },	/* GP4[14]: PHY reset, active low */
+	/* left as GPIOs, as the vendor firmware has them */
+	{ pinmux[9], 8, 0 },	/* GP5[13] */
+	{ pinmux[7], 8, 6 },	/* GP5[3] */
+	{ pinmux[12], 8, 4 },	/* GP4[0] */
+	{ pinmux[13], 8, 0 },	/* GP4[4] */
+	{ pinmux[11], 8, 7 },	/* GP4[10] */
+	{ pinmux[12], 8, 1 },	/* GP4[12] */
+	{ pinmux[12], 8, 2 },	/* GP4[13] */
+	{ pinmux[11], 8, 6 }	/* GP3[15] */
 };
+
+#define ETH_PHY_INT_GPIO	(1 << 28)	/* GP3[12] in bank 2/3 */
+#define ETH_PHY_RESET_GPIO	(1 << 14)	/* GP4[14] in bank 4/5 */
+
+/*
+ * Vendor firmware sets bit 7 of PHY register 0x1f; on Micrel-style PHYs
+ * that selects the 50 MHz RMII reference clock mode.
+ */
+void davinci_eth_board_phy_init(u_int8_t phy_addr)
+{
+	u_int16_t val;
+
+	if (davinci_eth_phy_read(phy_addr, 0x1f, &val))
+		davinci_eth_phy_write(phy_addr, 0x1f, val | (1 << 7));
+}
 #endif
 
 #ifdef CONFIG_USE_NAND
@@ -182,6 +210,13 @@ int board_init(void)
 #ifdef CONFIG_DRIVER_TI_EMAC
 	if (davinci_configure_pin_mux(emac_pins, ARRAY_SIZE(emac_pins)) != 0)
 		return 1;
+
+	/* PHY interrupt is an input; drive the reset line high to release it */
+	writel(readl(&davinci_gpio_bank23->dir) | ETH_PHY_INT_GPIO,
+	       &davinci_gpio_bank23->dir);
+	writel(ETH_PHY_RESET_GPIO, &davinci_gpio_bank45->set_data);
+	writel(readl(&davinci_gpio_bank45->dir) & ~ETH_PHY_RESET_GPIO,
+	       &davinci_gpio_bank45->dir);
 #endif
 
 #ifdef CONFIG_USE_NAND
