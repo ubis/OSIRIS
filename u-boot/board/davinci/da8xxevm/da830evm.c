@@ -76,12 +76,6 @@ const struct pinmux_config emac_pins[] = {
 };
 #endif
 
-/* I2C pin muxer settings */
-const struct pinmux_config i2c_pins[] = {
-	{ pinmux[8], 2, 3 },
-	{ pinmux[8], 2, 4 }
-};
-
 #ifdef CONFIG_USE_NAND
 const struct pinmux_config aemif_pins[] = {
 	{ pinmux[13], 1, 6 },
@@ -185,9 +179,6 @@ int board_init(void)
 	if (davinci_configure_pin_mux(uart_pins, ARRAY_SIZE(uart_pins)) != 0)
 		return 1;
 
-	if (davinci_configure_pin_mux(i2c_pins, ARRAY_SIZE(i2c_pins)) != 0)
-		return 1;
-
 #ifdef CONFIG_DRIVER_TI_EMAC
 	if (davinci_configure_pin_mux(emac_pins, ARRAY_SIZE(emac_pins)) != 0)
 		return 1;
@@ -211,20 +202,9 @@ int board_init(void)
 
 int misc_init_r(void)
 {
-	uint8_t eeprom_enetaddr[6], tmp[2];
-
 	printf ("ARM Clock : %d Hz\n", clk_get(DAVINCI_ARM_CLKID));
 
-	/* Read Ethernet MAC address from EEPROM if available. */
-	if (dvevm_read_mac_address(eeprom_enetaddr))
-		dv_configure_mac_address(eeprom_enetaddr);
-
-	tmp[0] = 0x01;
-	tmp[1] = 0x23;
-
-	if(i2c_write(0x5f, 0, 0, tmp, 2)) {
-		printf("Ethernet switch start failed!\n");
-	}
+	return 0;
 }
 
 #ifdef CONFIG_NAND_DAVINCI
