@@ -794,7 +794,7 @@ static struct davinci_spi_platform_data da830_spi0_pdata = {
 	.cs_hold	= 1,
 	.intr_level	= 0,
 	.poll_mode	= 1,
-	.use_dma	= 1,
+	.use_dma	= 0,
 	.c2tdelay	= 8,
 	.t2cdelay	= 8,
 };

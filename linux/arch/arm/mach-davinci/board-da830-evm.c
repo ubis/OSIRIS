@@ -179,16 +179,19 @@ static struct davinci_uart_config da830_evm_uart_config __initdata = {
 };
 
 static const short da830_evm_mcasp1_pins[] = {
-	DA830_AHCLKX1, DA830_ACLKX1, DA830_AFSX1, DA830_AHCLKR1, DA830_AFSR1,
-	DA830_AMUTE1, DA830_AXR1_0, DA830_AXR1_1, DA830_AXR1_2, DA830_AXR1_5,
-	DA830_ACLKR1, DA830_AXR1_6, DA830_AXR1_7, DA830_AXR1_8, DA830_AXR1_10,
-	DA830_AXR1_11,
+	/* TX to PCM1690: AHCLKX1 = MCLK in from PCM9211, ACLKX1/AFSX1 = BCK/LRCK out,
+	 * AXR1_0..3 = FL/FR, C/SW, SL/SR, SBL/SBR.  RX from PCM9211/DIR: ACLKR1/AFSR1 +
+	 * AXR1_4 (SDOUTDIR, main stereo); AXR1_5/7/8/9 = HDMI SLR/SPDIF/CSW/SBLR.
+	 * NR515: AMUTE1 ball is GPIO4_14 = ETH_RESET, so AMUTE1 must not be muxed. */
+	DA830_AHCLKX1, DA830_ACLKX1, DA830_AFSX1, DA830_ACLKR1, DA830_AFSR1,
+	DA830_AXR1_0, DA830_AXR1_1, DA830_AXR1_2, DA830_AXR1_3, DA830_AXR1_4,
+	DA830_AXR1_5,
 	-1
 };
 
 static u8 da830_iis_serializer_direction[] = {
-	RX_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
-	INACTIVE_MODE,	TX_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
+	TX_MODE,	TX_MODE,	TX_MODE,	TX_MODE,	/* AXR1_0-3 -> PCM1690 DIN4..DIN1 */
+	RX_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	/* AXR1_4 <- PCM9211 SDOUTDIR (main stereo) */
 	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,	INACTIVE_MODE,
 };
 
@@ -197,11 +200,11 @@ static struct snd_platform_data da830_evm_snd_data = {
 	.rx_dma_offset  = 0x2000,
 	.op_mode        = DAVINCI_MCASP_IIS_MODE,
 	.num_serializer = ARRAY_SIZE(da830_iis_serializer_direction),
-	.tdm_slots      = 2,
+	.tdm_slots      = 2,	/* Standard stereo I2S - proper 50% duty LRCK */
 	.serial_dir     = da830_iis_serializer_direction,
 	.eventq_no      = EVENTQ_0,
 	.version	= MCASP_VERSION_2,
-	.txnumevt	= 1,
+	.txnumevt	= 8,	/* FIFO slack: 8 x 4 serializers = 32 words */
 	.rxnumevt	= 1,
 };
 
@@ -284,7 +287,7 @@ static const short da830_evm_emif25_pins[] = {
 	DA830_EMA_A_0, DA830_EMA_A_1, DA830_EMA_A_2, DA830_EMA_A_3,
 	DA830_EMA_A_4, DA830_EMA_A_5, DA830_EMA_A_6, DA830_EMA_A_7,
 	DA830_EMA_A_8, DA830_EMA_A_9, DA830_EMA_A_10, DA830_EMA_A_11,
-	DA830_EMA_A_12, DA830_EMA_BA_0, DA830_EMA_BA_1, DA830_NEMA_WE,
+	DA830_EMA_A_12, DA830_EMA_BA_1, DA830_NEMA_WE,
 	DA830_NEMA_CS_2, DA830_NEMA_CS_3, DA830_NEMA_OE, DA830_EMA_WAIT_0,
 	-1
 };
@@ -296,43 +299,104 @@ static const short da830_evm_emif25_pins[] = {
 #endif
 
 #ifdef CONFIG_DA830_UI_NAND
+/* Matches the OEM Onkyo layout (/proc/mtd on stock firmware): kernel @ 0x454000 */
 static struct mtd_partition da830_evm_nand_partitions[] = {
-	/* bootloader params in the first sector */
 	[0] = {
-		.name		= "u-boot env",
+		.name		= "params",
 		.offset		= 0,
-		.size		= SZ_128K,
-		.mask_flags	= MTD_WRITEABLE,	/* force read-only */
+		.size		= 0x4000,
+		.mask_flags	= MTD_WRITEABLE,
 	},
-	/* primary bootloader in the next sector */
 	[1] = {
-		.name		= "UBL",
+		.name		= "2ndbl",
 		.offset		= MTDPART_OFS_APPEND,
-		.size		= SZ_128K,
-		.mask_flags	= MTD_WRITEABLE,	/* force read-only */
+		.size		= 0x10000,
+		.mask_flags	= MTD_WRITEABLE,
 	},
-	/* bootloader (U-Boot, etc) in next sector */
 	[2] = {
-		.name		= "u-boot",
+		.name		= "bootloader",
 		.offset		= MTDPART_OFS_APPEND,
-		.size		= 4 * SZ_128K,
-		.mask_flags	= MTD_WRITEABLE,	/* force read-only */
+		.size		= 0x40000,
+		.mask_flags	= MTD_WRITEABLE,
 	},
-	/* kernel */
 	[3] = {
-		.name		= "kernel",
+		.name		= "dsp1",
 		.offset		= MTDPART_OFS_APPEND,
-		.size		= SZ_2M,
+		.size		= 0x200000,
 		.mask_flags	= 0,
 	},
-	/* file system */
 	[4] = {
-		.name		= "filesystem",
+		.name		= "dsp2",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= 0x200000,
+		.mask_flags	= 0,
+	},
+	[5] = {
+		.name		= "kernel",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= 0x200000,
+		.mask_flags	= 0,
+	},
+	[6] = {
+		.name		= "bootconf1",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= 0x4000,
+		.mask_flags	= 0,
+	},
+	[7] = {
+		.name		= "bootconf2",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= 0x4000,
+		.mask_flags	= 0,
+	},
+	[8] = {
+		.name		= "filesystem1",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= 0x1000000,
+		.mask_flags	= 0,
+	},
+	[9] = {
+		.name		= "filesystem2",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= 0x1000000,
+		.mask_flags	= 0,
+	},
+	[10] = {
+		.name		= "filesystem3",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= 0x1000000,
+		.mask_flags	= 0,
+	},
+	[11] = {
+		.name		= "filesystem4",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= 0x500000,
+		.mask_flags	= 0,
+	},
+	[12] = {
+		.name		= "filesystem5",
 		.offset		= MTDPART_OFS_APPEND,
 		.size		= MTDPART_SIZ_FULL,
 		.mask_flags	= 0,
-	}
+	},
 };
+
+/* OEM /proc/mtd for reference:
+dev:    size   erasesize  name
+mtd0: 00004000 00004000 "params"
+mtd1: 00010000 00004000 "2ndbl"
+mtd2: 00040000 00004000 "bootloader"
+mtd3: 00200000 00004000 "dsp1"
+mtd4: 00200000 00004000 "dsp2"
+mtd5: 00200000 00004000 "kernel"
+mtd6: 00004000 00004000 "bootconf1"
+mtd7: 00004000 00004000 "bootconf2"
+mtd8: 01000000 00004000 "filesystem1"
+mtd9: 01000000 00004000 "filesystem2"
+mtd10: 01000000 00004000 "filesystem3"
+mtd11: 00500000 00004000 "filesystem4"
+mtd12: 004a4000 00004000 "filesystem5"
+ */
 
 /* flash bbt decriptors */
 static uint8_t da830_evm_nand_bbt_pattern[] = { 'B', 'b', 't', '0' };
@@ -342,9 +406,9 @@ static struct nand_bbt_descr da830_evm_nand_bbt_main_descr = {
 	.options	= NAND_BBT_LASTBLOCK | NAND_BBT_CREATE |
 			  NAND_BBT_WRITE | NAND_BBT_2BIT |
 			  NAND_BBT_VERSION | NAND_BBT_PERCHIP,
-	.offs		= 2,
+	.offs		= 0,
 	.len		= 4,
-	.veroffs	= 16,
+	.veroffs	= 0,
 	.maxblocks	= 4,
 	.pattern	= da830_evm_nand_bbt_pattern
 };
@@ -353,9 +417,9 @@ static struct nand_bbt_descr da830_evm_nand_bbt_mirror_descr = {
 	.options	= NAND_BBT_LASTBLOCK | NAND_BBT_CREATE |
 			  NAND_BBT_WRITE | NAND_BBT_2BIT |
 			  NAND_BBT_VERSION | NAND_BBT_PERCHIP,
-	.offs		= 2,
+	.offs		= 0,
 	.len		= 4,
-	.veroffs	= 16,
+	.veroffs	= 4,
 	.maxblocks	= 4,
 	.pattern	= da830_evm_nand_mirror_pattern
 };
@@ -424,7 +488,6 @@ static inline void da830_evm_init_nand(int mux_mode)
 	if (ret)
 		pr_warning("da830_evm_init: NAND device not registered.\n");
 
-	gpio_direction_output(mux_mode, 1);
 }
 #else
 static inline void da830_evm_init_nand(int mux_mode) { }
@@ -460,10 +523,10 @@ static struct flash_platform_data spi_flash_data = {
 
 static struct spi_board_info da830_spi_board_info[] = {
 	[0] = {
-		.modalias = "m25p80",
-		.platform_data = &spi_flash_data,
-		.mode = SPI_MODE_0,
-		.max_speed_hz = 30000000,       /* max sample rate at 3V */
+		.modalias = "spidev",
+		.platform_data = NULL,
+		.mode = SPI_MODE_0 | SPI_NO_CS,  /* Manual CS via GPIO */
+		.max_speed_hz = 1000000,        /* 1 MHz - very safe for reverse engineering */
 		.bus_num = 0,
 		.chip_select = 0,
 	},
@@ -488,6 +551,11 @@ static int da830_lcd_hw_init(void)
 	return 0;
 }
 
+static const short da830_evm_lcdc_pins[] = {
+	DA830_NLCD_AC_ENB_CS,
+	-1
+};
+
 static inline void da830_evm_init_lcdc(int mux_mode,
 				struct da8xx_lcdc_platform_data *pdata)
 {
@@ -497,6 +565,13 @@ static inline void da830_evm_init_lcdc(int mux_mode,
 	if (ret)
 		pr_warning("da830_evm_init: lcdcntl mux setup failed: %d\n",
 				ret);
+
+#if !defined(CONFIG_FB_DA8XX) && !defined(CONFIG_FB_DA8XX_MODULE)
+	ret = da8xx_pinmux_setup(da830_evm_lcdc_pins);
+	if (ret)
+		pr_warning("da830_evm_init: evm lcd mux setup failed: %d\n",
+				ret);
+#endif
 
 	ret = da830_lcd_hw_init();
 	if (ret)
@@ -669,6 +744,11 @@ static struct davinci_i2c_platform_data da830_evm_i2c_0_pdata = {
 	.bus_delay	= 0,	/* usec */
 };
 
+static struct platform_device da830_dit_device = {
+	.name = "spdif-dit",
+	.id   = -1,
+};
+
 static __init void da830_evm_init(void)
 {
 	struct davinci_soc_info *soc_info = &davinci_soc_info;
@@ -711,11 +791,6 @@ static __init void da830_evm_init(void)
 				ret);
 
 	davinci_serial_init(&da830_evm_uart_config);
-	i2c_register_board_info(1, da830_evm_i2c_devices,
-			ARRAY_SIZE(da830_evm_i2c_devices));
-
-	da830_evm_tsc2004_dev.irq = gpio_to_irq(TSC2004_GPIO_IRQ_PIN),
-	i2c_register_board_info(1, &da830_evm_tsc2004_dev, 1);
 
 	ret = da8xx_pinmux_setup(da830_evm_mcasp1_pins);
 	if (ret)
@@ -724,7 +799,11 @@ static __init void da830_evm_init(void)
 
 	da8xx_register_mcasp(1, &da830_evm_snd_data);
 
-	da830_evm_init_mmc();
+	ret = platform_device_register(&da830_dit_device);
+	if (ret)
+		pr_warning("da830_evm_init: dit device registration failed: %d\n",
+				ret);
+
 
 	ret = da8xx_register_rtc();
 	if (ret)
@@ -735,8 +814,22 @@ static __init void da830_evm_init(void)
 		pr_warning("da830_evm_init: spi0 mux setup failed: %d\n",
 				ret);
 
+	/* Configure GPIO1_14 (GPIO30) as GPIO for manual SPI CS (ARM_CS) */
+	ret = davinci_cfg_reg(DA830_GPIO1_14);
+	if (ret)
+		pr_warning("da830_evm_init: GPIO1_14 (ARM_CS) setup failed: %d\n",
+				ret);
+
+	/* Configure GPIO2_2 (GPIO34) as GPIO for ARM_RDY input */
+	ret = davinci_cfg_reg(DA830_GPIO2_2);
+	if (ret)
+		pr_warning("da830_evm_init: GPIO2_2 (ARM_RDY) setup failed: %d\n",
+				ret);
+
 	da830_init_spi0(BIT(0), da830_spi_board_info,
 			ARRAY_SIZE(da830_spi_board_info));
+
+	da830_evm_init_nand(0);
 }
 
 #ifdef CONFIG_SERIAL_8250_CONSOLE
