@@ -174,12 +174,38 @@ static int davinci_eth_phy_detect(void)
 }
 
 
+/*
+ * Wait for the MDIO user access to go idle; an access takes ~32 us at the
+ * 2 MHz MDIO clock. The module may have been switched off meanwhile (the
+ * EMAC reset in davinci_eth_close()), in which case GO never clears: turn
+ * it back on rather than spinning forever.
+ */
+#define MDIO_TIMEOUT_US		10000
+
+static int davinci_mdio_wait(void)
+{
+	int	cnt;
+
+	if (!(adap_mdio->CONTROL & MDIO_CONTROL_ENABLE))
+		davinci_eth_mdio_enable();
+
+	for (cnt = 0; cnt < MDIO_TIMEOUT_US; cnt++) {
+		if (!(adap_mdio->USERACCESS0 & MDIO_USERACCESS0_GO))
+			return 1;
+		udelay(1);
+	}
+	printf("davinci_eth: MDIO access timed out\n");
+	return 0;
+}
+
 /* Read a PHY register via MDIO inteface. Returns 1 on success, 0 otherwise */
 int davinci_eth_phy_read(u_int8_t phy_addr, u_int8_t reg_num, u_int16_t *data)
 {
 	int	tmp;
 
-	while (adap_mdio->USERACCESS0 & MDIO_USERACCESS0_GO) {;}
+	*data = -1;
+	if (!davinci_mdio_wait())
+		return(0);
 
 	adap_mdio->USERACCESS0 = MDIO_USERACCESS0_GO |
 				MDIO_USERACCESS0_WRITE_READ |
@@ -187,22 +213,23 @@ int davinci_eth_phy_read(u_int8_t phy_addr, u_int8_t reg_num, u_int16_t *data)
 				((phy_addr & 0x1f) << 16);
 
 	/* Wait for command to complete */
-	while ((tmp = adap_mdio->USERACCESS0) & MDIO_USERACCESS0_GO) {;}
+	if (!davinci_mdio_wait())
+		return(0);
 
+	tmp = adap_mdio->USERACCESS0;
 	if (tmp & MDIO_USERACCESS0_ACK) {
 		*data = tmp & 0xffff;
 		return(1);
 	}
 
-	*data = -1;
 	return(0);
 }
 
 /* Write to a PHY register via MDIO inteface. Blocks until operation is complete. */
 int davinci_eth_phy_write(u_int8_t phy_addr, u_int8_t reg_num, u_int16_t data)
 {
-
-	while (adap_mdio->USERACCESS0 & MDIO_USERACCESS0_GO) {;}
+	if (!davinci_mdio_wait())
+		return(0);
 
 	adap_mdio->USERACCESS0 = MDIO_USERACCESS0_GO |
 				MDIO_USERACCESS0_WRITE_WRITE |
@@ -211,9 +238,7 @@ int davinci_eth_phy_write(u_int8_t phy_addr, u_int8_t reg_num, u_int16_t data)
 				(data & 0xffff);
 
 	/* Wait for command to complete */
-	while (adap_mdio->USERACCESS0 & MDIO_USERACCESS0_GO) {;}
-
-	return(1);
+	return davinci_mdio_wait();
 }
 
 /* PHY functions for a generic PHY */
