@@ -27,8 +27,8 @@
 /*
  * Board
  */
-#define	CONFIG_USE_SPIFLASH
-#undef	CONFIG_USE_NAND
+#undef	CONFIG_USE_SPIFLASH
+#define	CONFIG_USE_NAND
 
 /*
  * SoC Configuration
@@ -108,10 +108,10 @@
 #define CONFIG_SYS_NO_FLASH
 #define CONFIG_ENV_IS_IN_NAND		/* U-Boot env in NAND Flash  */
 #define CONFIG_ENV_OFFSET		0x0 /* Block 0--not used by bootcode */
-#define CONFIG_ENV_SIZE			(128 << 10)
+#define CONFIG_ENV_SIZE			(16 << 10) /* one 16 KiB small-page block */
 #define	CONFIG_SYS_NAND_USE_FLASH_BBT
 #define CONFIG_SYS_NAND_4BIT_HW_ECC_OOBFIRST
-#define	CONFIG_SYS_NAND_PAGE_2K
+#define	CONFIG_SYS_NAND_PAGE_512
 #define CONFIG_SYS_NAND_CS		3
 #define CONFIG_SYS_NAND_BASE		DAVINCI_ASYNC_EMIF_DATA_CE3_BASE
 #define CONFIG_SYS_CLE_MASK		0x10
@@ -189,8 +189,8 @@
 #define LINUX_BOOT_PARAM_ADDR	(PHYS_SDRAM_1 + 0x100)
 #define CONFIG_CMDLINE_TAG
 #define CONFIG_SETUP_MEMORY_TAGS
-#define CONFIG_BOOTARGS		"mem=32M console=ttyS1,115200n8 root=/dev/mmcblk0p1 rw rootwait ip=off"
-#define CONFIG_BOOTCOMMAND	"sf probe 0;sf read 0xc0700000 0x60000 0x220000;bootm 0xc0700000"
+#define CONFIG_BOOTARGS		"mem=56M console=ttyS1,115200n8 root=/dev/mtdblock8 rw rootfstype=yaffs"
+#define CONFIG_BOOTCOMMAND	"nand read 0xc0700000 0x454000 0x200000; bootm 0xc0700000"
 #define CONFIG_BOOTDELAY	3
 
 /*
