@@ -785,6 +785,7 @@ static const struct mux_config da830_pins[] = {
 	MUX_CFG(DA830, EMA_SDCKE,	17,	24,	0xf,	1,	false)
 	MUX_CFG(DA830, NEMA_CAS,	17,	28,	0xf,	1,	false)
 	MUX_CFG(DA830, LCD_VSYNC,	17,	0,	0xf,	2,	false)
+	MUX_CFG(DA830, NLCD_AC_ENB_CS,	17,	4,	0xf,	2,	false)
 	MUX_CFG(DA830, LCD_MCLK,	17,	8,	0xf,	2,	false)
 	MUX_CFG(DA830, LCD_D_5,		17,	12,	0xf,	2,	false)
 	MUX_CFG(DA830, LCD_D_4,		17,	16,	0xf,	2,	false)
