@@ -148,6 +148,17 @@ static int davinci_eth_phy_detect(void)
 
 	debug_emac("davinci_eth_phy_detect(), ALIVE = 0x%08x\n", phy_act_state);
 
+#ifdef CONFIG_DRIVER_TI_EMAC_PHY_ADDR
+	/*
+	 * Some PHYs also answer on a broadcast address (0), which makes ALIVE
+	 * look like more than one PHY. Let the board name the real one.
+	 */
+	if (phy_act_state & (1 << CONFIG_DRIVER_TI_EMAC_PHY_ADDR)) {
+		active_phy_addr = CONFIG_DRIVER_TI_EMAC_PHY_ADDR;
+		return(1);
+	}
+#endif
+
 	for (i = 0; i < 32; i++) {
 		if (phy_act_state & (1 << i)) {
 			if (phy_act_state & ~(1 << i))
@@ -612,6 +623,13 @@ static int davinci_eth_rcv_packet (struct eth_device *dev)
  * EMAC modules power or pin multiplexors, that is done by board_init()
  * much earlier in bootup process. Returns 1 on success, 0 otherwise.
  */
+/* Board specific PHY setup, called once the PHY has been found */
+void __davinci_eth_board_phy_init(u_int8_t phy_addr)
+{
+}
+void davinci_eth_board_phy_init(u_int8_t phy_addr)
+	__attribute__((weak, alias("__davinci_eth_board_phy_init")));
+
 int davinci_emac_initialize(void)
 {
 	u_int32_t	phy_id;
@@ -668,6 +686,8 @@ int davinci_emac_initialize(void)
 	}
 
 	phy_id |= tmp & 0x0000ffff;
+
+	davinci_eth_board_phy_init(active_phy_addr);
 
 	switch (phy_id) {
 		default:

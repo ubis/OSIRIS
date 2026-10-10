@@ -367,6 +367,7 @@ typedef struct  {
 
 int davinci_eth_phy_read(u_int8_t phy_addr, u_int8_t reg_num, u_int16_t *data);
 int davinci_eth_phy_write(u_int8_t phy_addr, u_int8_t reg_num, u_int16_t data);
+void davinci_eth_board_phy_init(u_int8_t phy_addr);
 
 typedef struct
 {
