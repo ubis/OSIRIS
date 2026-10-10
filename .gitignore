@@ -1,0 +1,6 @@
+.DS_Store
+__pycache__/
+*.pyc
+# local console logs and NAND dumps never belong in the repo
+*.log
+*.oob
