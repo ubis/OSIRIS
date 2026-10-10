@@ -301,6 +301,19 @@ static struct nand_ecclayout nand_davinci_4bit_layout_oobfirst = {
 	.oobfree = {
 		{.offset = 2, .length = 46, },
 	},
+#elif defined(CONFIG_SYS_NAND_PAGE_512)
+	/*
+	 * Same placement as the DA830 boot ROM (and TI UBL): bytes 0-5 left
+	 * alone, byte 5 being the small-page bad block marker, and the ten
+	 * ECC bytes at 6-15. Pages written here stay readable by the ROM.
+	 */
+	.eccbytes = 10,
+	.eccpos = {
+		6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+		},
+	.oobfree = {
+		{.offset = 0, .length = 5, },
+	},
 #endif
 };
 
