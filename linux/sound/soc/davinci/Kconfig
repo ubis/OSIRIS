@@ -46,7 +46,7 @@ config  SND_DA830_SOC_EVM
 	tristate "SoC Audio support for DA830/OMAP-L137/AM17xx EVM"
 	depends on SND_DAVINCI_SOC && MACH_DAVINCI_DA830_EVM
 	select SND_DAVINCI_SOC_MCASP
-	select SND_SOC_TLV320AIC3X
+	select SND_SOC_SPDIF
 
 	help
 	  Say Y if you want to add support for SoC audio on TI

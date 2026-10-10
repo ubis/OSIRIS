@@ -17,6 +17,7 @@
 #include <linux/i2c.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
+#include <sound/initval.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
 
@@ -83,6 +84,29 @@ static int evm_hw_params(struct snd_pcm_substream *substream,
 
 static struct snd_soc_ops evm_ops = {
 	.hw_params = evm_hw_params,
+};
+
+/* hw_params for PCM1690 with DIT stub - no codec configuration needed */
+static int pcm1690_hw_params(struct snd_pcm_substream *substream,
+			 struct snd_pcm_hw_params *params)
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_dai *cpu_dai = rtd->dai->cpu_dai;
+	int ret = 0;
+
+	/* set cpu DAI configuration for I2S
+	 * NB_IF = Normal bit clock, Inverted frame sync
+	 * This gives FSXPOL=1: Left channel when LRCK LOW (standard I2S) */
+	ret = snd_soc_dai_set_fmt(cpu_dai, SND_SOC_DAIFMT_I2S |
+			SND_SOC_DAIFMT_CBS_CFS | SND_SOC_DAIFMT_NB_IF);
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
+static struct snd_soc_ops pcm1690_ops = {
+	.hw_params = pcm1690_hw_params,
 };
 
 /* davinci-evm machine dapm widgets */
@@ -169,12 +193,11 @@ static struct snd_soc_dai_link dm6467_evm_dai[] = {
 	},
 };
 static struct snd_soc_dai_link da8xx_evm_dai = {
-	.name = "TLV320AIC3X",
-	.stream_name = "AIC3X",
+	.name = "PCM1690",
+	.stream_name = "Playback",
 	.cpu_dai = &davinci_mcasp_dai[DAVINCI_MCASP_I2S_DAI],
-	.codec_dai = &aic3x_dai,
-	.init = evm_aic3x_init,
-	.ops = &evm_ops,
+	.codec_dai = &dit_stub_dai,
+	.ops = &pcm1690_ops,
 };
 
 /* davinci dm6446, dm355 or dm365 evm audio machine driver */
@@ -209,6 +232,53 @@ static struct snd_soc_card da850_snd_soc_card = {
 
 static struct aic3x_setup_data aic3x_setup;
 
+/* Minimal stub codec device for SPDIF DIT */
+static int dit_codec_probe(struct platform_device *pdev)
+{
+	struct snd_soc_device *socdev = platform_get_drvdata(pdev);
+	struct snd_soc_codec *codec;
+	int ret;
+
+	codec = kzalloc(sizeof(struct snd_soc_codec), GFP_KERNEL);
+	if (codec == NULL)
+		return -ENOMEM;
+
+	mutex_init(&codec->mutex);
+	codec->name = "DIT";
+	codec->owner = THIS_MODULE;
+	codec->dai = &dit_stub_dai;
+	codec->num_dai = 1;
+	socdev->card->codec = codec;
+	INIT_LIST_HEAD(&codec->dapm_widgets);
+	INIT_LIST_HEAD(&codec->dapm_paths);
+
+	ret = snd_soc_new_pcms(socdev, SNDRV_DEFAULT_IDX1, SNDRV_DEFAULT_STR1);
+	if (ret < 0) {
+		printk(KERN_ERR "DIT: failed to create pcms\n");
+		kfree(codec);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int dit_codec_remove(struct platform_device *pdev)
+{
+	struct snd_soc_device *socdev = platform_get_drvdata(pdev);
+	struct snd_soc_codec *codec = socdev->card->codec;
+
+	if (codec == NULL)
+		return 0;
+	snd_soc_free_pcms(socdev);
+	kfree(codec);
+	return 0;
+}
+
+struct snd_soc_codec_device soc_codec_dev_spdif_dit = {
+	.probe = dit_codec_probe,
+	.remove = dit_codec_remove,
+};
+
 /* evm audio subsystem */
 static struct snd_soc_device evm_snd_devdata = {
 	.card = &snd_soc_card_evm,
@@ -226,8 +296,7 @@ static struct snd_soc_device dm6467_evm_snd_devdata = {
 /* evm audio subsystem */
 static struct snd_soc_device da830_evm_snd_devdata = {
 	.card = &da830_snd_soc_card,
-	.codec_dev = &soc_codec_dev_aic3x,
-	.codec_data = &aic3x_setup,
+	.codec_dev = &soc_codec_dev_spdif_dit,
 };
 
 static struct snd_soc_device da850_evm_snd_devdata = {
