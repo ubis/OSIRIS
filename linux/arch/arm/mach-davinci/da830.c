@@ -33,7 +33,7 @@
 #define DA830_CMP12_6		0x78
 #define DA830_CMP12_7		0x7c
 
-#define DA830_REF_FREQ		24000000
+#define DA830_REF_FREQ		20000000
 
 static struct pll_data pll0_data = {
 	.num		= 1,
