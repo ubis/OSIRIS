@@ -334,6 +334,16 @@ static int davinci_eth_open(struct eth_device *dev, bd_t *bis)
 
 	debug_emac("+ emac_open\n");
 
+	/*
+	 * The net core copies ethaddr into dev->enetaddr on every eth_init(),
+	 * but davinci_eth_mac_addr is only set from lib_arm/board.c at boot.
+	 * If ethaddr is set or changed later, the frames carry the new address
+	 * while the receive filter still matches the old one, and every
+	 * unicast reply is dropped. Take the address from the device here.
+	 */
+	if (memcmp(dev->enetaddr, "\0\0\0\0\0\0", 6))
+		davinci_eth_set_mac_addr(dev->enetaddr);
+
 	/* Reset EMAC module and disable interrupts in wrapper */
 	adap_emac->SOFTRESET = 1;
 	while (adap_emac->SOFTRESET != 0) {;}
