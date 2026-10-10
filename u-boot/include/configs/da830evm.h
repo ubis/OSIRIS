@@ -62,7 +62,7 @@
 #define CONFIG_SYS_NS16550
 #define CONFIG_SYS_NS16550_SERIAL
 #define CONFIG_SYS_NS16550_REG_SIZE	-4	/* NS16550 register size */
-#define CONFIG_SYS_NS16550_COM1	DAVINCI_UART2_BASE /* Base address of UART2 */
+#define CONFIG_SYS_NS16550_COM1	DAVINCI_UART1_BASE /* Base address of UART1 */
 #define CONFIG_SYS_NS16550_CLK	clk_get(DAVINCI_UART2_CLKID)
 #define CONFIG_CONS_INDEX	1		/* use UART0 for console */
 #define CONFIG_BAUDRATE		115200		/* Default baud rate */
@@ -189,7 +189,7 @@
 #define LINUX_BOOT_PARAM_ADDR	(PHYS_SDRAM_1 + 0x100)
 #define CONFIG_CMDLINE_TAG
 #define CONFIG_SETUP_MEMORY_TAGS
-#define CONFIG_BOOTARGS		"mem=32M console=ttyS2,115200n8 root=/dev/mmcblk0p1 rw rootwait ip=off"
+#define CONFIG_BOOTARGS		"mem=32M console=ttyS1,115200n8 root=/dev/mmcblk0p1 rw rootwait ip=off"
 #define CONFIG_BOOTCOMMAND	"sf probe 0;sf read 0xc0700000 0x60000 0x220000;bootm 0xc0700000"
 #define CONFIG_BOOTDELAY	3
 
