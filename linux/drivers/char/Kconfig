@@ -1105,5 +1105,7 @@ config DEVPORT
 
 source "drivers/s390/char/Kconfig"
 
+source "drivers/char/gpiodev/Kconfig"
+
 endmenu
 

@@ -1,0 +1,17 @@
+#
+# GPIO device driver configuration
+#
+
+config GPIODEV
+	tristate "GPIO character device support"
+	depends on GPIOLIB && ARCH_DAVINCI
+	default y
+	help
+	  This driver provides a character device interface (/dev/gpiodev)
+	  for controlling GPIO pins on OMAP-L137/DA830 SoC.
+
+	  The device supports ioctl-based GPIO control for setting and
+	  reading GPIO pin values.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called gpiodev.
