@@ -24,12 +24,20 @@
 MODULE_LICENSE("GPL");
 
 #define STUB_RATES	SNDRV_PCM_RATE_8000_96000
-#define STUB_FORMATS	SNDRV_PCM_FMTBIT_S16_LE
+#define STUB_FORMATS	SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE
 
 struct snd_soc_dai dit_stub_dai = {
 	.name		= "DIT",
 	.playback 	= {
 		.stream_name	= "Playback",
+		.channels_min	= 1,
+		.channels_max	= 384,
+		.rates		= STUB_RATES,
+		.formats	= STUB_FORMATS,
+	},
+	/* Onkyo boards: also the "codec" of the PCM9211 receive path (McASP1 AXR1_4) */
+	.capture	= {
+		.stream_name	= "Capture",
 		.channels_min	= 1,
 		.channels_max	= 384,
 		.rates		= STUB_RATES,
