@@ -1,0 +1,8 @@
+build/
+*.pyc
+__pycache__/
+.DS_Store
+# never commit vendor binaries (TI sft/UBL, vendor first stages/U-Boot, NAND dumps)
+*.bin
+*.dbi
+*.oob

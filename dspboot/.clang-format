@@ -1,0 +1,37 @@
+# Linux kernel coding style (tabs of 8, 80 columns), plus braces on every
+# if/else/for/while body. After clang-format: tab-aligned #defines and an
+# empty line after each closed block (not expressible here).
+BasedOnStyle: LLVM
+IndentWidth: 8
+TabWidth: 8
+UseTab: Always
+ContinuationIndentWidth: 8
+ColumnLimit: 80
+BreakStringLiterals: false
+ReflowComments: false
+SortIncludes: Never
+InsertBraces: true
+IndentCaseLabels: false
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: true
+AlignAfterOpenBracket: Align
+AlignOperands: Align
+AlignTrailingComments: false
+AlignConsecutiveMacros: None
+AlignEscapedNewlines: Left
+PointerAlignment: Right
+SpaceAfterCStyleCast: false
+BreakBeforeBinaryOperators: None
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  AfterControlStatement: Never
+  AfterStruct: false
+  AfterEnum: false
+  AfterUnion: false
+  BeforeElse: false
+  SplitEmptyFunction: true
+Cpp11BracedListStyle: false
