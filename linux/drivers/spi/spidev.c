@@ -119,10 +119,14 @@ spidev_sync(struct spidev_data *spidev, struct spi_message *message)
 	spin_unlock_irq(&spidev->spi_lock);
 
 	if (status == 0) {
-		wait_for_completion(&done);
-		status = message->status;
-		if (status == 0)
-			status = message->actual_length;
+		/* do not hang forever on a transfer that never completes */
+		if (!wait_for_completion_timeout(&done, msecs_to_jiffies(5000))) {
+			status = -ETIMEDOUT;
+		} else {
+			status = message->status;
+			if (status == 0)
+				status = message->actual_length;
+		}
 	}
 	return status;
 }
