@@ -6,7 +6,7 @@
 #
 #   make dspboot [BOARD=<name>]   first-stage loader -> dist/dspboot/
 #   make dspboot-test             its host-side unit tests
-#   make buildroot                toolchain, U-Boot, kernel, root fs -> dist/buildroot/
+#   make buildroot                toolchain, U-Boot, kernel, root fs, bundle -> dist/images/
 #   make clean                    remove build output (not the Docker images)
 
 TOP    := $(CURDIR)
@@ -55,11 +55,9 @@ buildroot:
 	mkdir -p $(BUILDROOT_OUT)
 	$(call docker_run,$(BUILDROOT_IMAGE),$(TOP)/buildroot,sh -c \
 		"$(BUILDROOT_MAKE) onkyo_nr_defconfig > /dev/null && $(BUILDROOT_MAKE)")
-	rm -rf $(DIST)/buildroot
-	mkdir -p $(DIST)/buildroot
-	cd $(BUILDROOT_OUT)/images && cp uImage u-boot.bin u-boot.dbi u-boot-*.nand \
-		rootfs.squashfs rootfs.cpio.gz $(DIST)/buildroot/
-	@echo "buildroot -> $(DIST)/buildroot"
+	mkdir -p $(DIST)
+	ln -sfn $(BUILDROOT_OUT)/images $(DIST)/images
+	@echo "buildroot -> $(DIST)/images"
 
 clean:
 	rm -rf $(DIST) $(BUILD)
