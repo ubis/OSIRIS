@@ -408,7 +408,7 @@ static struct nand_bbt_descr da830_evm_nand_bbt_main_descr = {
 			  NAND_BBT_VERSION | NAND_BBT_PERCHIP,
 	.offs		= 0,
 	.len		= 4,
-	.veroffs	= 0,
+	.veroffs	= 4,
 	.maxblocks	= 4,
 	.pattern	= da830_evm_nand_bbt_pattern
 };
