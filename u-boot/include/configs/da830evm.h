@@ -47,7 +47,7 @@
 /*
  * Memory Info
  */
-#define CONFIG_SYS_MALLOC_LEN	(0x10000 + 1*1024*1024) /* malloc() len */
+#define CONFIG_SYS_MALLOC_LEN	(0x10000 + 2*1024*1024) /* malloc() len (UBI attach) */
 #define CONFIG_SYS_GBL_DATA_SIZE	128 /* reserved for initial data */
 #define PHYS_SDRAM_1		DAVINCI_DDR_EMIF_DATA_BASE /* DDR Start */
 #define PHYS_SDRAM_1_SIZE	(64 << 20) /* SDRAM size 64MB */
@@ -93,8 +93,26 @@
 #define CONFIG_NAND_DAVINCI
 #define CONFIG_SYS_NO_FLASH
 #define CONFIG_ENV_IS_IN_NAND		/* U-Boot env in NAND Flash  */
-#define CONFIG_ENV_OFFSET		0x0 /* Block 0--not used by bootcode */
+/*
+ * OSIRIS flash layout (the same in Linux, see the board file):
+ *   block 0    env        block 1..1 MiB  dspboot (ROM boots block 1)
+ *   0x100000   env2       0x140000 uboot_a    0x1C0000 uboot_b
+ *   0x240000   ubi: kernel_a/b, rootfs_a/b, data
+ * Two env copies so that a power cut while saving leaves one intact.
+ * CONFIG_ENV_RANGE stays at CONFIG_ENV_SIZE: saveenv erases the whole range
+ * at each copy, and more than one block at offset 0 would hit dspboot.
+ */
+#define CONFIG_ENV_OFFSET		0x0
+#define CONFIG_ENV_OFFSET_REDUND	0x100000
 #define CONFIG_ENV_SIZE			(16 << 10) /* one 16 KiB small-page block */
+#define CONFIG_CMD_UBI
+#define CONFIG_RBTREE
+#define CONFIG_MTD_DEVICE
+#define CONFIG_MTD_PARTITIONS
+#define CONFIG_CMD_MTDPARTS
+#define MTDIDS_DEFAULT		"nand0=davinci_nand.1"
+#define MTDPARTS_DEFAULT	"mtdparts=davinci_nand.1:16k(env),1008k(dspboot)," \
+				"256k(env2),512k(uboot_a),512k(uboot_b),-(ubi)"
 #define	CONFIG_SYS_NAND_USE_FLASH_BBT
 #define CONFIG_SYS_NAND_4BIT_HW_ECC_OOBFIRST
 #define	CONFIG_SYS_NAND_PAGE_512
@@ -175,9 +193,28 @@
 #define LINUX_BOOT_PARAM_ADDR	(PHYS_SDRAM_1 + 0x100)
 #define CONFIG_CMDLINE_TAG
 #define CONFIG_SETUP_MEMORY_TAGS
-#define CONFIG_BOOTARGS		"mem=56M console=ttyS1,115200n8 root=/dev/mtdblock8 rw rootfstype=yaffs"
-#define CONFIG_BOOTCOMMAND	"nand read 0xc0700000 0x454000 0x200000; bootm 0xc0700000"
-#define CONFIG_BOOTDELAY	3
+/*
+ * Boot the slot named by "bootslot" (a/b), fall back to the other one.
+ * UBI volumes are created in this order, so with mtd0-5 being the flash
+ * partitions, gluebi makes rootfs_a mtd8 and rootfs_b mtd9.
+ */
+#define CONFIG_BOOTDELAY	1
+#define CONFIG_BOOTCOMMAND	"ubi part ubi; setenv slot ${bootslot}; run bootslot_one; " \
+	"if test \"${bootslot}\" = b; then setenv slot a; else setenv slot b; fi; " \
+	"echo Slot ${bootslot} failed, trying slot ${slot}; run bootslot_one"
+#define CONFIG_EXTRA_ENV_SETTINGS \
+	"bootslot=a\0" \
+	"loadaddr=0xc0700000\0" \
+	"mtdids=" MTDIDS_DEFAULT "\0" \
+	"mtdparts=" MTDPARTS_DEFAULT "\0" \
+	"bootargs_base=console=ttyS1,115200n8 mem=56M panic=5 panic_on_oops=1 " \
+		"ubi.mtd=5 rootfstype=squashfs ro\0" \
+	"bootargs_extra=\0" \
+	"bootslot_root=if test \"${slot}\" = b; then setenv rootdev /dev/mtdblock9; " \
+		"else setenv rootdev /dev/mtdblock8; fi\0" \
+	"bootslot_one=run bootslot_root; ubi read ${loadaddr} kernel_${slot} && " \
+		"setenv bootargs ${bootargs_base} root=${rootdev} osiris.slot=${slot} " \
+		"${bootargs_extra} && bootm ${loadaddr}\0"
 
 /*
  * U-Boot commands
