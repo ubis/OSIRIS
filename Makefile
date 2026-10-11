@@ -59,7 +59,7 @@ dspaudio:
 BUILDROOT_IMAGE := $(call image_tag,buildroot,toolchain/buildroot/Dockerfile)
 BUILDROOT_OUT   := $(BUILD)/buildroot
 BUILDROOT_MAKE  := make O=$(BUILDROOT_OUT)
-BUILDROOT_LOCAL := mcud dspd dspaudio
+BUILDROOT_LOCAL := mcud dspd dspaudio osirisd
 
 buildroot: dspaudio
 	@$(call ensure_image,$(BUILDROOT_IMAGE),toolchain/buildroot)
