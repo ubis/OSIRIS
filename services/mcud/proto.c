@@ -1,0 +1,409 @@
+// SPDX-License-Identifier: BSD-2-Clause
+/*
+ * The MCU protocol on top of the link: the start-up handshake, the answers
+ * the MCU expects at once, and the state it reads (version, id, stream
+ * status, levels, active outputs). See PROTOCOL.md.
+ */
+#include <ctype.h>
+#include <stdio.h>
+#include <string.h>
+
+#include <libubox/uloop.h>
+#include <libubox/utils.h>
+
+#include "log.h"
+#include "cmd.h"
+#include "proto.h"
+
+#define RETRY_MS	1000
+#define RETRIES		3
+#define NO_ARG		(-1)
+
+static const struct proto_ops *ops;
+static enum stage stage;
+static struct mcu_model model;
+static struct uloop_timeout retry_timer;
+static uint8_t pend_cmd, pend_arg;
+static int pend, retries;
+
+/* PCM, 48 kHz, " 2.0", DSP detected: a capture from the stock firmware */
+static uint8_t stream[STREAM_LEN] = {
+	[STREAM_TYPE] = STREAM_PCM,
+	[STREAM_FS] = FS_48K, FS_48K, FS_48K, 0x05, 0x00,
+	[STREAM_CHANNELS] = ' ', '2', '.', '0',
+	[STREAM_MASK] = 0xff, 0x07,
+	[STREAM_DETECT] = 0x01,
+	[STREAM_LAYOUT] = 0x20, 0x20,
+	[STREAM_LEN - 1] = 0x01,
+};
+
+static uint8_t stream_sent[STREAM_LEN];
+
+/* what the stock firmware reports; the encoding is not known */
+static uint8_t levels[LEVELS_LEN] = {
+	0xf0, 0x0a, 0xf0, 0x0a, 0xf0, 0x0a, 0x74, 0x0e, 0x74, 0x0e, 0x74, 0x0e, 0x74,
+	0x0e, 0x74, 0x0e, 0x74, 0x0e, 0x74, 0x0e, 0x74, 0x0e, 0x74, 0x0e, 0x74, 0x0e,
+};
+
+static uint8_t version[VERSION_LEN];
+static uint8_t dsp_id[ID_LEN] = "DA83x 1.02  0000";
+static uint8_t outputs = NET_OUTPUTS_FRONT;
+
+static const struct {
+	uint8_t cmd;
+	const char *name;
+} names[] = {
+	{ MCU_INITIAL, "initial_settings" },
+	{ MCU_INPUT, "input_settings" },
+	{ MCU_SPEAKERS, "speaker_config" },
+	{ MCU_DISTANCE, "distance" },
+	{ MCU_EQUALIZER, "equalizer" },
+	{ MCU_THX, "thx" },
+	{ MCU_MULTIPLEX_MONO, "multiplex_mono" },
+	{ MCU_DD_DTS, "dd_dts_adsy_td" },
+	{ MCU_DSD_DIRECT, "dsd_dac_direct" },
+	{ MCU_LFE_LEVEL, "lfe_level" },
+	{ MCU_AV_SYNC, "av_sync" },
+	{ MCU_HDMI_AUDIO, "hdmi_audio_tv_out" },
+	{ MCU_BASS_TREBLE, "bass_treble" },
+	{ MCU_RE_EQ, "re_eq" },
+	{ MCU_MUSIC_OPTIMIZER, "music_optimizer" },
+	{ MCU_LATE_NIGHT, "late_night" },
+	{ MCU_TESTTONE_CH, "testtone_ch" },
+	{ MCU_TESTMODE, "testmode" },
+	{ MCU_LISTENING_MODE, "listening_mode" },
+	{ MCU_VOLUME, "volume" },
+	{ MCU_HEADPHONE, "headphone" },
+	{ MCU_CH_LAYOUT, "ch_layout" },
+	{ MCU_SPECIAL_MODE, "special_mode" },
+	{ MCU_NET_MUTE, "net_mute" },
+	{ MCU_NETAUDIO_INFO, "netaudio_info" },
+	{ MCU_SPDIF_UPDATE, "spdifupdate_next" },
+	{ MCU_AUDYSSEY, "audysseyautosp" },
+	{ MCU_NET_VERSION, "net_version" },
+	{ MCU_SYSTEM, "system" },
+	{ MCU_ITEM, "system_item" },
+	{ MCU_DISPLAY, "display" },
+	{ MCU_INPUT_SELECT, "inputsel" },
+	{ MCU_UPDATE, "update" },
+	{ MCU_UPDATE_SOURCE, "update_source" },
+	{ MCU_UPDATE_MODE, "update_mode" },
+	{ MCU_ISCP, "iscp" },
+};
+
+const char *proto_cmd_name(uint8_t cmd)
+{
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(names); i++) {
+		if (names[i].cmd == cmd) {
+			return names[i].name;
+		}
+	}
+
+	return "unknown";
+}
+
+static void queue(uint8_t cmd, const void *data, uint16_t len)
+{
+	if (link_send(cmd, data, len)) {
+		log_msg(LOG_WARNING, "queue full, dropped 0x%02x", cmd);
+	}
+}
+
+/* only when a field changed: resending it restarts the MCU's input handling */
+static void stream_update(void)
+{
+	if (!memcmp(stream, stream_sent, STREAM_LEN)) {
+		return;
+	}
+
+	memcpy(stream_sent, stream, STREAM_LEN);
+	queue(DSP_STREAM, stream, STREAM_LEN);
+}
+
+static void request(uint8_t cmd, int arg)
+{
+	pend_cmd = cmd;
+	pend_arg = arg;
+	pend = 1;
+	if (arg == NO_ARG) {
+		queue(cmd, NULL, 0);
+	} else {
+		queue(cmd, &pend_arg, 1);
+	}
+
+	uloop_timeout_set(&retry_timer, RETRY_MS);
+}
+
+/* first two printable strings of MCU_SYSTEM: model code and model name */
+static void model_from_system(const uint8_t *d, uint16_t len)
+{
+	char run[32];
+	int n = 0, runs = 0;
+	uint16_t i;
+
+	for (i = 0; i <= len; i++) {
+		if (i < len && isprint(d[i])) {
+			if (n < (int)sizeof(run) - 1) {
+				run[n++] = d[i];
+			}
+
+			continue;
+		}
+
+		if (n >= 3) {
+			run[n] = 0;
+			if (!runs) {
+				snprintf(model.code, sizeof(model.code), "%s", run);
+			} else if (runs == 1) {
+				snprintf(model.name, sizeof(model.name), "%s", run);
+			}
+
+			runs++;
+		}
+
+		n = 0;
+	}
+}
+
+static void beacon_field(char *dst, size_t size, const char *s, const char *key)
+{
+	const char *p = strstr(s, key), *e;
+
+	if (!p) {
+		return;
+	}
+
+	p += strlen(key);
+	e = strchr(p, '>');
+	if (e) {
+		snprintf(dst, size, "%.*s", (int)(e - p), p);
+	}
+}
+
+/* "AMXB<-SDKClass=Receiver><-Make=ONKYO><-Model=TX-NR717>" */
+static void model_from_beacon(const uint8_t *d, uint16_t len)
+{
+	char s[300];
+
+	if (len > sizeof(s) - 1) {
+		len = sizeof(s) - 1;
+	}
+
+	memcpy(s, d, len);
+	s[len] = 0;
+	beacon_field(model.make, sizeof(model.make), s, "<-Make=");
+	if (!model.name[0]) {
+		beacon_field(model.name, sizeof(model.name), s, "<-Model=");
+	}
+}
+
+static void handshake(uint8_t cmd, const uint8_t *d, uint16_t len)
+{
+	static const uint8_t done[][2] = {
+		{ NET_STATE_UP_0 }, { NET_STATE_UP_1 }, { NET_STATE_READY },
+	};
+	size_t i;
+
+	if (cmd == MCU_SYSTEM && stage == STAGE_SYSTEM) {
+		retries = 0;
+		request(NET_ITEM, 0);
+		stage = STAGE_ITEMS;
+	} else if (cmd == MCU_ITEM && stage == STAGE_ITEMS && len) {
+		retries = 0;
+		if (d[0] < ITEM_LAST) {
+			request(NET_ITEM, d[0] + 1);
+		} else {
+			queue(DSP_OUTPUTS, &outputs, 1);
+			request(NET_DISPLAY, 0);
+			stage = STAGE_DISPLAY;
+		}
+	} else if (cmd == MCU_DISPLAY && stage == STAGE_DISPLAY && len) {
+		retries = 0;
+		if (!d[0]) {
+			request(NET_DISPLAY, 1);
+		} else {
+			request(NET_SYSTEM, NO_ARG);
+			stage = STAGE_FINAL;
+		}
+	} else if (cmd == MCU_SYSTEM && stage == STAGE_FINAL) {
+		for (i = 0; i < ARRAY_SIZE(done); i++) {
+			queue(NET_STATE, done[i], 2);
+		}
+
+		pend = 0;
+		uloop_timeout_cancel(&retry_timer);
+		stage = STAGE_READY;
+		ops->ready(&model);
+	}
+}
+
+/* the MCU sometimes drops a request: resend, then fake the answer and go on */
+static void retry_cb(struct uloop_timeout *t)
+{
+	uint8_t fake;
+
+	if (!pend || stage == STAGE_READY) {
+		return;
+	}
+
+	if (++retries <= RETRIES) {
+		request(pend_cmd, pend_cmd == NET_SYSTEM ? NO_ARG : pend_arg);
+		return;
+	}
+
+	log_msg(LOG_WARNING, "no answer to %02x %02x, going on", pend_cmd,
+		pend_arg);
+	pend = 0;
+	retries = 0;
+	fake = pend_arg;
+	handshake(CMD_REQUEST(pend_cmd), &fake, 1);
+}
+
+void proto_rx(const struct link_frame *f)
+{
+	const uint8_t *d = f->data;
+
+	if (!f->csum_ok) {
+		log_msg(LOG_WARNING, "checksum error in 0x%02x", f->cmd);
+		return;
+	}
+
+	switch (f->cmd) {
+	case MCU_INPUT:
+		/* follow the input's sample rate in the stream status */
+		if (f->len >= 4 && d[3]) {
+			memset(stream + STREAM_FS, d[3], 3);
+		}
+
+		stream_update();
+		break;
+	case MCU_INITIAL:
+	case MCU_INPUT_SELECT:
+		stream_update();
+		break;
+	case MCU_SPEAKERS:
+		queue(DSP_LEVELS, levels, LEVELS_LEN);
+		break;
+	case MCU_NET_VERSION:
+		queue(NET_VERSION, version, VERSION_LEN - 1);
+		break;
+	case MCU_ACK_REQ:
+		if (f->len) {
+			queue(NET_ACK, d, 1);
+		}
+
+		break;
+	case MCU_SYSTEM:
+		model_from_system(d, f->len);
+		break;
+	case MCU_ITEM:
+		if (f->len > 1 && d[0] == ITEM_BEACON) {
+			model_from_beacon(d + 1, f->len - 1);
+		}
+
+		break;
+	default:
+		break;
+	}
+
+	if (f->cmd == MCU_SYSTEM || f->cmd == MCU_ITEM || f->cmd == MCU_DISPLAY) {
+		handshake(f->cmd, d, f->len);
+	}
+
+	ops->frame(f, proto_cmd_name(f->cmd));
+}
+
+static void pad_copy(uint8_t *dst, size_t size, const char *src)
+{
+	size_t n = strlen(src);
+
+	memset(dst, ' ', size);
+	memcpy(dst, src, n < size ? n : size);
+}
+
+void proto_init(const struct proto_ops *o, const char *dsp_version)
+{
+	static const uint8_t start[2] = { NET_STATE_START };
+
+	ops = o;
+	retry_timer.cb = retry_cb;
+	pad_copy(version, VERSION_LEN, dsp_version);
+	/* the AudioApp part, in the stock order */
+	queue(DSP_VERSION, version, VERSION_LEN);
+	queue(DSP_READY, NULL, 0);
+	memcpy(stream_sent, stream, STREAM_LEN);
+	queue(DSP_STREAM, stream, STREAM_LEN);
+	queue(DSP_ID, dsp_id, ID_LEN);
+	queue(DSP_LEVELS, levels, LEVELS_LEN);
+	/* the network module part */
+	queue(NET_STATE, start, 2);
+	request(NET_SYSTEM, NO_ARG);
+	stage = STAGE_SYSTEM;
+}
+
+enum stage proto_stage(void)
+{
+	return stage;
+}
+
+const char *proto_stage_name(void)
+{
+	static const char *const n[] = {
+		[STAGE_START] = "start", [STAGE_SYSTEM] = "system",
+		[STAGE_ITEMS] = "items", [STAGE_DISPLAY] = "display",
+		[STAGE_FINAL] = "final", [STAGE_READY] = "ready",
+	};
+
+	return n[stage];
+}
+
+const struct mcu_model *proto_model(void)
+{
+	return &model;
+}
+
+void proto_set_version(const char *v, const char *id)
+{
+	if (v) {
+		pad_copy(version, VERSION_LEN, v);
+		queue(DSP_VERSION, version, VERSION_LEN);
+	}
+
+	if (id) {
+		pad_copy(dsp_id, ID_LEN, id);
+		queue(DSP_ID, dsp_id, ID_LEN);
+	}
+}
+
+void proto_set_stream(const uint8_t *s)
+{
+	memcpy(stream, s, STREAM_LEN);
+	stream_update();
+}
+
+void proto_get_stream(uint8_t *s)
+{
+	memcpy(s, stream, STREAM_LEN);
+}
+
+void proto_set_levels(const uint8_t *l)
+{
+	if (!memcmp(levels, l, LEVELS_LEN)) {
+		return;
+	}
+
+	memcpy(levels, l, LEVELS_LEN);
+	queue(DSP_LEVELS, levels, LEVELS_LEN);
+}
+
+void proto_set_outputs(uint8_t mask)
+{
+	if (mask == outputs) {
+		return;
+	}
+
+	outputs = mask;
+	queue(DSP_OUTPUTS, &outputs, 1);
+}
