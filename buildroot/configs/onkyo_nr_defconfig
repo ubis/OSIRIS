@@ -48,6 +48,21 @@ BR2_PACKAGE_ALSA_UTILS_AMIXER=y
 # OSIRIS
 BR2_ROOTFS_OVERLAY="board/onkyo/nr/rootfs-overlay"
 BR2_ROOTFS_POST_BUILD_SCRIPT="board/onkyo/nr/post-build.sh"
+BR2_ROOTFS_POST_IMAGE_SCRIPT="board/onkyo/nr/post-image.sh"
+BR2_PACKAGE_OVERRIDE_FILE="$(TOPDIR)/board/onkyo/nr/local.mk"
+
+# kernel and boot loader from this repository's linux/ and u-boot/ trees
+BR2_LINUX_KERNEL=y
+BR2_LINUX_KERNEL_CUSTOM_LOCAL=y
+BR2_LINUX_KERNEL_CUSTOM_LOCAL_PATH="$(TOPDIR)/../linux"
+BR2_LINUX_KERNEL_USE_DEFCONFIG=y
+BR2_LINUX_KERNEL_DEFCONFIG="onkyo_nr"
+BR2_LINUX_KERNEL_UIMAGE=y
+BR2_TARGET_UBOOT=y
+BR2_TARGET_UBOOT_BOARDNAME="da830evm"
+BR2_TARGET_UBOOT_CUSTOM_VERSION=y
+BR2_TARGET_UBOOT_CUSTOM_VERSION_VALUE="2009.11"
+BR2_TARGET_UBOOT_FORMAT_BIN=y
 
 # images: squashfs (gzip: 2.6.33 reads no LZO/XZ squashfs) and an initramfs for testing
 BR2_TARGET_ROOTFS_SQUASHFS=y
