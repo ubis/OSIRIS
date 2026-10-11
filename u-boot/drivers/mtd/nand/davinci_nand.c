@@ -592,11 +592,49 @@ static void nand_flash_init(void)
 #endif
 }
 
+#if defined(CONFIG_SYS_NAND_USE_FLASH_BBT) && defined(CONFIG_SYS_NAND_PAGE_512)
+/*
+ * Flash BBT descriptors shared with Linux (arch/arm/mach-davinci board
+ * file): pattern in OOB 0-3, version in byte 4. The generic small-page
+ * defaults (pattern at 8-11, version at 12) collide with the ROM ECC bytes
+ * at 6-15, so the table U-Boot wrote was never found again and both U-Boot
+ * and Linux rewrote the last blocks on every boot.
+ */
+static uint8_t davinci_nand_bbt_pattern[] = { 'B', 'b', 't', '0' };
+static uint8_t davinci_nand_mirror_pattern[] = { '1', 't', 'b', 'B' };
+
+static struct nand_bbt_descr davinci_nand_bbt_main_descr = {
+	.options	= NAND_BBT_LASTBLOCK | NAND_BBT_CREATE |
+			  NAND_BBT_WRITE | NAND_BBT_2BIT |
+			  NAND_BBT_VERSION | NAND_BBT_PERCHIP,
+	.offs		= 0,
+	.len		= 4,
+	.veroffs	= 4,
+	.maxblocks	= 4,
+	.pattern	= davinci_nand_bbt_pattern,
+};
+
+static struct nand_bbt_descr davinci_nand_bbt_mirror_descr = {
+	.options	= NAND_BBT_LASTBLOCK | NAND_BBT_CREATE |
+			  NAND_BBT_WRITE | NAND_BBT_2BIT |
+			  NAND_BBT_VERSION | NAND_BBT_PERCHIP,
+	.offs		= 0,
+	.len		= 4,
+	.veroffs	= 4,
+	.maxblocks	= 4,
+	.pattern	= davinci_nand_mirror_pattern,
+};
+#endif
+
 void davinci_nand_init(struct nand_chip *nand)
 {
 	nand->chip_delay  = 0;
 #ifdef CONFIG_SYS_NAND_USE_FLASH_BBT
 	nand->options	  |= NAND_USE_FLASH_BBT;
+#ifdef CONFIG_SYS_NAND_PAGE_512
+	nand->bbt_td	  = &davinci_nand_bbt_main_descr;
+	nand->bbt_md	  = &davinci_nand_bbt_mirror_descr;
+#endif
 #endif
 #ifdef CONFIG_SYS_NAND_HW_ECC
 	nand->ecc.mode = NAND_ECC_HW;
