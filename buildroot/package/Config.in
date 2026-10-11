@@ -6,6 +6,7 @@ menu "OSIRIS (Onkyo receivers)"
 	source "package/mcud/Config.in"
 	source "package/dspd/Config.in"
 	source "package/dspaudio/Config.in"
+	source "package/osirisd/Config.in"
 endmenu
 
 menu "Audio and video applications"
