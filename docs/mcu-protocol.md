@@ -1,7 +1,7 @@
 # MCU link protocol
 
 The receiver's main MCU (Renesas) and the DSP side (on the stock firmware:
-`spid` + AudioApp on the DA830's ARM) talk over SPI. Everything here was
+`spid` + AudioApp on the D830's ARM) talk over SPI. Everything here was
 reverse engineered from the stock TX-NR515/717 firmware and its logs; it is
 what `mcud` implements. Unknown parts are marked as such.
 
@@ -141,7 +141,7 @@ it expects are not known yet.
 
 ## mcud
 
-`mcud` owns the link and nothing else. It answers what the MCU expects at
+`mcud` owns the link. It answers what the MCU expects at
 once, from state it holds, and turns everything else into ubus events.
 
 Answered by mcud itself:
