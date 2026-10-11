@@ -4,3 +4,7 @@ __pycache__/
 # local console logs and NAND dumps never belong in the repo
 *.log
 *.oob
+# build results
+/dist/
+# build output
+/build/
