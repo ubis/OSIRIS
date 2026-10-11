@@ -5,7 +5,8 @@
 ################################################################################
 
 LIBUBOX_VERSION = bbd846ec2d72b2629758b69dc122ac0b0f2c3e4b
-LIBUBOX_SITE = git://nbd.name/luci2/libubox.git
+LIBUBOX_SITE = https://git.openwrt.org/project/libubox.git
+LIBUBOX_SITE_METHOD = git
 LIBUBOX_LICENSE = LGPLv2.1, GPLv2, BSD-3c, MIT
 LIBUBOX_INSTALL_STAGING = YES
 LIBUBOX_DEPENDENCIES = host-pkgconf $(if $(BR2_PACKAGE_JSON_C),json-c)
