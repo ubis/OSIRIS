@@ -481,43 +481,21 @@ static int nand_davinci_dev_ready(struct mtd_info *mtd)
 
 /*----------------------------------------------------------------------*/
 
-/* An ECC layout for using 4-bit ECC with small-page flash, storing
- * ten ECC bytes plus the manufacturer's bad block marker byte, and
- * and not overlapping the default BBT markers.
+/*
+ * The DA830 boot ROM, TI's UBL and our U-Boot put the ten ECC bytes of a
+ * 512-byte page at OOB 6-15, after the bad block marker in byte 5. Use the
+ * same placement so that the environment and the boot stages are readable
+ * and writable from Linux. Bytes 0-4 hold the flash BBT marker and version.
  */
-static struct nand_ecclayout hwecc4_small __initconst = {
+static struct nand_ecclayout rom_hwecc4_small __initconst = {
 	.eccbytes = 10,
-	.eccpos = { 0, 1, 2, 3, 4,
-		/* offset 5 holds the badblock marker */
-		6, 7,
-		13, 14, 15, },
+	.eccpos = { 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, },
 	.oobfree = {
-		{.offset = 8, .length = 5, },
-		{.offset = 16, },
+		{.offset = 0, .length = 5, },
 	},
 };
 
-/* An ECC layout for using 4-bit ECC with large-page (2048bytes) flash,
- * storing ten ECC bytes plus the manufacturer's bad block marker byte,
- * and not overlapping the default BBT markers.
- */
-static struct nand_ecclayout hwecc4_2048 __initconst = {
-	.eccbytes = 40,
-	.eccpos = {
-		/* at the end of spare sector */
-		24, 25, 26, 27, 28, 29,	30, 31, 32, 33,
-		34, 35, 36, 37, 38, 39,	40, 41, 42, 43,
-		44, 45, 46, 47, 48, 49, 50, 51, 52, 53,
-		54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
-		},
-	.oobfree = {
-		/* 2 bytes at offset 0 hold manufacturer badblock markers */
-		{.offset = 2, .length = 22, },
-		/* 5 bytes at offset 8 hold BBT markers */
-		/* 8 bytes at offset 16 hold JFFS2 clean markers */
-	},
-};
-
+/* The same for 2 KiB pages: each 512-byte step after a 6-byte group. */
 static struct nand_ecclayout rom_hwecc4_2048 __initconst = {
 	.eccbytes = 40,
 	.eccpos = {
@@ -729,9 +707,7 @@ static int __init nand_davinci_probe(struct platform_device *pdev)
 		 * table marker fits in the free bytes.
 		 */
 		if (chunks == 1) {
-			info->ecclayout = hwecc4_small;
-			info->ecclayout.oobfree[1].length =
-				info->mtd.oobsize - 16;
+			info->ecclayout = rom_hwecc4_small;
 			goto syndrome_done;
 		}
 		if (chunks == 4) {
