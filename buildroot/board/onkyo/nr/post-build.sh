@@ -9,3 +9,9 @@ TARGET=$1
 install -d $TARGET/data
 rm -rf $TARGET/etc/dropbear
 ln -s /data/etc/dropbear $TARGET/etc/dropbear
+# authorized_keys too (ssh-copy-id), for logins without the password
+rm -rf $TARGET/root/.ssh
+ln -s /data/root/.ssh $TARGET/root/.ssh
+
+# which build this is (osiris-upgrade shows it)
+git -C $(dirname $0) describe --always --dirty > $TARGET/etc/osiris-version
