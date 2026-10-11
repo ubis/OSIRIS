@@ -6,11 +6,13 @@
 #
 #   make dspboot [BOARD=<name>]   first-stage loader -> dist/dspboot/
 #   make dspboot-test             its host-side unit tests
+#   make u-boot                   U-Boot 2009.11 -> dist/u-boot/
 #   make clean                    remove build output (not the Docker images)
 
 TOP    := $(CURDIR)
 DIST   := $(TOP)/dist
 BUILD  := $(TOP)/build
+JOBS   ?= $(shell nproc)
 DOCKER ?= docker
 
 # docker_run <image>, <workdir>, <command>: as the calling user, repo mounted at
@@ -42,7 +44,33 @@ dspboot-test:
 	@$(call ensure_image,$(DSPBOOT_IMAGE),dspboot/docker)
 	$(call docker_run,$(DSPBOOT_IMAGE),$(TOP)/dspboot,$(DSPBOOT_MAKE) all test)
 
+# U-Boot, with GCC 4.8 (current compilers do not build the 2009 tree). The
+# slot image is what dspboot starts, the .nand files are it as page + spare
+# records with the boot ROM's ECC for nandrestore.py (slot a 0x140000,
+# slot b 0x1C0000).
+
+LEGACY_IMAGE := $(call image_tag,legacy,toolchain/legacy/Dockerfile)
+UBOOT_OUT    := $(BUILD)/u-boot
+UBOOT_MAKE   := make -s O=$(UBOOT_OUT) CROSS_COMPILE=arm-none-eabi-
+UBOOT_NAME    = u-boot $(shell git describe --always --dirty)
+
+u-boot:
+	@$(call ensure_image,$(LEGACY_IMAGE),toolchain/legacy)
+	mkdir -p $(UBOOT_OUT)
+	$(call docker_run,$(LEGACY_IMAGE),$(TOP)/u-boot,sh -c \
+		"$(UBOOT_MAKE) da830evm_config && $(UBOOT_MAKE) -j$(JOBS) all")
+	rm -rf $(DIST)/u-boot
+	mkdir -p $(DIST)/u-boot
+	cp $(UBOOT_OUT)/u-boot.bin $(DIST)/u-boot/
+	python3 dspboot/tools/mkimage.py $(UBOOT_OUT)/u-boot.bin $(DIST)/u-boot/u-boot.dbi \
+		--name "$(UBOOT_NAME)"
+	for p in 512:512b 2048:2k 4096:4k; do \
+		python3 dspboot/tools/mknandimg.py $(DIST)/u-boot/u-boot.dbi --page $${p%%:*} \
+			--pad-block -o $(DIST)/u-boot/u-boot-$${p##*:}.nand > /dev/null || exit 1; \
+	done
+	@echo "$(UBOOT_NAME) -> $(DIST)/u-boot"
+
 clean:
 	rm -rf $(DIST) $(BUILD)
 
-.PHONY: help dspboot dspboot-test clean
+.PHONY: help dspboot dspboot-test u-boot clean
