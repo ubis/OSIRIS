@@ -47,6 +47,8 @@ BR2_PACKAGE_ALSA_UTILS_AMIXER=y
 
 # OSIRIS
 BR2_PACKAGE_MCUD=y
+BR2_PACKAGE_DSPD=y
+BR2_PACKAGE_DSPAUDIO=y
 BR2_ROOTFS_OVERLAY="board/onkyo/nr/rootfs-overlay"
 BR2_ROOTFS_POST_BUILD_SCRIPT="board/onkyo/nr/post-build.sh"
 BR2_ROOTFS_POST_IMAGE_SCRIPT="board/onkyo/nr/post-image.sh"
