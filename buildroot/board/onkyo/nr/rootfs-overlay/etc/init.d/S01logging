@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# syslogd logs to a 64 KiB ring buffer in RAM (read it with logread), nothing
+# goes to the flash; klogd forwards the kernel messages.
+#
+
+case "$1" in
+start)
+	echo -n "Starting logging: "
+	start-stop-daemon -b -S -q -m -p /var/run/syslogd.pid --exec /sbin/syslogd -- -n -C64
+	start-stop-daemon -b -S -q -m -p /var/run/klogd.pid --exec /sbin/klogd -- -n
+	echo "OK"
+	;;
+stop)
+	echo -n "Stopping logging: "
+	start-stop-daemon -K -q -p /var/run/syslogd.pid
+	start-stop-daemon -K -q -p /var/run/klogd.pid
+	echo "OK"
+	;;
+restart|reload)	;;
+*)	echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac
