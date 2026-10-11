@@ -1,7 +1,7 @@
 # dspboot
 
 dspboot is a small open-source program that starts devices built around the
-Texas Instruments **OMAP-L137 / DA830** chip, such as the Onkyo TX-NR515 and
+Texas Instruments **OMAP-L137 / D830** chip, such as the Onkyo TX-NR515 and
 TX-NR717 AV receivers and their Integra twins. It does the job of the
 manufacturer's first boot stage, and it also works as a repair tool that only
 needs a serial cable and a computer.
@@ -153,15 +153,15 @@ make dspboot-test             # unit tests on the build machine
 ```
 
 The build runs in a Docker image with GCC for the C6000 DSP (`tic6x-elf`),
-built from source by `docker/Dockerfile`.
+built from source by `dspboot/docker/Dockerfile`.
 
 ### Adding a board
 
-A board is one file in `boards/`: crystal frequency, PLL settings, console
-UART, SDRAM controller values and NAND timing. `boards/template.h` explains
+A board is one file in `dspboot/boards/`: crystal frequency, PLL settings, console
+UART, SDRAM controller values and NAND timing. `dspboot/boards/template.h` explains
 each value, and the build refuses values outside the chip's limits. The right
 values are the ones the board's stock first stage gives the boot ROM;
-`tools/aisdump.py` prints them from a dump of NAND block 1.
+`dspboot/tools/aisdump.py` prints them from a dump of NAND block 1.
 
 | board | crystal | DSP/ARM | SDRAM | EMIFA (NAND) | console |
 |---|---|---|---|---|---|
@@ -171,7 +171,7 @@ values are the ones the board's stock first stage gives the boot ROM;
 
 dspboot reads `bootslot=a|b` from the U-Boot environment, starts U-Boot from
 that slot and falls back to the other one, then waits for an image over
-YMODEM. A slot holds `u-boot.bin` wrapped by `tools/mkimage.py` (a 64-byte
+YMODEM. A slot holds `u-boot.bin` wrapped by `dspboot/tools/mkimage.py` (a 64-byte
 header with load address, entry point and CRCs). Before starting the ARM,
 dspboot leaves a record at 0x8001FF00 saying which slot it started and
 whether that was a fallback.
@@ -190,6 +190,6 @@ has to match the board's U-Boot.
 
 ## License
 
-BSD-2-Clause, see `LICENSE`. The PLL0, PSC and ARM start sequences follow
+BSD-2-Clause, see `dspboot/LICENSE`. The PLL0, PSC and ARM start sequences follow
 TI's FlashAndBootUtils 2.40 (BSD-3-Clause, (C) 2012 Texas Instruments),
 credited in the sources.

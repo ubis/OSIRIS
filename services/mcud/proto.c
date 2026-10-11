@@ -2,7 +2,7 @@
 /*
  * The MCU protocol on top of the link: the start-up handshake, the answers
  * the MCU expects at once, and the state it reads (version, id, stream
- * status, levels, active outputs). See PROTOCOL.md.
+ * status, levels, active outputs). See docs/mcu-protocol.md.
  */
 #include <ctype.h>
 #include <stdio.h>

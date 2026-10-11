@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
- * MCU link commands (PROTOCOL.md). The DSP side sends 0x40-0x7F, the MCU
+ * MCU link commands (docs/mcu-protocol.md). The DSP side sends 0x40-0x7F, the MCU
  * 0xC0-0xFF; an answer to a request is the request's number minus 0x80.
  */
 #ifndef MCUD_CMD_H
