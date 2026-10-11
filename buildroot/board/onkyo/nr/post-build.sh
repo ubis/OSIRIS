@@ -14,6 +14,6 @@ rm -rf $TARGET/root/.ssh
 ln -s /data/root/.ssh $TARGET/root/.ssh
 
 # which build this is (osiris-upgrade shows it)
-git -C $(dirname $0) describe --always --dirty > $TARGET/etc/osiris-version
+git -C $(dirname $0) describe --always --dirty --match 'v[0-9]*' > $TARGET/etc/osiris-version
 # the clock starts from here when nothing newer is known (S02clock)
 echo ${SOURCE_DATE_EPOCH:-$(date +%s)} > $TARGET/etc/osiris-build-time

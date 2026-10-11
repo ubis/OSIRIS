@@ -9,7 +9,7 @@ set -e
 IMAGES=$1
 TOP=$(dirname $0)/../../../..
 TOOLS=$TOP/dspboot/tools
-VERSION=$(git -C $TOP describe --always --dirty)
+VERSION=$(git -C $TOP describe --always --dirty --match 'v[0-9]*')
 NAME="u-boot $VERSION"
 
 python3 $TOOLS/mkimage.py $IMAGES/u-boot.bin $IMAGES/u-boot.dbi --name "$NAME" > /dev/null
