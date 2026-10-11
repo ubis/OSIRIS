@@ -1,0 +1,24 @@
+#!/bin/sh
+#
+# Persistent data: mount the UBIFS volume "data" on /data (UBIFS formats an
+# empty volume on first mount), or a tmpfs when there is none, e.g. when the
+# installer runs from RAM. ssh host keys and settings live there.
+#
+
+start() {
+	if [ -e /dev/ubi0 ] && ubinfo -d 0 -N data > /dev/null 2>&1 &&
+	   mount -t ubifs ubi0:data /data; then
+		echo "data: ubi0:data mounted on /data"
+	else
+		mount -t tmpfs -o mode=0755 tmpfs /data
+		echo "data: no data volume, using RAM"
+	fi
+	mkdir -p /data/etc/dropbear
+}
+
+case "$1" in
+start)	start ;;
+stop)	umount /data 2> /dev/null ;;
+restart|reload)	;;
+*)	echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac
