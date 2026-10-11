@@ -299,89 +299,46 @@ static const short da830_evm_emif25_pins[] = {
 #endif
 
 #ifdef CONFIG_DA830_UI_NAND
-/* Matches the OEM Onkyo layout (/proc/mtd on stock firmware): kernel @ 0x454000 */
+/*
+ * OSIRIS flash layout, shared with dspboot and U-Boot (MTDPARTS_DEFAULT):
+ * everything after block 1 is 256 KiB aligned. UBI holds the kernel and
+ * rootfs volumes of both slots plus the data volume.
+ */
 static struct mtd_partition da830_evm_nand_partitions[] = {
 	[0] = {
-		.name		= "params",
+		.name		= "env",
 		.offset		= 0,
-		.size		= 0x4000,
-		.mask_flags	= MTD_WRITEABLE,
+		.size		= SZ_16K,
 	},
 	[1] = {
-		.name		= "2ndbl",
+		.name		= "dspboot",	/* ROM boots it from block 1 */
 		.offset		= MTDPART_OFS_APPEND,
-		.size		= 0x10000,
+		.size		= SZ_1M - SZ_16K,
 		.mask_flags	= MTD_WRITEABLE,
 	},
 	[2] = {
-		.name		= "bootloader",
-		.offset		= MTDPART_OFS_APPEND,
-		.size		= 0x40000,
-		.mask_flags	= MTD_WRITEABLE,
+		.name		= "env2",
+		.offset		= SZ_1M,
+		.size		= SZ_256K,
 	},
 	[3] = {
-		.name		= "dsp1",
+		.name		= "uboot_a",
 		.offset		= MTDPART_OFS_APPEND,
-		.size		= 0x200000,
-		.mask_flags	= 0,
+		.size		= SZ_512K,
 	},
 	[4] = {
-		.name		= "dsp2",
+		.name		= "uboot_b",
 		.offset		= MTDPART_OFS_APPEND,
-		.size		= 0x200000,
-		.mask_flags	= 0,
+		.size		= SZ_512K,
 	},
 	[5] = {
-		.name		= "kernel",
-		.offset		= MTDPART_OFS_APPEND,
-		.size		= 0x200000,
-		.mask_flags	= 0,
-	},
-	[6] = {
-		.name		= "bootconf1",
-		.offset		= MTDPART_OFS_APPEND,
-		.size		= 0x4000,
-		.mask_flags	= 0,
-	},
-	[7] = {
-		.name		= "bootconf2",
-		.offset		= MTDPART_OFS_APPEND,
-		.size		= 0x4000,
-		.mask_flags	= 0,
-	},
-	[8] = {
-		.name		= "filesystem1",
-		.offset		= MTDPART_OFS_APPEND,
-		.size		= 0x1000000,
-		.mask_flags	= 0,
-	},
-	[9] = {
-		.name		= "filesystem2",
-		.offset		= MTDPART_OFS_APPEND,
-		.size		= 0x1000000,
-		.mask_flags	= 0,
-	},
-	[10] = {
-		.name		= "filesystem3",
-		.offset		= MTDPART_OFS_APPEND,
-		.size		= 0x1000000,
-		.mask_flags	= 0,
-	},
-	[11] = {
-		.name		= "filesystem4",
-		.offset		= MTDPART_OFS_APPEND,
-		.size		= 0x500000,
-		.mask_flags	= 0,
-	},
-	[12] = {
-		.name		= "filesystem5",
+		.name		= "ubi",
 		.offset		= MTDPART_OFS_APPEND,
 		.size		= MTDPART_SIZ_FULL,
-		.mask_flags	= 0,
 	},
 };
 
-/* OEM /proc/mtd for reference:
+/* Stock Onkyo firmware /proc/mtd, for reference:
 dev:    size   erasesize  name
 mtd0: 00004000 00004000 "params"
 mtd1: 00010000 00004000 "2ndbl"
