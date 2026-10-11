@@ -1,0 +1,141 @@
+#!/usr/bin/luajit
+-- SPDX-License-Identifier: BSD-2-Clause
+--
+-- osirisd: the receiver's policy. It listens to the events mcud reports
+-- and tells the other services what to do: the model the MCU reports
+-- becomes the hostname, the display shows "OSIRIS <build>" as the DSP
+-- version, and the DSP goes quiet while the receiver runs its test tone.
+--
+-- The master volume is not ours: the MCU sets it in the analog stage after
+-- the DAC and reports it (mcu.volume) only for information.
+
+local ffi = require "ffi"
+local ubus = require "ubus"
+local uloop = require "uloop"
+
+ffi.cdef [[
+void openlog(const char *ident, int option, int facility);
+void syslog(int priority, const char *format, ...);
+int isatty(int fd);
+]]
+
+local LOG_PID, LOG_DAEMON = 0x01, 3 * 8
+local LOG_ERR, LOG_INFO = 3, 6
+local IDENT = "osirisd"		-- openlog keeps the pointer
+
+local MODEL_NOW = "/tmp/osiris-model"
+local MODEL_SAVED = "/data/osiris/model"		-- S01hostname reads it at boot
+local OWN_HOSTNAME = "/data/etc/hostname"
+
+local LM_TESTTONE = 0xF1			-- level calibration (C_LM_TESTTONE)
+
+local conn
+
+-- to the terminal when run from one, to syslog when run as a daemon
+local TERMINAL = ffi.C.isatty(2) == 1
+
+local function say(prio, fmt, ...)
+	local s = string.format(fmt, ...)
+	if TERMINAL then
+		io.stderr:write(s, "\n")
+	else
+		ffi.C.syslog(prio, "%s", s)
+	end
+end
+
+local function log(fmt, ...)
+	say(LOG_INFO, fmt, ...)
+end
+
+local function err(fmt, ...)
+	say(LOG_ERR, fmt, ...)
+end
+
+local function read_file(path)
+	local f = io.open(path, "r")
+	if not f then
+		return nil
+	end
+	local s = f:read("*a")
+	f:close()
+	return s
+end
+
+local function write_file(path, text)
+	local tmp = path .. ".tmp"
+	local f = io.open(tmp, "w")
+	if not f then
+		return false
+	end
+	f:write(text)
+	f:close()
+	return os.rename(tmp, path)
+end
+
+local function call(object, method, args)
+	local res = conn:call(object, method, args or {})
+	if not res and method ~= "set" and method ~= "identity" then
+		err("%s %s: no answer", object, method)
+	end
+	return res
+end
+
+-- the version the receiver shows for the DSP: "OSIRIS <build>"
+local function set_identity()
+	local build = (read_file("/etc/osiris-version") or ""):gsub("%s+$", "")
+	call("mcu", "identity", { dsp_version = ("OSIRIS " .. build):sub(1, 14) })
+end
+
+-- name the system after the receiver model the MCU reports
+local function set_model(m)
+	if not m or not m.model or m.model == "" then
+		return
+	end
+
+	local info = string.format("MAKE=%s\nMODEL=%s\nCODE=%s\n", m.make or "",
+				   m.model, m.code or "")
+	write_file(MODEL_NOW, info)
+	os.execute("mkdir -p /data/osiris")
+	if read_file(MODEL_SAVED) ~= info then
+		write_file(MODEL_SAVED, info)
+	end
+
+	if read_file(OWN_HOSTNAME) then
+		log("%s %s, keeping the hostname from %s", m.make or "", m.model, OWN_HOSTNAME)
+		return
+	end
+
+	local host = m.model:upper():gsub("[^A-Z0-9]", "-")
+	os.execute("hostname " .. host)
+	log("%s %s (%s), hostname %s", m.make or "", m.model, m.code or "", host)
+end
+
+local handlers = {
+	["mcu.ready"] = function(msg)
+		set_model(msg)
+	end,
+	["mcu.listening_mode"] = function(msg)
+		-- until the DSP makes the test noise itself, play nothing: the
+		-- MCU turns the analog volume up to the reference level for it
+		call("dsp", "set", { mute = msg.mode == LM_TESTTONE })
+	end,
+}
+
+ffi.C.openlog(IDENT, LOG_PID, LOG_DAEMON)
+uloop.init()
+conn = ubus.connect()
+if not conn then
+	err("cannot connect to ubusd")
+	os.exit(1)
+end
+
+conn:listen(handlers)
+set_identity()
+
+-- mcud may have finished its handshake before we started
+local st = call("mcu", "status")
+if st and st.stage == "ready" then
+	set_model(st)
+end
+
+uloop.run()
