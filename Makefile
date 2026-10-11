@@ -8,6 +8,7 @@
 #   make dspboot-test             its host-side unit tests
 #   make u-boot                   U-Boot 2009.11 -> dist/u-boot/
 #   make linux                    Linux 2.6.33 uImage -> dist/linux/
+#   make buildroot                toolchain, U-Boot, kernel, root fs -> dist/buildroot/
 #   make clean                    remove build output (not the Docker images)
 
 TOP    := $(CURDIR)
@@ -91,7 +92,25 @@ linux: $(UBOOT_OUT)/tools/mkimage
 	cp $(LINUX_OUT)/arch/arm/boot/uImage $(DIST)/linux/
 	@echo "linux -> $(DIST)/linux"
 
+# Buildroot: its own target toolchain, U-Boot, the kernel and the root file
+# system in one build; the sources it downloads are kept in buildroot/dl.
+
+BUILDROOT_IMAGE := $(call image_tag,buildroot,toolchain/buildroot/Dockerfile)
+BUILDROOT_OUT   := $(BUILD)/buildroot
+BUILDROOT_MAKE  := make O=$(BUILDROOT_OUT)
+
+buildroot:
+	@$(call ensure_image,$(BUILDROOT_IMAGE),toolchain/buildroot)
+	mkdir -p $(BUILDROOT_OUT)
+	$(call docker_run,$(BUILDROOT_IMAGE),$(TOP)/buildroot,sh -c \
+		"$(BUILDROOT_MAKE) onkyo_nr_defconfig > /dev/null && $(BUILDROOT_MAKE)")
+	rm -rf $(DIST)/buildroot
+	mkdir -p $(DIST)/buildroot
+	cd $(BUILDROOT_OUT)/images && cp uImage u-boot.bin u-boot.dbi u-boot-*.nand \
+		rootfs.squashfs rootfs.cpio.gz $(DIST)/buildroot/
+	@echo "buildroot -> $(DIST)/buildroot"
+
 clean:
 	rm -rf $(DIST) $(BUILD)
 
-.PHONY: help dspboot dspboot-test u-boot linux clean
+.PHONY: help dspboot dspboot-test u-boot linux buildroot clean
