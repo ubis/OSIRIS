@@ -8,7 +8,7 @@ start() {
 	if [ -s /data/etc/hostname ]; then
 		h=$(cat /data/etc/hostname)
 	elif [ -s /data/osiris/model ]; then
-		h=$(sed -n 's/^MODEL=//p' /data/osiris/model | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-')
+		h=$(sed -n 's/^MODEL=//p' /data/osiris/model | tr 'a-z' 'A-Z' | tr -c 'A-Z0-9\n' '-')
 	fi
 	[ -n "$h" ] && hostname "$h"
 }
