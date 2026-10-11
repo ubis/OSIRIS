@@ -7,6 +7,7 @@
 #   make dspboot [BOARD=<name>]   first-stage loader -> dist/dspboot/
 #   make dspboot-test             its host-side unit tests
 #   make u-boot                   U-Boot 2009.11 -> dist/u-boot/
+#   make linux                    Linux 2.6.33 uImage -> dist/linux/
 #   make clean                    remove build output (not the Docker images)
 
 TOP    := $(CURDIR)
@@ -70,7 +71,27 @@ u-boot:
 	done
 	@echo "$(UBOOT_NAME) -> $(DIST)/u-boot"
 
+# Linux, with the same GCC 4.8 container; the uImage wrapper is U-Boot's
+# mkimage, so U-Boot is built first if it is missing.
+
+LINUX_OUT  := $(BUILD)/linux
+LINUX_MAKE := make -s O=$(LINUX_OUT) ARCH=arm CROSS_COMPILE=arm-none-eabi-
+
+$(UBOOT_OUT)/tools/mkimage:
+	$(MAKE) u-boot
+
+linux: $(UBOOT_OUT)/tools/mkimage
+	@$(call ensure_image,$(LEGACY_IMAGE),toolchain/legacy)
+	mkdir -p $(LINUX_OUT)
+	$(call docker_run,$(LEGACY_IMAGE),$(TOP)/linux,sh -c \
+		"export PATH=$(UBOOT_OUT)/tools:\$$PATH && \
+		 $(LINUX_MAKE) onkyo_nr_defconfig && $(LINUX_MAKE) -j$(JOBS) uImage")
+	rm -rf $(DIST)/linux
+	mkdir -p $(DIST)/linux
+	cp $(LINUX_OUT)/arch/arm/boot/uImage $(DIST)/linux/
+	@echo "linux -> $(DIST)/linux"
+
 clean:
 	rm -rf $(DIST) $(BUILD)
 
-.PHONY: help dspboot dspboot-test u-boot clean
+.PHONY: help dspboot dspboot-test u-boot linux clean
