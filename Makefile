@@ -6,6 +6,7 @@
 #
 #   make dspboot [BOARD=<name>]   first-stage loader -> dist/dspboot/
 #   make dspboot-test             its host-side unit tests
+#   make dspaudio                 DSP firmware -> build/dspaudio/
 #   make buildroot                toolchain, U-Boot, kernel, root fs, bundle -> dist/images/
 #   make clean                    remove build output (not the Docker images)
 
@@ -43,18 +44,30 @@ dspboot-test:
 	@$(call ensure_image,$(DSPBOOT_IMAGE),dspboot/docker)
 	$(call docker_run,$(DSPBOOT_IMAGE),$(TOP)/dspboot,$(DSPBOOT_MAKE) all test)
 
+# dspaudio: the DSP firmware, with dspboot's C6000 toolchain
+
+dspaudio:
+	@$(call ensure_image,$(DSPBOOT_IMAGE),dspboot/docker)
+	$(call docker_run,$(DSPBOOT_IMAGE),$(TOP)/services/dspaudio,\
+		make O=$(BUILD)/dspaudio VERSION=$(shell git describe --always --dirty))
+
 # Buildroot: its own target toolchain, U-Boot, the kernel and the root file
 # system in one build; the sources it downloads are kept in buildroot/dl.
+# Buildroot copies local sources only once, so this repository's own
+# packages are rebuilt every time.
 
 BUILDROOT_IMAGE := $(call image_tag,buildroot,toolchain/buildroot/Dockerfile)
 BUILDROOT_OUT   := $(BUILD)/buildroot
 BUILDROOT_MAKE  := make O=$(BUILDROOT_OUT)
+BUILDROOT_LOCAL := mcud dspd dspaudio
 
-buildroot:
+buildroot: dspaudio
 	@$(call ensure_image,$(BUILDROOT_IMAGE),toolchain/buildroot)
 	mkdir -p $(BUILDROOT_OUT)
 	$(call docker_run,$(BUILDROOT_IMAGE),$(TOP)/buildroot,sh -c \
-		"$(BUILDROOT_MAKE) onkyo_nr_defconfig > /dev/null && $(BUILDROOT_MAKE)")
+		"$(BUILDROOT_MAKE) onkyo_nr_defconfig > /dev/null && \
+		 $(BUILDROOT_MAKE) $(addsuffix -rebuild,$(BUILDROOT_LOCAL)) && \
+		 $(BUILDROOT_MAKE)")
 	mkdir -p $(DIST)
 	ln -sfn $(BUILDROOT_OUT)/images $(DIST)/images
 	@echo "buildroot -> $(DIST)/images"
@@ -62,4 +75,4 @@ buildroot:
 clean:
 	rm -rf $(DIST) $(BUILD)
 
-.PHONY: help dspboot dspboot-test buildroot clean
+.PHONY: help dspboot dspboot-test dspaudio buildroot clean
