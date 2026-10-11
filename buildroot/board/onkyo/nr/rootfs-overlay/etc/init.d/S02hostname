@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+# Hostname: your own in /data/etc/hostname, else the receiver model that the
+# MCU reported on an earlier boot (in /data/osiris/model), else the built-in.
+#
+
+start() {
+	if [ -s /data/etc/hostname ]; then
+		h=$(cat /data/etc/hostname)
+	elif [ -s /data/osiris/model ]; then
+		h=$(sed -n 's/^MODEL=//p' /data/osiris/model | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-')
+	fi
+	[ -n "$h" ] && hostname "$h"
+}
+
+case "$1" in
+start)	start ;;
+stop|restart|reload)	;;
+*)	echo "Usage: $0 {start}"; exit 1 ;;
+esac
