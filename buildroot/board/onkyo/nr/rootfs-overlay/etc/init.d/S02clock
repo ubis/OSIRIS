@@ -1,0 +1,38 @@
+#!/bin/sh
+#
+# The receiver has no battery-backed clock. Until NTP syncs, start from the
+# newest of the clock saved in /data and the firmware build time, so time
+# never runs backwards to 2000. The clock is saved on shutdown and, through
+# ntpd -S (S41ntp), at most once an hour while ntpd keeps it in sync.
+#
+
+SAVED=/data/osiris/clock
+
+save() {
+	mkdir -p /data/osiris
+	date +%s > $SAVED.new && mv $SAVED.new $SAVED
+}
+
+start() {
+	now=$(date +%s)
+	t=$(cat /etc/osiris-build-time 2> /dev/null)
+	s=$(cat $SAVED 2> /dev/null)
+	[ "${s:-0}" -gt "${t:-0}" ] 2> /dev/null && t=$s
+	if [ "${t:-0}" -gt "$now" ] 2> /dev/null; then
+		date -s @$t > /dev/null
+		echo "clock: set to $(date) (no time source yet)"
+	fi
+}
+
+case "$1" in
+start)	start ;;
+stop)	save ;;
+# ntpd -S: after a step, a stratum change and every 11 minutes
+step)	save ;;
+stratum|periodic)
+	s=$(cat $SAVED 2> /dev/null)
+	[ $(($(date +%s) - ${s:-0})) -ge 3600 ] && save ;;
+restart|reload|unsync)	;;
+*)	echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac
+exit 0
