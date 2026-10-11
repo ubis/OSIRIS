@@ -1,0 +1,27 @@
+#!/bin/sh
+#
+# NTP: busybox ntpd against the servers in /data/etc/ntp-servers (one per
+# line), else pool.ntp.org. Also started by the DHCP hook once eth0 has a
+# lease, so a late lease still gets the clock synced.
+#
+
+PIDFILE=/var/run/ntpd.pid
+
+start() {
+	servers=$(grep -v '^#' /data/etc/ntp-servers 2> /dev/null)
+	args=
+	for s in ${servers:-pool.ntp.org}; do
+		args="$args -p $s"
+	done
+	echo -n "Starting ntpd: "
+	start-stop-daemon -b -S -q -m -p $PIDFILE --exec /usr/sbin/ntpd -- \
+		-n -S /etc/init.d/S02clock $args
+	echo "OK"
+}
+
+case "$1" in
+start)	start ;;
+stop)	start-stop-daemon -K -q -p $PIDFILE ;;
+restart|reload)	"$0" stop; "$0" start ;;
+*)	echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac
