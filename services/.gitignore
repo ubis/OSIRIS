@@ -1,0 +1,4 @@
+# local builds (Buildroot builds in its own tree)
+*.o
+mcud/mcud
+dspd/dspd
