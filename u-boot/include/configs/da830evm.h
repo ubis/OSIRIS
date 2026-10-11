@@ -195,11 +195,17 @@
 #define CONFIG_SETUP_MEMORY_TAGS
 /*
  * Boot the slot named by "bootslot" (a/b), fall back to the other one.
+ * After an upgrade, "upgrade_slot" names the new slot: it is cleared and
+ * saved first, then booted once; Linux makes it bootslot once it is up, and
+ * if it never gets there the next boot is the old slot again.
  * UBI volumes are created in this order, so with mtd0-5 being the flash
  * partitions, gluebi makes rootfs_a mtd8 and rootfs_b mtd9.
  */
 #define CONFIG_BOOTDELAY	1
-#define CONFIG_BOOTCOMMAND	"ubi part ubi; setenv slot ${bootslot}; run bootslot_one; " \
+#define CONFIG_BOOTCOMMAND	"ubi part ubi; " \
+	"if test \"x${upgrade_slot}\" != x; then setenv slot ${upgrade_slot}; " \
+	"setenv upgrade_slot; saveenv; echo Trying upgraded slot ${slot}; run bootslot_one; fi; " \
+	"setenv slot ${bootslot}; run bootslot_one; " \
 	"if test \"${bootslot}\" = b; then setenv slot a; else setenv slot b; fi; " \
 	"echo Slot ${bootslot} failed, trying slot ${slot}; run bootslot_one"
 #define CONFIG_EXTRA_ENV_SETTINGS \
