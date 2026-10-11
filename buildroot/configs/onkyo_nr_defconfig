@@ -39,6 +39,10 @@ BR2_PACKAGE_ALSA_UTILS=y
 BR2_PACKAGE_ALSA_UTILS_APLAY=y
 BR2_PACKAGE_ALSA_UTILS_AMIXER=y
 
+# OSIRIS
+BR2_ROOTFS_OVERLAY="board/onkyo/nr/rootfs-overlay"
+BR2_ROOTFS_POST_BUILD_SCRIPT="board/onkyo/nr/post-build.sh"
+
 # images: squashfs (gzip: 2.6.33 reads no LZO/XZ squashfs) and an initramfs for testing
 BR2_TARGET_ROOTFS_SQUASHFS=y
 BR2_TARGET_ROOTFS_SQUASHFS4_GZIP=y
