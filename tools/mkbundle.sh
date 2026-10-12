@@ -5,7 +5,7 @@
 #
 #   tools/mkbundle.sh -k uImage -r rootfs.squashfs [-u u-boot.dbi] [-v version] -o bundle.tar
 #
-# The version defaults to `git describe` of this repository (tags v<n> only).
+# The version defaults to tools/version.sh.
 #
 set -e
 
@@ -26,7 +26,7 @@ while getopts k:r:u:v:o: opt; do
 	esac
 done
 [ -n "$kernel" ] && [ -n "$rootfs" ] && [ -n "$out" ] || usage
-[ -n "$version" ] || version=$(git -C "$(dirname "$0")" describe --always --dirty --match 'v[0-9]*')
+[ -n "$version" ] || version=$(sh "$(dirname "$0")/version.sh")
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
