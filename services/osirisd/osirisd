@@ -81,9 +81,17 @@ local function call(object, method, args)
 end
 
 -- the version the receiver shows for the DSP: "OSIRIS <build>"
+-- the receiver shows 14 characters: "OSIRIS v0.1.0" for a release, the
+-- commit for a build in between ("v0.1.0~g1de0787" -> "OSIRIS 1de0787")
 local function set_identity()
 	local build = (read_file("/etc/osiris-version") or ""):gsub("%s+$", "")
-	call("mcu", "identity", { dsp_version = ("OSIRIS " .. build):sub(1, 14) })
+	local shown = "OSIRIS " .. build
+
+	if #shown > 14 then
+		shown = "OSIRIS " .. (build:match("~g(%x+)") or build)
+	end
+
+	call("mcu", "identity", { dsp_version = shown:sub(1, 14) })
 end
 
 -- name the system after the receiver model the MCU reports
