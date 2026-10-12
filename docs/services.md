@@ -21,7 +21,7 @@ mcud and dspd only do what they are told and report what happens; every
 decision is in osirisd, a LuaJIT script that is easy to change on the
 receiver itself.
 
-`/etc/init.d/S90osiris` starts them at boot. They log to syslog (`logread`);
+`/etc/init.d/S10osiris` starts them at boot, before the network. They log to syslog (`logread`);
 started by hand from a terminal, they log there instead.
 
 ## mcud
@@ -35,7 +35,7 @@ events.
 ```sh
 ubus listen                       # watch the events
 ubus call mcu status              # link state, handshake stage, model
-mcud -v                           # (with S90osiris stopped) log every frame
+mcud -v                           # (with S10osiris stopped) log every frame
 ```
 
 | event | when |

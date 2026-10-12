@@ -66,7 +66,7 @@ sequenceDiagram
     DB->>DB: read bootslot from the U-Boot environment
     DB->>UB: load U-Boot from slot a or b (CRC checked),<br/>fall back to the other slot, release the ARM
     UB->>K: read kernel_a or kernel_b from UBI, boot it<br/>with root = rootfs_a or rootfs_b
-    K->>S: init scripts: /data, network, ntp, S90osiris
+    K->>S: init scripts: /data, the services, then network and ssh
     S->>S: dspd loads dspaudio into the DSP and starts it
 ```
 
