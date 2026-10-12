@@ -24,6 +24,14 @@ endef
 
 DROPBEAR_POST_EXTRACT_HOOKS += DROPBEAR_FIX_XAUTH
 
+# commands run over ssh get the same PATH as a login, so that
+# "ssh root@receiver osiris-upgrade ..." finds the tools in */sbin
+define DROPBEAR_FULL_PATH
+	$(SED) 's:^#define DEFAULT_PATH .*:#define DEFAULT_PATH "/usr/sbin\:/usr/bin\:/sbin\:/bin":' $(@D)/options.h
+endef
+
+DROPBEAR_POST_EXTRACT_HOOKS += DROPBEAR_FULL_PATH
+
 define DROPBEAR_ENABLE_REVERSE_DNS
 	$(SED) 's:.*\(#define DO_HOST_LOOKUP\).*:\1:' $(@D)/options.h
 endef
