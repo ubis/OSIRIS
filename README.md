@@ -37,23 +37,30 @@ Tested on the TX-NR717.
 | feature | status |
 |---|---|
 | Boot from NAND (dspboot, U-Boot, Linux) | ✅ |
-| A/B updates with fallback to previous version | ✅ |
 | Ethernet (DHCP, NTP), ssh | ✅ |
+| A/B updates with fallback to previous version | ✅ |
 | Receiver accepts the board as its DSP | ✅ |
 | Model detection, hostname after model | ✅ |
+| Volume, front panel, remote | ✅ (handled by the MCU) |
 | Analog inputs (RCA) | ✅ |
 | FM radio | ✅ |
-| Volume, front panel, remote | ✅ (handled by the MCU) |
-| Front speakers (L/R) | ✅ |
+| Sound from all channels (Stereo, All Ch Stereo, Full Mono) | ✅ |
+| Zones, powered speakers (analog sources such as FM) | ✅ |
+| Zone line outputs, headphones | ❓ not tested |
+| Subwoofer and 7.2 pre-outs | ❓ not tested |
+| Phono input, AM radio, RDS | ❓ not tested |
+| 12 V trigger, IR input | ❓ not tested |
+| HDMI video switching, on-screen menu | ❓ not tested |
 | Digital inputs (optical, coax), PCM | ❓ not tested, no sources yet |
-| Zone 2, headphones | ❓ not tested |
-| All speakers: All Ch Stereo, Full Mono | ✅ |
-| Surround decoding (Dolby PLII, Neo:6, THX modes) | ❌ not yet, plays on the front pair |
-| HDMI audio | ❌ not yet |
-| Tone, listening modes, speaker distance / levels | ❌ not yet |
+| Tone, speaker distance / levels | ❌ not yet |
+| Crossover, A/V sync, bi-amp / front high / wide | ❌ not yet |
 | Automatic speaker setup (test tone) | ❌ not yet, DSP stays muted |
-| Network audio, NET menu | ❌ not yet |
-| Dolby / DTS decoding | ❌ won't happen (closed formats) |
+| Audyssey 2EQ, Dynamic EQ, Dynamic Volume | ❌ not yet |
+| Surround modes (Dolby PLII, DTS Neo:6, THX, Audyssey DSX) | ❌ not yet, play on the front pair |
+| HDMI audio, ARC | ❌ not yet |
+| Network control (Onkyo Remote app) | ❌ not yet |
+| Network audio, USB, NET menu | ❌ not yet |
+| Dolby Digital / DTS decoding | ❌ not yet, maybe in the far future (open AC-3 / DTS core decoders like liba52 exist) |
 
 ## Documentation
 
@@ -103,8 +110,8 @@ It collects versions, logs and the state of the services.
 - **Onkyo** - for building feature-rich receivers that are worth bringing
   back.
 - **Dolby** - no thanks. Your licensing made this a lot harder than it had
-  to be: open source firmware can never decode Dolby audio, and the D830 was
-  only ever sold to Dolby licensees, so you can't even buy one for a repair.
+  to be: the D830 was only ever sold to Dolby licensees, so you can't even
+  buy one for a repair.
 
 ## Disclaimer
 
