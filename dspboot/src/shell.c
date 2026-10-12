@@ -145,7 +145,16 @@ static void cmd_memtest(int argc, char **argv)
 		return;
 	}
 
-	if (!sdram_contains(a, len)) {
+	if (argc <= 2 && !sdram_size) {
+		con_puts("SDRAM was not detected, give a range: "
+			 "memtest 0xc0000000 0x4000000\n");
+		return;
+	}
+
+	/* undetected SDRAM can still be tested by hand, in the EMIFB window */
+	if (!len || (sdram_size ? !sdram_contains(a, len) :
+		     a < SDRAM_BASE || len > SDRAM_MAX ||
+		     a - SDRAM_BASE > SDRAM_MAX - len)) {
 		con_puts("range must be inside SDRAM\n");
 		return;
 	}
