@@ -9,7 +9,6 @@
 SAVED=/data/osiris/clock
 
 save() {
-	mkdir -p /data/osiris
 	date +%s > $SAVED.new && mv $SAVED.new $SAVED
 }
 

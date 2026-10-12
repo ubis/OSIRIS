@@ -13,7 +13,7 @@ start() {
 		mount -t tmpfs -o mode=0755 tmpfs /data
 		echo "data: no data volume, using RAM"
 	fi
-	mkdir -p /data/etc/dropbear
+	mkdir -p /data/etc/dropbear /data/osiris
 	mkdir -p -m 700 /data/root/.ssh
 }
 
