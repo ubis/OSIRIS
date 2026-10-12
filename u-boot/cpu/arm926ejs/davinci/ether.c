@@ -97,6 +97,8 @@ static unsigned char		emac_rx_buffers[EMAC_MAX_RX_BUFFERS * (EMAC_MAX_ETHERNET_P
 /* PHY address for a discovered PHY (0xff - not found) */
 static volatile u_int8_t	active_phy_addr = 0xff;
 
+#define LINK_WAIT_MS	5000
+
 static int	no_phy_init (int phy_addr) { return(1); }
 static int	no_phy_is_connected (int phy_addr) { return(1); }
 static int	no_phy_get_link_status (int phy_addr)
@@ -463,6 +465,17 @@ static int davinci_eth_open(struct eth_device *dev, bd_t *bis)
 	/* Init MDIO & get link state */
 	clkdiv = (EMAC_MDIO_BUS_FREQ / EMAC_MDIO_CLOCK_FREQ) - 1;
 	adap_mdio->CONTROL = ((clkdiv & 0xff) | MDIO_CONTROL_ENABLE | MDIO_CONTROL_FAULT);
+
+	/*
+	 * Right after boot the link is still coming up (the board sets up
+	 * the PHY): wait for it instead of sending into nothing, which
+	 * cost the first transfer a "No link" and a restart.
+	 */
+	for (cnt = 0; cnt < LINK_WAIT_MS / 100; cnt++) {
+		if (phy.get_link_speed(active_phy_addr))
+			break;
+		udelay(100000);
+	}
 
 	if (!phy.get_link_speed(active_phy_addr))
 		return(0);
