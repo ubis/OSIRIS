@@ -24,6 +24,7 @@
 
 static struct ubus_context *ctx;
 static struct blob_buf b;
+static int listening_mode = -1;		/* the last one the MCU sent */
 
 static void add_hex(const char *name, const uint8_t *d, size_t len)
 {
@@ -120,6 +121,7 @@ static void on_frame(const struct link_frame *f, const char *name)
 		return;
 	case MCU_LISTENING_MODE:
 		if (f->len >= 2) {
+			listening_mode = d[1];
 			blobmsg_add_u32(&b, "mode", d[1]);
 		}
 
@@ -169,6 +171,10 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	add_model(proto_model());
 	proto_get_stream(s);
 	add_hex("stream", s, STREAM_LEN);
+	if (listening_mode >= 0) {
+		blobmsg_add_u32(&b, "listening_mode", listening_mode);
+	}
+
 	blobmsg_add_u32(&b, "queued", link_queued());
 	ubus_send_reply(c, req, b.head);
 	return 0;
