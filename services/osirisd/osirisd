@@ -4,7 +4,8 @@
 -- osirisd: the receiver's policy. It listens to the events mcud reports
 -- and tells the other services what to do: the model the MCU reports
 -- becomes the hostname, the display shows "OSIRIS <build>" as the DSP
--- version, and the DSP goes quiet while the receiver runs its test tone.
+-- version, and the listening mode picks the speakers the DSP plays on;
+-- the DSP goes quiet while the receiver runs its test tone.
 --
 -- The master volume is not ours: the MCU sets it in the analog stage after
 -- the DAC and reports it (mcu.volume) only for information.
@@ -23,11 +24,23 @@ local LOG_PID, LOG_DAEMON = 0x01, 3 * 8
 local LOG_ERR, LOG_INFO = 3, 6
 local IDENT = "osirisd"		-- openlog keeps the pointer
 
-local MODEL_NOW = "/tmp/osiris-model"
-local MODEL_SAVED = "/data/osiris/model"		-- S01hostname reads it at boot
 local OWN_HOSTNAME = "/data/etc/hostname"
+-- what the MCU reported, for the next start: the model (S01hostname reads
+-- it at boot) and the listening mode, which the MCU keeps across restarts
+-- but does not resend. One key=value per line.
+local STATE = "/data/osiris/state"
 
+-- listening modes (D2), with the ISCP name the MCU reports alongside
+local LM_ALL_CH_STEREO = 0x0A			-- LMD0C
+local LM_FULL_MONO = 0x0B			-- LMD13
 local LM_TESTTONE = 0xF1			-- level calibration (C_LM_TESTTONE)
+
+-- speakers per listening mode; anything else (stereo, direct and the
+-- surround modes the DSP cannot do yet) plays on the front pair
+local MODE_OUTPUTS = {
+	[LM_ALL_CH_STEREO] = "all",
+	[LM_FULL_MONO] = "mono",
+}
 
 local conn
 
@@ -72,6 +85,40 @@ local function write_file(path, text)
 	return os.rename(tmp, path)
 end
 
+local function load_state()
+	local t = {}
+
+	for k, v in (read_file(STATE) or ""):gmatch("([%w_]+)=([^\n]*)") do
+		t[k] = v
+	end
+
+	return t
+end
+
+-- merge into the state file, rewritten (atomically) only when it changes
+local function save_state(changes)
+	local t = load_state()
+	local keys, lines = {}, {}
+
+	for k, v in pairs(changes) do
+		t[k] = tostring(v)
+	end
+
+	for k in pairs(t) do
+		keys[#keys + 1] = k
+	end
+
+	table.sort(keys)
+	for _, k in ipairs(keys) do
+		lines[#lines + 1] = k .. "=" .. t[k] .. "\n"
+	end
+
+	local text = table.concat(lines)
+	if text ~= read_file(STATE) then
+		write_file(STATE, text)
+	end
+end
+
 local function call(object, method, args)
 	local res = conn:call(object, method, args or {})
 	if not res and method ~= "set" and method ~= "identity" then
@@ -100,13 +147,7 @@ local function set_model(m)
 		return
 	end
 
-	local info = string.format("MAKE=%s\nMODEL=%s\nCODE=%s\n", m.make or "",
-				   m.model, m.code or "")
-	write_file(MODEL_NOW, info)
-	os.execute("mkdir -p /data/osiris")
-	if read_file(MODEL_SAVED) ~= info then
-		write_file(MODEL_SAVED, info)
-	end
+	save_state({ make = m.make, model = m.model, code = m.code })
 
 	if read_file(OWN_HOSTNAME) then
 		log("%s %s, keeping the hostname from %s", m.make or "", m.model, OWN_HOSTNAME)
@@ -118,14 +159,28 @@ local function set_model(m)
 	log("%s %s (%s), hostname %s", m.make or "", m.model, m.code or "", host)
 end
 
+local function set_mode(mode)
+	if not mode then
+		return
+	end
+
+	-- not the test tone: a restart during calibration must not start muted
+	if mode ~= LM_TESTTONE then
+		save_state({ listening_mode = mode })
+	end
+
+	-- until the DSP makes the test noise itself, play nothing: the MCU
+	-- turns the analog volume up to the reference level for it
+	call("dsp", "set", { mute = mode == LM_TESTTONE,
+			     outputs = MODE_OUTPUTS[mode] or "front" })
+end
+
 local handlers = {
 	["mcu.ready"] = function(msg)
 		set_model(msg)
 	end,
 	["mcu.listening_mode"] = function(msg)
-		-- until the DSP makes the test noise itself, play nothing: the
-		-- MCU turns the analog volume up to the reference level for it
-		call("dsp", "set", { mute = msg.mode == LM_TESTTONE })
+		set_mode(msg.mode)
 	end,
 }
 
@@ -145,5 +200,7 @@ local st = call("mcu", "status")
 if st and st.stage == "ready" then
 	set_model(st)
 end
+
+set_mode(st and st.listening_mode or tonumber(load_state().listening_mode or ""))
 
 uloop.run()
