@@ -39,8 +39,11 @@
 #include <nand.h>
 #include <asm/arch/nand_defs.h>
 #include <asm/arch/emac_defs.h>
+#include <asm/arch/emif_defs.h>
 #include <asm/arch/gpio_defs.h>
 #include "../common/misc.h"
+
+#define NAND_CS3_TIMING		0x08222204
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -222,6 +225,16 @@ int board_init(void)
 #ifdef CONFIG_USE_NAND
 	if (davinci_configure_pin_mux(aemif_pins, ARRAY_SIZE(aemif_pins)) != 0)
 		return 1;
+
+	/*
+	 * NAND timing on CS3, the value Linux derives from its
+	 * da830_evm_nandflash_timing at the 89 MHz EMIFA clock: read setup 2,
+	 * strobe 5, hold 1 cycles; write setup 3, strobe 3, hold 2;
+	 * turnaround 2; 8-bit. dspboot leaves the slowest timing, with which
+	 * attaching UBI and reading the kernel took twice as long.
+	 */
+	writel(NAND_CS3_TIMING,
+	       &((emif_registers *)DAVINCI_ASYNC_EMIF_CNTRL_BASE)->AB2CR);
 #endif
 
 	if (davinci_configure_pin_mux(usb_pins, ARRAY_SIZE(usb_pins)) != 0)
