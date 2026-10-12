@@ -24,9 +24,11 @@ target-generic-issue:
 ifneq ($(TARGET_GENERIC_ROOT_PASSWD),)
 target-root-passwd: host-mkpasswd
 endif
+# a board whose post-build links /etc/shadow elsewhere sets the password itself
 target-root-passwd:
 	[ -n "$(TARGET_GENERIC_ROOT_PASSWD)" ] && \
 		TARGET_GENERIC_ROOT_PASSWD_HASH=$$($(MKPASSWD) -m "$(TARGET_GENERIC_PASSWD_METHOD)" "$(TARGET_GENERIC_ROOT_PASSWD)"); \
+	[ -L $(TARGET_DIR)/etc/shadow ] || \
 	$(SED) "s,^root:[^:]*:,root:$$TARGET_GENERIC_ROOT_PASSWD_HASH:," $(TARGET_DIR)/etc/shadow
 
 target-generic-getty-busybox:
