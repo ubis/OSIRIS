@@ -50,7 +50,13 @@ struct gpio_cmd {
 #define START_WAIT_MS	1000
 #define VOLUME_MUTE	(-10000)	/* -100 dB, what the MCU sends at the bottom */
 
-enum outputs { OUTPUTS_FRONT, OUTPUTS_ALL };
+enum outputs { OUTPUTS_FRONT, OUTPUTS_ALL, OUTPUTS_MONO, __OUTPUTS_MAX };
+
+static const char *const outputs_name[__OUTPUTS_MAX] = {
+	[OUTPUTS_FRONT] = "front",
+	[OUTPUTS_ALL] = "all",
+	[OUTPUTS_MONO] = "mono",
+};
 
 static struct ubus_context *ctx;
 static struct blob_buf b;
@@ -102,18 +108,46 @@ static int32_t gain_of(int vol)
 	return g >= INT32_MAX ? INT32_MAX : (int32_t)g;
 }
 
+/*
+ * How much of the left and right input each output gets, in halves: the
+ * front pair alone, stereo on every speaker with left + right at -6 dB
+ * each on the centre and the subwoofer, or that mono mix everywhere.
+ */
+static const uint8_t mix[__OUTPUTS_MAX][DSPAUDIO_OUT][DSPAUDIO_IN] = {
+	[OUTPUTS_FRONT] = {
+		[DSPAUDIO_OUT_FL] = { 2, 0 },
+		[DSPAUDIO_OUT_FR] = { 0, 2 },
+	},
+	[OUTPUTS_ALL] = {
+		[DSPAUDIO_OUT_FL] = { 2, 0 },
+		[DSPAUDIO_OUT_FR] = { 0, 2 },
+		[DSPAUDIO_OUT_C] = { 1, 1 },
+		[DSPAUDIO_OUT_SW] = { 1, 1 },
+		[DSPAUDIO_OUT_SL] = { 2, 0 },
+		[DSPAUDIO_OUT_SR] = { 0, 2 },
+		[DSPAUDIO_OUT_SBL] = { 2, 0 },
+		[DSPAUDIO_OUT_SBR] = { 0, 2 },
+	},
+	[OUTPUTS_MONO] = {
+		[DSPAUDIO_OUT_FL] = { 1, 1 },
+		[DSPAUDIO_OUT_FR] = { 1, 1 },
+		[DSPAUDIO_OUT_C] = { 1, 1 },
+		[DSPAUDIO_OUT_SW] = { 1, 1 },
+		[DSPAUDIO_OUT_SL] = { 1, 1 },
+		[DSPAUDIO_OUT_SR] = { 1, 1 },
+		[DSPAUDIO_OUT_SBL] = { 1, 1 },
+		[DSPAUDIO_OUT_SBR] = { 1, 1 },
+	},
+};
+
 static void apply(void)
 {
 	int32_t g = gain_of(volume);
-	unsigned int out;
+	unsigned int out, in;
 
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
-		if (outputs == OUTPUTS_ALL || out <= DSPAUDIO_OUT_FR) {
-			sh->route[out] = out & 1;	/* even outputs left, odd right */
-			sh->gain[out] = g;
-		} else {
-			sh->route[out] = DSPAUDIO_ROUTE_OFF;
-			sh->gain[out] = 0;
+		for (in = 0; in < DSPAUDIO_IN; in++) {
+			sh->gain[out][in] = g / 2 * mix[outputs][out][in];
 		}
 	}
 }
@@ -167,6 +201,12 @@ static int dsp_start(const char *image)
 	psc[PSC_MDCTL_DSP / 4] |= MDCTL_LRST;
 	for (t = 0; t < START_WAIT_MS; t += 10) {
 		if (sh->magic == DSPAUDIO_MAGIC) {
+			if (sh->abi != DSPAUDIO_ABI) {
+				log_msg(LOG_ERR, "%s has ABI %u, dspd needs %u",
+					image, sh->abi, DSPAUDIO_ABI);
+				return -EPROTO;
+			}
+
 			return 0;
 		}
 
@@ -209,7 +249,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_close_array(&b, a);
 	blobmsg_add_u32(&b, "volume", (uint32_t)volume);
 	blobmsg_add_u8(&b, "mute", muted);
-	blobmsg_add_string(&b, "outputs", outputs == OUTPUTS_ALL ? "all" : "front");
+	blobmsg_add_string(&b, "outputs", outputs_name[outputs]);
 	ubus_send_reply(c, req, b.head);
 	return 0;
 }
@@ -227,18 +267,23 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 		 struct blob_attr *msg)
 {
 	struct blob_attr *tb[__SET_MAX];
+	unsigned int i;
 	const char *o;
 
 	blobmsg_parse(set_policy, __SET_MAX, tb, blob_data(msg), blob_len(msg));
 	if (tb[SET_OUTPUTS]) {
 		o = blobmsg_get_string(tb[SET_OUTPUTS]);
-		if (!strcmp(o, "front")) {
-			outputs = OUTPUTS_FRONT;
-		} else if (!strcmp(o, "all")) {
-			outputs = OUTPUTS_ALL;
-		} else {
+		for (i = 0; i < __OUTPUTS_MAX; i++) {
+			if (!strcmp(o, outputs_name[i])) {
+				break;
+			}
+		}
+
+		if (i == __OUTPUTS_MAX) {
 			return UBUS_STATUS_INVALID_ARGUMENT;
 		}
+
+		outputs = i;
 	}
 
 	if (tb[SET_VOLUME]) {

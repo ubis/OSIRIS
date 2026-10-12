@@ -5,8 +5,8 @@
  *   PCM9211 main output --I2S--> McASP1 AXR1_4 (receive, external BCK/LRCK)
  *   McASP1 AXR1_0..3 (transmit, BCK = AHCLKX / 4) --I2S--> PCM1690
  *
- * Every output takes the input dspd routes to it times the gain dspd sets
- * (struct dspaudio_shared), clipped. No DMA, FIFO or interrupts: the DSP
+ * Every output is the sum of the inputs, each times the gain dspd sets for
+ * that output and input (struct dspaudio_shared), clipped. No DMA, FIFO or interrupts: the DSP
  * polls the McASP and moves one sample per slot through XBUF/RBUF. Clock
  * and format settings are the ones the stock DSP image uses.
  */
@@ -227,14 +227,14 @@ static int32_t input[DSPAUDIO_IN];
 
 static uint32_t output(unsigned int out)
 {
-	unsigned int r = SH->route[out];
-	int64_t v;
+	int64_t v = 0;
+	unsigned int i;
 
-	if (r >= DSPAUDIO_IN) {
-		return 0;
+	for (i = 0; i < DSPAUDIO_IN; i++) {
+		v += (int64_t)input[i] * SH->gain[out][i];
 	}
 
-	v = ((int64_t)input[r] * SH->gain[out]) >> 24;
+	v >>= 24;
 	if (v > INT32_MAX) {
 		v = INT32_MAX;
 	} else if (v < INT32_MIN) {
