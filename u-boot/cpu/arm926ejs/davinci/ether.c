@@ -264,6 +264,7 @@ static int gen_is_phy_connected(int phy_addr)
 static int gen_get_link_status(int phy_addr)
 {
 	u_int16_t	tmp;
+	u_int32_t	mac;
 
 	if (davinci_eth_phy_read(phy_addr, MII_STATUS_REG, &tmp)
 							&& (tmp & 0x04)) {
@@ -271,22 +272,24 @@ static int gen_get_link_status(int phy_addr)
 		davinci_eth_phy_read(phy_addr, PHY_ANLPAR, &tmp);
 
 		/* Speed doesn't matter, there is no setting for it in EMAC. */
-		if (tmp & (PHY_ANLPAR_TXFD | PHY_ANLPAR_10FD)) {
-			/* set EMAC for Full Duplex  */
-			adap_emac->MACCONTROL = EMAC_MACCONTROL_MIIEN_ENABLE |
-				EMAC_MACCONTROL_FULLDUPLEX_ENABLE;
-		} else {
-			/*set EMAC for Half Duplex  */
-			adap_emac->MACCONTROL = EMAC_MACCONTROL_MIIEN_ENABLE;
-		}
+		mac = EMAC_MACCONTROL_MIIEN_ENABLE;
+		if (tmp & (PHY_ANLPAR_TXFD | PHY_ANLPAR_10FD))
+			mac |= EMAC_MACCONTROL_FULLDUPLEX_ENABLE;
 
 #ifdef CONFIG_DRIVER_TI_EMAC_USE_RMII
-		if (tmp & (PHY_ANLPAR_TXFD | PHY_ANLPAR_TX)) {
-			adap_emac->MACCONTROL |= EMAC_MACCONTROL_RMIISPEED_100;
-		} else {
-			adap_emac->MACCONTROL &= ~EMAC_MACCONTROL_RMIISPEED_100;
-		}
+		if (tmp & (PHY_ANLPAR_TXFD | PHY_ANLPAR_TX))
+			mac |= EMAC_MACCONTROL_RMIISPEED_100;
 #endif
+
+		/*
+		 * This runs for every packet sent and while waiting for it:
+		 * write MACCONTROL only when it changes, and in one go.
+		 * Rewriting it, with the RMII speed bit cleared in between,
+		 * dropped the interface to 10 Mbit for a moment and
+		 * corrupted frames being received.
+		 */
+		if (adap_emac->MACCONTROL != mac)
+			adap_emac->MACCONTROL = mac;
 
 		return(1);
 	}
