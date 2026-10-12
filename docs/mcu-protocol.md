@@ -96,7 +96,7 @@ only sends it when a field changes.
 | CF | late_night | |
 | D0 | testtone_ch | calibration: channel for the test tone (00, 02, 00, 07 seen) |
 | D1 | testmode | |
-| D2 | listening_mode | F1 = test tone mode (calibration) |
+| D2 | listening_mode | [1] mode, [2] variant, see below; F1 = test tone (calibration) |
 | D3 | volume | [1..2] s16 LE, 0.01 dB; for information, the MCU sets it in the analog stage |
 | D4 | headphone | |
 | D5 | ch_layout | |
@@ -129,6 +129,26 @@ Payload layouts not listed are unknown so far.
    - 65 05 00, 65 05 01, 65 00 02: after this the MCU closes the speaker relays
 3. The MCU sometimes drops a request: resend after 1 s, give up after 3
    tries and continue with the next step.
+
+## Listening modes (D2)
+
+D2 carries the mode the receiver is in; byte 1 is the mode, byte 2 a
+variant within it. The MCU also reports the mode as ISCP text (`!1LMDxx`).
+Seen on the TX-NR717 and checked against the front display:
+
+| D2 [1] | [2] | ISCP | mode |
+|---|---|---|---|
+| 03 | 00 | LMD01 | Direct |
+| 04 | 00 | LMD00 | Stereo |
+| 06 | 02 | LMD08 | Orchestra |
+| 07 | 02 | LMD09 | Unplugged |
+| 08 | 02 | LMD0A | Studio-Mix |
+| 0A | 00 | LMD0C | All Ch Stereo |
+| 0B | 00 | LMD13 | Full Mono |
+| 20 | 02, 03, 04 | LMD81, LMD90, LMD83 | Dolby PLII Music, PLIIz Height, DTS Neo:6 Music (Neo:6 Cinema: 04 03) |
+| 50 | 02, 03, 04 | LMD8B, LMD95, LMD8C | THX versions of the above |
+| D0 | 01 | LMDA1 | PLII Music + Audyssey DSX |
+| F1 | | | test tone (automatic level setup) |
 
 ## Calibration (unfinished)
 
@@ -170,7 +190,7 @@ Events (`ubus listen mcu`):
 | `mcu.input` | C1, E5 | decoded fields |
 | `mcu.volume` | D3 | `volume` (0.01 dB) |
 | `mcu.speakers` | C2, C3, C9 | raw payload until decoded |
-| `mcu.listening_mode` | D2 | `mode` |
+| `mcu.listening_mode` | D2 | `mode` (also kept in `mcu status` as `listening_mode`) |
 | `mcu.testtone` | D0, D1 | `channel` |
 | `mcu.iscp` | F3 | `command` |
 | `mcu.frame` | everything else | `cmd`, `name`, `data` (hex) |

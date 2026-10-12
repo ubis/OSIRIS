@@ -43,7 +43,7 @@ mcud -v                           # (with S90osiris stopped) log every frame
 | `mcu.ready` | handshake done, with the receiver model |
 | `mcu.volume` | volume changed, in 0.01 dB (the MCU applies it itself) |
 | `mcu.input` | input or stream format changed |
-| `mcu.listening_mode` | listening mode changed (0xF1: test tone) |
+| `mcu.listening_mode` | listening mode changed (codes in [mcu-protocol.md](mcu-protocol.md)) |
 | `mcu.speakers`, `mcu.testtone` | speaker setup, calibration |
 | `mcu.iscp` | ISCP text commands, e.g. `!1MVL21` |
 | `mcu.frame` | anything not decoded yet, as raw bytes |
@@ -63,7 +63,7 @@ output.
 ubus call dsp status                              # state, counters, input peaks
 ubus call dsp set '{"mute": true}'
 ubus call dsp set '{"volume": -600}'              # gain in 0.01 dB, 0 = unity
-ubus call dsp set '{"outputs": "all"}'            # front pair or all outputs
+ubus call dsp set '{"outputs": "all"}'            # "front", "all" (stereo everywhere) or "mono"
 ```
 
 dspaudio takes the I2S input from the PCM9211 (the tuner and analog inputs
@@ -76,8 +76,11 @@ toolchain (`make dspaudio`).
 What it does today:
 
 - names the system after the receiver model the MCU reports (host name and
-  `/data/osiris/model`, unless `/data/etc/hostname` exists)
+  `/data/osiris/state`, unless `/data/etc/hostname` exists)
 - makes the receiver show "OSIRIS <build>" as its DSP version
+- picks the speakers from the listening mode: All Ch Stereo plays stereo on
+  every speaker, Full Mono mono on every speaker, everything else the front
+  pair (the DSP cannot decode surround yet)
 - mutes the DSP while the receiver runs its test tone, which the DSP cannot
   play yet
 
