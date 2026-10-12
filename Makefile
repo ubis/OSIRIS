@@ -49,7 +49,7 @@ dspboot-test:
 dspaudio:
 	@$(call ensure_image,$(DSPBOOT_IMAGE),dspboot/docker)
 	$(call docker_run,$(DSPBOOT_IMAGE),$(TOP)/services/dspaudio,\
-		make O=$(BUILD)/dspaudio VERSION=$(shell git describe --always --dirty --match 'v[0-9]*'))
+		make O=$(BUILD)/dspaudio VERSION=$(shell sh tools/version.sh))
 
 # Buildroot: its own target toolchain, U-Boot, the kernel and the root file
 # system in one build; the sources it downloads are kept in buildroot/dl.
