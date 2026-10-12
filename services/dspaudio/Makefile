@@ -39,10 +39,18 @@ $(O)/dspaudio.bin: $(O)/dspaudio.elf
 $(O)/dspaudio.lst: $(O)/dspaudio.elf
 	$(OBJDUMP) -d -h $< > $@
 
+# the version is compiled in: rebuild when it changes, not only the sources
+$(O)/version: FORCE | $(O)
+	@echo '$(VERSION)' | cmp -s - $@ || echo '$(VERSION)' > $@
+
+$(O)/dspaudio.o: $(O)/version
+
 $(O):
 	mkdir -p $@
 
 clean:
 	rm -rf $(O)
 
-.PHONY: all clean
+.PHONY: all clean FORCE
+
+FORCE:
