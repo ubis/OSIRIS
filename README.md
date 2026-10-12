@@ -84,6 +84,17 @@ make buildroot    # U-Boot, Linux, root fs, update bundle -> dist/images/
 **Back up your NAND first** ([how](docs/recovery.md#make-a-backup)) - with
 a backup you can always go back to stock.
 
+## Reporting problems
+
+Open an issue and attach the output of `osiris-diag`, run on the receiver:
+
+```sh
+ssh root@TX-NR717 osiris-diag -e 30     # -e 30: also record 30 s of what the receiver sends
+scp root@TX-NR717:/tmp/osiris-diag-*.tar.gz .
+```
+
+It collects versions, logs and the state of the services.
+
 ## Thanks
 
 - **Texas Instruments** - for the datasheets, SDKs and sources. Detailed
