@@ -69,7 +69,7 @@ reads them fine.
 - On a new **512-byte-page** chip you can restore the stock firmware as
   above.
 - On a **2 KiB or 4 KiB page** chip only OSIRIS runs; the stock firmware
-  expects 512-byte pages. Put dspboot and U-Boot on it and follow the
+  expects 512-byte pages. Put dspboot on it and follow the
   [first install](install.md#first-install). On a blank chip there is no MAC
   address yet; set `ethaddr` in U-Boot from the label on the receiver.
 
