@@ -9,8 +9,8 @@
   computer it is plugged into.
 - A way to switch the chip between flash (NAND) and serial (UART) boot. On
   the Onkyo boards that means soldering a DIP switch to its BOOT pins.
-- An Ethernet cable and a TFTP server on the same network for the first
-  install.
+- An Ethernet cable and a TFTP server on the same network, for loading the
+  installer.
 
 **Make a backup of the flash before you start.** With the stock firmware
 still running, dump every flash partition with its spare bytes
@@ -29,63 +29,69 @@ make buildroot    # U-Boot, Linux, the services and the root file system -> dist
 The first `make buildroot` downloads the sources Buildroot needs (kept in
 `buildroot/dl/`) and takes a while; later builds only redo what changed.
 
-| file in `dist/images/` | what |
+| file | what |
 |---|---|
-| `osiris-<version>.tar` | the update bundle: kernel, root file system, U-Boot |
-| `u-boot-512b.nand` (`-2k`, `-4k`) | U-Boot for writing into the flash with dspboot |
-| `u-boot.dbi` | U-Boot as the slot image dspboot starts |
-| `uImage-installer` | Linux with the whole system in RAM, for the first install |
-| `uImage`, `rootfs.squashfs` | the kernel and root file system on their own |
+| `dist/dspboot/<board>/` | dspboot: `dspboot.ais` for the serial cable, `dspboot-512b.nand` (`-2k`, `-4k`) for the flash |
+| `dist/images/osiris-<version>.tar` | the bundle: kernel, root file system and U-Boot, for installing and updating |
+| `dist/images/uImage-installer` | the installer: Linux with the system and the bundle built in, runs from RAM |
+
+Without building, take the same files from the
+[releases](https://github.com/ubis/osiris/releases): `dspboot-<version>.zip`,
+`osiris-<version>.tar` and `uImage-installer`.
 
 ## First install
 
-The first install puts dspboot and U-Boot into the flash over the serial
-cable, then starts the installer over the network, which writes the rest.
-It erases the stock firmware (except your backup, which you made).
+The first install puts dspboot into the flash over the serial cable, starts
+U-Boot from the bundle once, and boots the installer over the network, which
+writes the rest. It erases the stock firmware (except your backup, which
+you made).
 
-1. **dspboot and U-Boot.** Put the board into UART boot mode, power it on
-   and write both into the flash (for chips with 512-byte pages; use the
-   `-2k`/`-4k` files and offsets from the [dspboot](dspboot.md)
-   instructions otherwise):
+1. **dspboot.** Put the board into UART boot mode, power it on and write
+   dspboot into the flash (for chips with 512-byte pages; for others take
+   the `-2k`/`-4k` file and offset from [dspboot.md](dspboot.md)):
 
    ```sh
    python3 dspboot/tools/nandrestore.py -p /dev/ttyUSB0 \
        --ais dist/dspboot/onkyo-tx-nr/dspboot.ais \
-       dist/dspboot/onkyo-tx-nr/dspboot-512b.nand@0x4000 \
-       dist/images/u-boot-512b.nand@0x140000
+       dist/dspboot/onkyo-tx-nr/dspboot-512b.nand@0x4000
    ```
 
-2. **Files for the installer.** Copy these to the root of your TFTP server:
+   nandrestore leaves dspboot running at its `dspboot>` prompt.
 
-   | from `dist/images/` | as |
-   |---|---|
-   | `uImage-installer` | `uImage-installer` |
-   | `u-boot.dbi` | `osiris-u-boot.dbi` |
-   | `uImage` | `osiris-uImage` |
-   | `rootfs.squashfs` | `osiris-rootfs.squashfs` |
+2. **U-Boot from the bundle.** Take U-Boot out of the bundle:
 
-3. **Start the installer.** Switch the board back to NAND boot, open the
-   console at 115200 baud, power on and press a key to stop U-Boot. Then,
+   ```sh
+   tar -xf osiris-<version>.tar u-boot.dbi
+   ```
+
+   Open the console at 115200 baud with a terminal that can send YMODEM
+   (picocom with `sz`, minicom, or Tera Term on Windows), type
+   `loady` at the `dspboot>` prompt, send `u-boot.dbi`, then type
+   `bootram`. U-Boot starts from RAM, nothing is written yet; press a key to
+   stop its autoboot.
+
+3. **The installer.** Put `uImage-installer` on your TFTP server. In U-Boot,
    with your own addresses (board, TFTP server, gateway, netmask):
 
    ```
    setenv ipaddr 192.168.1.50
    setenv serverip 192.168.1.10
-   tftp 0xc0700000 uImage-installer
+   tftp 0xc2000000 uImage-installer
    setenv bootargs console=ttyS1,115200n8 mem=56M ip=192.168.1.50:192.168.1.10:192.168.1.1:255.255.255.0::eth0:off
-   bootm 0xc0700000
+   bootm 0xc2000000
    ```
 
    The board keeps the MAC address the stock firmware stored (`ethaddr`).
    On a new, empty flash set it first with `setenv ethaddr <address>`, from
    the label on the receiver.
 
-4. **Install.** Log in as `root` (password `osiris`) and run:
+4. **Install.** Log in as `root` (password `osiris`) and run
+   `osiris-install`. It writes the bundle built into the installer: U-Boot
+   into both slots, the kernel and root file system, and a fresh U-Boot
+   environment. To install another bundle, put it on the TFTP server and
+   give its name: `osiris-install osiris-<version>.tar`.
 
-   ```sh
-   osiris-install
-   reboot
-   ```
+   Then switch the board back to NAND boot and power it off and on.
 
 OSIRIS now starts from the flash. The receiver shows "OSIRIS" and the build
 as its DSP version, and the board gets its address by DHCP, with the
