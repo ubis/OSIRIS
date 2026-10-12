@@ -75,7 +75,7 @@
 
 /* XSTAT / RSTAT */
 #define STAT_UNDERRUN	(1u << 0)	/* XUNDRN / ROVRN */
-#define STAT_ODD_SLOT	(1u << 6)	/* XTDMSLOT / RTDMSLOT */
+#define STAT_ODD_SLOT	(1u << 3)	/* XTDMSLOT / RTDMSLOT */
 #define STAT_DATA	(1u << 5)	/* XDATA / RDATA */
 #define STAT_ERR	(1u << 8)
 #define STAT_CLEAR	0xFFFF
