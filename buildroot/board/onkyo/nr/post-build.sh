@@ -12,6 +12,15 @@ ln -s /data/etc/dropbear $TARGET/etc/dropbear
 # authorized_keys too (ssh-copy-id), for logins without the password
 rm -rf $TARGET/root/.ssh
 ln -s /data/root/.ssh $TARGET/root/.ssh
+# and the passwords, so that passwd can change them: S01data starts
+# /data/etc/shadow from this default, root password "osiris"
+ROOT_HASH='$1$OSIRISv1$PF45S2vBsv1PTcWryHdqr.'
+if [ ! -L $TARGET/etc/shadow ]; then
+	sed "s,^root:[^:]*:,root:$ROOT_HASH:," $TARGET/etc/shadow > $TARGET/usr/share/osiris/shadow
+	chmod 600 $TARGET/usr/share/osiris/shadow
+	rm $TARGET/etc/shadow
+	ln -s /data/etc/shadow $TARGET/etc/shadow
+fi
 
 # which build this is (osiris-upgrade shows it)
 sh $(dirname $0)/../../../../tools/version.sh > $TARGET/etc/osiris-version

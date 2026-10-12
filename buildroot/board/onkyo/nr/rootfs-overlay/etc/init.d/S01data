@@ -2,7 +2,7 @@
 #
 # Persistent data: mount the UBIFS volume "data" on /data (UBIFS formats an
 # empty volume on first mount), or a tmpfs when there is none, e.g. when the
-# installer runs from RAM. ssh host keys and settings live there.
+# installer runs from RAM. ssh host keys, passwords and settings live there.
 #
 
 start() {
@@ -15,6 +15,8 @@ start() {
 	fi
 	mkdir -p /data/etc/dropbear /data/osiris
 	mkdir -p -m 700 /data/root/.ssh
+	# the passwords, from the built-in default until passwd changes them
+	[ -f /data/etc/shadow ] || install -m 600 /usr/share/osiris/shadow /data/etc/shadow
 }
 
 case "$1" in
