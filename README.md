@@ -47,7 +47,8 @@ Tested on the TX-NR717.
 | Front speakers (L/R) | ✅ |
 | Digital inputs (optical, coax), PCM | ❓ not tested, no sources yet |
 | Zone 2, headphones | ❓ not tested |
-| Centre, sub, surround outputs | ❌ not yet |
+| All speakers: All Ch Stereo, Full Mono | ✅ |
+| Surround decoding (Dolby PLII, Neo:6, THX modes) | ❌ not yet, plays on the front pair |
 | HDMI audio | ❌ not yet |
 | Tone, listening modes, speaker distance / levels | ❌ not yet |
 | Automatic speaker setup (test tone) | ❌ not yet, DSP stays muted |
