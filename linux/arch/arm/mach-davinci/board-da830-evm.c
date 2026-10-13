@@ -182,10 +182,36 @@ static const short da830_evm_mcasp1_pins[] = {
 	/* TX to PCM1690: AHCLKX1 = MCLK in from PCM9211, ACLKX1/AFSX1 = BCK/LRCK out,
 	 * AXR1_0..3 = FL/FR, C/SW, SL/SR, SBL/SBR.  RX from PCM9211/DIR: ACLKR1/AFSR1 +
 	 * AXR1_4 (SDOUTDIR, main stereo); AXR1_5/7/8/9 = HDMI SLR/SPDIF/CSW/SBLR.
-	 * NR515: AMUTE1 ball is GPIO4_14 = ETH_RESET, so AMUTE1 must not be muxed. */
+	 * NR515: AMUTE1's pin is GPIO4_14 = ETH_RESET, don't mux it. */
 	DA830_AHCLKX1, DA830_ACLKX1, DA830_AFSX1, DA830_ACLKR1, DA830_AFSR1,
 	DA830_AXR1_0, DA830_AXR1_1, DA830_AXR1_2, DA830_AXR1_3, DA830_AXR1_4,
 	DA830_AXR1_5,
+	-1
+};
+
+/* control lines whose pins come up as EMIFA, SPI or McASP */
+static const short onkyo_gpio_pins[] = {
+	DA830_GPIO1_0,		/* DIGMUT */
+	DA830_GPIO1_8,		/* ARMZ2MUT */
+	DA830_GPIO1_13,		/* DBG/AUDIO */
+	DA830_GPIO2_9,		/* HDMIINT */
+	DA830_GPIO4_11,		/* AFE_RESETX */
+	DA830_GPIO5_3,		/* DIG_TUNER */
+	DA830_GPIO2_15,		/* USB0_OC_DET */
+	DA830_GPIO5_12,		/* USB1_OC_DET */
+	DA830_GPIO2_8,		/* DATA_NET */
+	DA830_GPIO1_9,		/* DSP2_IRQ: second DSP, not fitted */
+	DA830_GPIO1_10,		/* DSP2_RST */
+	DA830_GPIO1_11,		/* DSP2_CS */
+	DA830_GPIO1_12,		/* DSP2_BSY */
+	DA830_GPIO2_0,		/* DSP2SDO */
+	DA830_GPIO2_1,		/* DSP2SDI */
+	-1
+};
+
+/* SPI0 to the MCU; NSPI0_ENA is DIG_TUNER here */
+static const short onkyo_spi0_pins[] = {
+	DA830_SPI0_SOMI_0, DA830_SPI0_SIMO_0, DA830_SPI0_CLK, DA830_NSPI0_SCS_0,
 	-1
 };
 
@@ -278,17 +304,12 @@ static inline void da830_evm_init_mmc(void)
 	}
 }
 
-/*
- * UI board NAND/NOR flashes only use 8-bit data bus.
- */
+/* Onkyo NAND: 8-bit, ALE on EMA_A1, CLE on EMA_A2, CS3 */
 static const short da830_evm_emif25_pins[] = {
 	DA830_EMA_D_0, DA830_EMA_D_1, DA830_EMA_D_2, DA830_EMA_D_3,
 	DA830_EMA_D_4, DA830_EMA_D_5, DA830_EMA_D_6, DA830_EMA_D_7,
-	DA830_EMA_A_0, DA830_EMA_A_1, DA830_EMA_A_2, DA830_EMA_A_3,
-	DA830_EMA_A_4, DA830_EMA_A_5, DA830_EMA_A_6, DA830_EMA_A_7,
-	DA830_EMA_A_8, DA830_EMA_A_9, DA830_EMA_A_10, DA830_EMA_A_11,
-	DA830_EMA_A_12, DA830_EMA_BA_1, DA830_NEMA_WE,
-	DA830_NEMA_CS_2, DA830_NEMA_CS_3, DA830_NEMA_OE, DA830_EMA_WAIT_0,
+	DA830_EMA_A_1, DA830_EMA_A_2, DA830_NEMA_WE, DA830_NEMA_CS_3,
+	DA830_NEMA_OE, DA830_EMA_WAIT_0,
 	-1
 };
 
@@ -766,9 +787,14 @@ static __init void da830_evm_init(void)
 	if (ret)
 		pr_warning("da830_evm_init: rtc setup failed: %d\n", ret);
 
-	ret = da8xx_pinmux_setup(da830_spi0_pins);
+	ret = da8xx_pinmux_setup(onkyo_spi0_pins);
 	if (ret)
 		pr_warning("da830_evm_init: spi0 mux setup failed: %d\n",
+				ret);
+
+	ret = da8xx_pinmux_setup(onkyo_gpio_pins);
+	if (ret)
+		pr_warning("da830_evm_init: control line mux setup failed: %d\n",
 				ret);
 
 	/* Configure GPIO1_14 (GPIO30) as GPIO for manual SPI CS (ARM_CS) */
