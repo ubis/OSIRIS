@@ -26,6 +26,18 @@ struct mcu_model {
 	char make[32];		/* "ONKYO", from the AMX beacon */
 };
 
+/* the network menu (MCU_NETWORK); addresses in network byte order */
+struct mcu_network {
+	int link;		/* cable in */
+	int dhcp;
+	uint8_t ip[4];
+	uint8_t netmask[4];
+	uint8_t gateway[4];
+	uint8_t dns[2][4];
+	uint8_t mac[6];
+	char name[64];
+};
+
 /* what the bus side gets told */
 struct proto_ops {
 	void (*ready)(const struct mcu_model *m);
@@ -45,6 +57,8 @@ void proto_set_stream(const uint8_t *stream);
 void proto_get_stream(uint8_t *stream);
 void proto_set_levels(const uint8_t *levels);
 void proto_set_outputs(uint8_t mask);
+/* answers the MCU_NETWORK items asked for since the last call */
+void proto_set_network(const struct mcu_network *n);
 
 const char *proto_cmd_name(uint8_t cmd);
 

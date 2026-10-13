@@ -24,6 +24,8 @@ static enum stage stage;
 static struct mcu_model model;
 static struct uloop_timeout retry_timer;
 static uint8_t pend_cmd, pend_arg;
+static struct mcu_network network;
+static uint32_t network_asked;	/* MCU_NETWORK items, one bit each */
 static int pend, retries;
 
 /* PCM, 48 kHz, " 2.0", DSP detected: a capture from the stock firmware */
@@ -85,6 +87,7 @@ static const struct {
 	{ MCU_ITEM, "system_item" },
 	{ MCU_DISPLAY, "display" },
 	{ MCU_INPUT_SELECT, "inputsel" },
+	{ MCU_NETWORK, "network" },
 	{ MCU_UPDATE, "update" },
 	{ MCU_UPDATE_SOURCE, "update_source" },
 	{ MCU_UPDATE_MODE, "update_mode" },
@@ -303,6 +306,12 @@ void proto_rx(const struct link_frame *f)
 		}
 
 		break;
+	case MCU_NETWORK:
+		if (f->len && d[0] < 32) {
+			network_asked |= 1u << d[0];
+		}
+
+		break;
 	case MCU_SYSTEM:
 		model_from_system(d, f->len);
 		break;
@@ -346,6 +355,76 @@ static void start(void)
 	queue(NET_STATE, state_start, 2);
 	request(NET_SYSTEM, NO_ARG);
 	stage = STAGE_SYSTEM;
+}
+
+/* each address as a 32-bit little endian value: 172.16.10.88 -> 58 0a 10 ac */
+static void put_addresses(uint8_t *d, const struct mcu_network *n)
+{
+	const uint8_t *a[] = { n->ip, n->netmask, n->gateway, n->dns[0], n->dns[1] };
+	size_t i, j;
+
+	for (i = 0; i < ARRAY_SIZE(a); i++) {
+		for (j = 0; j < 4; j++) {
+			d[i * 4 + j] = a[i][3 - j];
+		}
+	}
+}
+
+/* the layouts of the stock network module */
+static void network_answer(uint8_t item)
+{
+	const struct mcu_network *n = &network;
+	uint8_t d[1 + sizeof(n->name)] = { 0 };
+	int has_ip = n->ip[0] || n->ip[1] || n->ip[2] || n->ip[3];
+	size_t len;
+
+	switch (item) {
+	case NETWORK_STATUS:
+		/* the menu shows NETWORK_IP; this layout is not checked on a display */
+		d[2] = n->link && has_ip ? 1 : 3;
+		/* [3] 0: wired; [4] 0 static, 1 DHCP, 2 no lease (link-local) */
+		if (n->dhcp) {
+			d[4] = n->ip[0] == 169 && n->ip[1] == 254 ? 2 : 1;
+		}
+
+		put_addresses(d + 5, n);
+		memcpy(d + 25, n->mac, 6);
+		len = 32;
+		break;
+	case NETWORK_IP:
+		d[1] = 1;
+		d[3] = n->dhcp;
+		put_addresses(d + 4, n);
+		memcpy(d + 24, n->mac, 6);
+		len = 30;
+		break;
+	case NETWORK_NAME:
+		d[0] = NETWORK_NAME;
+		len = strlen(n->name);
+		memcpy(d + 1, n->name, len);
+		len++;
+		break;
+	default:
+		return;
+	}
+
+	log_msg(LOG_INFO, "network item %u answered", item);
+	queue(NET_NETWORK, d, len);
+}
+
+void proto_set_network(const struct mcu_network *n)
+{
+	uint8_t i;
+
+	network = *n;
+	network.name[sizeof(network.name) - 1] = 0;
+	for (i = 0; i < 32; i++) {
+		if (network_asked & (1u << i)) {
+			network_answer(i);
+		}
+	}
+
+	network_asked = 0;
 }
 
 void proto_init(const struct proto_ops *o, const char *dsp_version)
