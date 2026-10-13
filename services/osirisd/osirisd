@@ -5,11 +5,13 @@
 -- and tells the other services what to do: the model the MCU reports
 -- becomes the hostname, the display shows "OSIRIS <build>" as the DSP
 -- version, and the listening mode picks the speakers the DSP plays on;
--- the DSP goes quiet while the receiver runs its test tone.
+-- the DSP goes quiet while the receiver runs its test tone. The network
+-- menu gets the address and link state from the system.
 --
 -- The master volume is not ours: the MCU sets it in the analog stage after
 -- the DAC and reports it (mcu.volume) only for information.
 
+local bit = require "bit"
 local ffi = require "ffi"
 local ubus = require "ubus"
 local uloop = require "uloop"
@@ -41,6 +43,8 @@ local MODE_OUTPUTS = {
 	[LM_ALL_CH_STEREO] = "all",
 	[LM_FULL_MONO] = "mono",
 }
+
+local IFACE = "eth0"
 
 local conn
 
@@ -121,7 +125,7 @@ end
 
 local function call(object, method, args)
 	local res = conn:call(object, method, args or {})
-	if not res and method ~= "set" and method ~= "identity" then
+	if not res and method ~= "set" and method ~= "identity" and method ~= "network" then
 		err("%s %s: no answer", object, method)
 	end
 	return res
@@ -175,12 +179,45 @@ local function set_mode(mode)
 			     outputs = MODE_OUTPUTS[mode] or "front" })
 end
 
+-- what the network menu shows; mcud answers the MCU with it
+local function set_network()
+	local p = io.popen("ifconfig " .. IFACE .. " 2> /dev/null")
+	local ifc = p:read("*a")
+	local n = { dhcp = true, dns = {} }
+
+	p:close()
+	n.ip = ifc:match("inet addr:([%d%.]+)")
+	n.netmask = ifc:match("Mask:([%d%.]+)")
+	n.link = (read_file("/sys/class/net/" .. IFACE .. "/carrier") or ""):match("^1") ~= nil
+	n.mac = (read_file("/sys/class/net/" .. IFACE .. "/address") or ""):gsub("%s", "")
+	n.name = (read_file("/proc/sys/kernel/hostname") or ""):gsub("%s", "")
+
+	-- default route, the gateway in host (little endian) order
+	local gw = (read_file("/proc/net/route") or ""):match(IFACE .. "%s+00000000%s+(%x+)")
+	if gw then
+		local v = tonumber(gw, 16)
+		n.gateway = string.format("%d.%d.%d.%d", bit.band(v, 0xff),
+					  bit.band(bit.rshift(v, 8), 0xff),
+					  bit.band(bit.rshift(v, 16), 0xff),
+					  bit.rshift(v, 24))
+	end
+
+	for ns in (read_file("/etc/resolv.conf") or ""):gmatch("nameserver%s+([%d%.]+)") do
+		n.dns[#n.dns + 1] = ns
+	end
+
+	call("mcu", "network", n)
+end
+
 local handlers = {
 	["mcu.ready"] = function(msg)
 		set_model(msg)
 	end,
 	["mcu.listening_mode"] = function(msg)
 		set_mode(msg.mode)
+	end,
+	["mcu.network"] = function()
+		set_network()
 	end,
 }
 
