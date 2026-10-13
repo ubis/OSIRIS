@@ -41,13 +41,14 @@
 #define DA830_EMIF25_CONTROL_BASE		0x68000000
 
 /*
- * USB1 VBUS is controlled by GPIO1[15], over-current is reported on GPIO2[4].
+ * USB1 (the rear port) VBUS is switched by GPIO5[13], over-current is reported
+ * on GPIO5[12]; both active low.
  */
-#define ON_BD_USB_DRV	GPIO_TO_PIN(1, 15)
-#define ON_BD_USB_OVC	GPIO_TO_PIN(2, 4)
+#define ON_BD_USB_DRV	GPIO_TO_PIN(5, 13)
+#define ON_BD_USB_OVC	GPIO_TO_PIN(5, 12)
 
 static const short da830_evm_usb11_pins[] = {
-	DA830_GPIO1_15, DA830_GPIO2_4,
+	DA830_GPIO5_13, DA830_GPIO5_12,
 	-1
 };
 
@@ -55,13 +56,13 @@ static da8xx_ocic_handler_t da830_evm_usb_ocic_handler;
 
 static int da830_evm_usb_set_power(unsigned port, int on)
 {
-	gpio_set_value(ON_BD_USB_DRV, on);
+	gpio_set_value(ON_BD_USB_DRV, !on);
 	return 0;
 }
 
 static int da830_evm_usb_get_power(unsigned port)
 {
-	return gpio_get_value(ON_BD_USB_DRV);
+	return !gpio_get_value(ON_BD_USB_DRV);
 }
 
 static int da830_evm_usb_get_oci(unsigned port)
@@ -158,7 +159,7 @@ static __init void da830_evm_usb_init(void)
 		       "power control: %d\n", __func__, ret);
 		return;
 	}
-	gpio_direction_output(ON_BD_USB_DRV, 0);
+	gpio_direction_output(ON_BD_USB_DRV, 1);
 
 	ret = gpio_request(ON_BD_USB_OVC, "ON_BD_USB_OVC");
 	if (ret) {
@@ -198,7 +199,6 @@ static const short onkyo_gpio_pins[] = {
 	DA830_GPIO4_11,		/* AFE_RESETX */
 	DA830_GPIO5_3,		/* DIG_TUNER */
 	DA830_GPIO2_15,		/* USB0_OC_DET */
-	DA830_GPIO5_12,		/* USB1_OC_DET */
 	DA830_GPIO2_8,		/* DATA_NET */
 	DA830_GPIO1_9,		/* DSP2_IRQ: second DSP, not fitted */
 	DA830_GPIO1_10,		/* DSP2_RST */
