@@ -91,6 +91,8 @@ static const struct {
 	{ MCU_ISCP, "iscp" },
 };
 
+static void start(void);
+
 const char *proto_cmd_name(uint8_t cmd)
 {
 	size_t i;
@@ -288,6 +290,12 @@ void proto_rx(const struct link_frame *f)
 		break;
 	case MCU_NET_VERSION:
 		queue(NET_VERSION, version, VERSION_LEN - 1);
+		/* asked when the MCU (re)starts, e.g. out of standby */
+		if (stage == STAGE_READY) {
+			log_msg(LOG_INFO, "MCU started again, starting the link over");
+			start();
+		}
+
 		break;
 	case MCU_ACK_REQ:
 		if (f->len) {
@@ -323,13 +331,10 @@ static void pad_copy(uint8_t *dst, size_t size, const char *src)
 	memcpy(dst, src, n < size ? n : size);
 }
 
-void proto_init(const struct proto_ops *o, const char *dsp_version)
+static void start(void)
 {
-	static const uint8_t start[2] = { NET_STATE_START };
+	static const uint8_t state_start[2] = { NET_STATE_START };
 
-	ops = o;
-	retry_timer.cb = retry_cb;
-	pad_copy(version, VERSION_LEN, dsp_version);
 	/* the AudioApp part, in the stock order */
 	queue(DSP_VERSION, version, VERSION_LEN);
 	queue(DSP_READY, NULL, 0);
@@ -338,9 +343,17 @@ void proto_init(const struct proto_ops *o, const char *dsp_version)
 	queue(DSP_ID, dsp_id, ID_LEN);
 	queue(DSP_LEVELS, levels, LEVELS_LEN);
 	/* the network module part */
-	queue(NET_STATE, start, 2);
+	queue(NET_STATE, state_start, 2);
 	request(NET_SYSTEM, NO_ARG);
 	stage = STAGE_SYSTEM;
+}
+
+void proto_init(const struct proto_ops *o, const char *dsp_version)
+{
+	ops = o;
+	retry_timer.cb = retry_cb;
+	pad_copy(version, VERSION_LEN, dsp_version);
+	start();
 }
 
 enum stage proto_stage(void)
