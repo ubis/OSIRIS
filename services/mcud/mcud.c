@@ -13,6 +13,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <arpa/inet.h>
+
 #include <libubox/blobmsg.h>
 #include <libubox/uloop.h>
 #include <libubus.h>
@@ -137,6 +139,14 @@ static void on_frame(const struct link_frame *f, const char *name)
 
 		add_hex("data", d, f->len);
 		event("mcu.testtone");
+		return;
+	case MCU_NETWORK:
+		if (f->len) {
+			blobmsg_add_u32(&b, "item", d[0]);
+		}
+
+		add_hex("data", d, f->len);
+		event("mcu.network");
 		return;
 	case MCU_ISCP:
 		if (f->len > 1) {
@@ -297,6 +307,71 @@ static int m_levels(struct ubus_context *c, struct ubus_object *obj,
 	return 0;
 }
 
+enum { NW_LINK, NW_DHCP, NW_IP, NW_NETMASK, NW_GATEWAY, NW_DNS, NW_MAC, NW_NAME, __NW_MAX };
+
+static const struct blobmsg_policy network_policy[__NW_MAX] = {
+	[NW_LINK] = { .name = "link", .type = BLOBMSG_TYPE_BOOL },
+	[NW_DHCP] = { .name = "dhcp", .type = BLOBMSG_TYPE_BOOL },
+	[NW_IP] = { .name = "ip", .type = BLOBMSG_TYPE_STRING },
+	[NW_NETMASK] = { .name = "netmask", .type = BLOBMSG_TYPE_STRING },
+	[NW_GATEWAY] = { .name = "gateway", .type = BLOBMSG_TYPE_STRING },
+	[NW_DNS] = { .name = "dns", .type = BLOBMSG_TYPE_ARRAY },
+	[NW_MAC] = { .name = "mac", .type = BLOBMSG_TYPE_STRING },
+	[NW_NAME] = { .name = "name", .type = BLOBMSG_TYPE_STRING },
+};
+
+static int parse_addr(struct blob_attr *a, uint8_t *dst)
+{
+	if (!a) {
+		return 0;
+	}
+
+	return inet_pton(AF_INET, blobmsg_get_string(a), dst) == 1 ? 0 : -1;
+}
+
+static int m_network(struct ubus_context *c, struct ubus_object *obj,
+		     struct ubus_request_data *req, const char *method,
+		     struct blob_attr *msg)
+{
+	struct blob_attr *tb[__NW_MAX], *cur;
+	struct mcu_network n;
+	unsigned int rem, i = 0;
+
+	memset(&n, 0, sizeof(n));
+	blobmsg_parse(network_policy, __NW_MAX, tb, blob_data(msg), blob_len(msg));
+	n.link = tb[NW_LINK] && blobmsg_get_bool(tb[NW_LINK]);
+	n.dhcp = tb[NW_DHCP] && blobmsg_get_bool(tb[NW_DHCP]);
+	if (parse_addr(tb[NW_IP], n.ip) || parse_addr(tb[NW_NETMASK], n.netmask) ||
+	    parse_addr(tb[NW_GATEWAY], n.gateway)) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	if (tb[NW_DNS]) {
+		blobmsg_for_each_attr(cur, tb[NW_DNS], rem) {
+			if (i == 2) {
+				break;
+			}
+
+			if (blobmsg_type(cur) != BLOBMSG_TYPE_STRING || parse_addr(cur, n.dns[i++])) {
+				return UBUS_STATUS_INVALID_ARGUMENT;
+			}
+		}
+	}
+
+	if (tb[NW_MAC] && sscanf(blobmsg_get_string(tb[NW_MAC]),
+				 "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &n.mac[0], &n.mac[1],
+				 &n.mac[2], &n.mac[3], &n.mac[4], &n.mac[5]) != 6) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	if (tb[NW_NAME]) {
+		snprintf(n.name, sizeof(n.name), "%s", blobmsg_get_string(tb[NW_NAME]));
+	}
+
+	proto_set_network(&n);
+	return 0;
+}
+
 enum { SEND_CMD, SEND_DATA, __SEND_MAX };
 
 static const struct blobmsg_policy send_policy[__SEND_MAX] = {
@@ -339,6 +414,7 @@ static const struct ubus_method mcu_methods[] = {
 	UBUS_METHOD("stream", m_stream, stream_policy),
 	UBUS_METHOD("outputs", m_outputs, outputs_policy),
 	UBUS_METHOD("levels", m_levels, levels_policy),
+	UBUS_METHOD("network", m_network, network_policy),
 	UBUS_METHOD("send", m_send, send_policy),
 };
 

@@ -24,6 +24,7 @@ enum mcu_cmd {
 	NET_ITEM		= 0x63,	/* ask for MCU_ITEM n */
 	NET_DISPLAY		= 0x64,	/* ask for MCU_DISPLAY 0 (text) / 1 (OSD) */
 	NET_STATE		= 0x65,	/* two bytes, NET_STATE_* */
+	NET_NETWORK		= 0x66,	/* answer to MCU_NETWORK */
 	NET_ACK			= 0x6a,	/* answer to MCU_ACK_REQ, echoes its byte */
 	NET_ISCP		= 0x73,	/* 01 "!1..." */
 
@@ -60,6 +61,7 @@ enum mcu_cmd {
 	MCU_ITEM		= 0xe3,	/* [0] item; ITEM_BEACON is the AMX beacon */
 	MCU_DISPLAY		= 0xe4,
 	MCU_INPUT_SELECT	= 0xe5,
+	MCU_NETWORK		= 0xe6,	/* [0] item, asked when the network menu opens */
 	MCU_UPDATE		= 0xe8,
 	MCU_ACK_REQ		= 0xea,
 	MCU_UPDATE_SOURCE	= 0xf1,
@@ -72,6 +74,11 @@ enum mcu_cmd {
 #define NET_STATE_UP_0		0x05, 0x00
 #define NET_STATE_UP_1		0x05, 0x01
 #define NET_STATE_READY		0x00, 0x02	/* MCU closes the speaker relays */
+
+/* MCU_NETWORK items we answer; proxy (2) is not answered by stock either */
+#define NETWORK_STATUS		0x00
+#define NETWORK_IP		0x01
+#define NETWORK_NAME		0x05	/* friendly name */
 
 #define NET_OUTPUTS_FRONT	0x01
 
