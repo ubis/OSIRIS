@@ -57,6 +57,8 @@ void proto_set_stream(const uint8_t *stream);
 void proto_get_stream(uint8_t *stream);
 void proto_set_levels(const uint8_t *levels);
 void proto_set_outputs(uint8_t mask);
+/* answers a pending MCU_POWER off / reset; -1 when that one is not pending */
+int proto_power_done(uint8_t state);
 /* answers the MCU_NETWORK items asked for since the last call */
 void proto_set_network(const struct mcu_network *n);
 
