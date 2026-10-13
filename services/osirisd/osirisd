@@ -6,7 +6,8 @@
 -- becomes the hostname, the display shows "OSIRIS <build>" as the DSP
 -- version, and the listening mode picks the speakers the DSP plays on;
 -- the DSP goes quiet while the receiver runs its test tone. The network
--- menu gets the address and link state from the system.
+-- menu gets the address and link state from the system. Before the MCU
+-- switches the board off the data is synced; a factory reset wipes it.
 --
 -- The master volume is not ours: the MCU sets it in the analog stage after
 -- the DAC and reports it (mcu.volume) only for information.
@@ -125,7 +126,8 @@ end
 
 local function call(object, method, args)
 	local res = conn:call(object, method, args or {})
-	if not res and method ~= "set" and method ~= "identity" and method ~= "network" then
+	if not res and method ~= "set" and method ~= "identity" and method ~= "network" and
+	   method ~= "power" then
 		err("%s %s: no answer", object, method)
 	end
 	return res
@@ -209,6 +211,24 @@ local function set_network()
 	call("mcu", "network", n)
 end
 
+-- the MCU cuts the power once we answer; S01data sets up a wiped /data again
+local function power(state)
+	if state ~= "off" and state ~= "reset" then
+		return
+	end
+
+	if state == "reset" then
+		log("factory reset: wiping /data")
+		os.execute("rm -rf /data/* /data/.[!.]*")
+	end
+
+	os.execute("sync")
+	call("mcu", "power", { state = state })
+	if state == "reset" then
+		os.execute("(sleep 2; reboot) &")
+	end
+end
+
 local handlers = {
 	["mcu.ready"] = function(msg)
 		set_model(msg)
@@ -218,6 +238,9 @@ local handlers = {
 	end,
 	["mcu.network"] = function()
 		set_network()
+	end,
+	["mcu.power"] = function(msg)
+		power(msg.state)
 	end,
 }
 
