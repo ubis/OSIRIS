@@ -54,7 +54,7 @@ E3 -> 63, EA -> 6A).
 | 64 | 0 / 1 | ask for display info (0 text, 1 OSD) -> E4 |
 | 65 | 2 bytes | network module state (00 01 start, 05 00, 05 01, 00 02 ready) |
 | 66 | item | answer to E6. Item 1: [1] 1, [3] DHCP, [4..23] IP, netmask, gateway, DNS 1, DNS 2 (each a 32-bit little endian value), [24..29] MAC. Item 5: 05 + friendly name |
-| 6A | 1 byte | reply to EA, echoes its byte |
+| 6A | 1 byte | reply to EA, echoes its byte; after 6A 01 the MCU cuts the board's power |
 | 73 | 01 "!1..." | ISCP towards the MCU (tried for NTI, no visible effect yet) |
 
 ### 0x42 stream status
@@ -114,7 +114,7 @@ only sends it when a field changes.
 | E5 | inputsel | input selected |
 | E6 | network | [0] item: 0 status, 1 IP settings, 2 proxy, 3 network control, 4 interface, 5 friendly name, 6-0A change a setting, 0B-0D tests. The network menu shows item 1; stock does not answer 2 |
 | E8 | update | firmware update (unused) |
-| EA | | [0] byte -> 6A with the same byte |
+| EA | power | [0] 00 on, 01 off, 02 factory reset -> 6A with the same byte. 01 comes only when the main zone, Zone 2 and Zone 3 are all off; stock syncs the file systems before answering |
 | F1-F3 | update_source / update_mode / update_start, ISCP | F3 01 "!1..." = ISCP from the MCU |
 
 Payload layouts not listed are unknown so far.

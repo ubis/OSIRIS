@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <libubox/uloop.h>
 #include <libubox/utils.h>
@@ -18,6 +19,7 @@
 #define RETRY_MS	1000
 #define RETRIES		3
 #define NO_ARG		(-1)
+#define POWER_WAIT_MS	3000	/* for the policy before power off / reset */
 
 static const struct proto_ops *ops;
 static enum stage stage;
@@ -26,6 +28,8 @@ static struct uloop_timeout retry_timer;
 static uint8_t pend_cmd, pend_arg;
 static struct mcu_network network;
 static uint32_t network_asked;	/* MCU_NETWORK items, one bit each */
+static struct uloop_timeout power_timer;
+static int power_pending = -1;	/* MCU_POWER state not answered yet */
 static int pend, retries;
 
 /* PCM, 48 kHz, " 2.0", DSP detected: a capture from the stock firmware */
@@ -89,6 +93,7 @@ static const struct {
 	{ MCU_INPUT_SELECT, "inputsel" },
 	{ MCU_NETWORK, "network" },
 	{ MCU_UPDATE, "update" },
+	{ MCU_POWER, "power" },
 	{ MCU_UPDATE_SOURCE, "update_source" },
 	{ MCU_UPDATE_MODE, "update_mode" },
 	{ MCU_ISCP, "iscp" },
@@ -300,11 +305,20 @@ void proto_rx(const struct link_frame *f)
 		}
 
 		break;
-	case MCU_ACK_REQ:
-		if (f->len) {
-			queue(NET_ACK, d, 1);
+	case MCU_POWER:
+		if (!f->len) {
+			break;
 		}
 
+		if (d[0] == POWER_ON) {
+			queue(NET_POWER, d, 1);
+			break;
+		}
+
+		/* the MCU cuts the power after the answer: the policy goes first */
+		log_msg(LOG_INFO, "MCU powers the board off (%u)", d[0]);
+		power_pending = d[0];
+		uloop_timeout_set(&power_timer, POWER_WAIT_MS);
 		break;
 	case MCU_NETWORK:
 		if (f->len && d[0] < 32) {
@@ -412,6 +426,32 @@ static void network_answer(uint8_t item)
 	queue(NET_NETWORK, d, len);
 }
 
+static void power_answer(void)
+{
+	uint8_t s = power_pending;
+
+	uloop_timeout_cancel(&power_timer);
+	power_pending = -1;
+	queue(NET_POWER, &s, 1);
+}
+
+static void power_timeout(struct uloop_timeout *t)
+{
+	log_msg(LOG_WARNING, "power %d: no answer from the policy", power_pending);
+	sync();
+	power_answer();
+}
+
+int proto_power_done(uint8_t state)
+{
+	if (power_pending != state) {
+		return -1;
+	}
+
+	power_answer();
+	return 0;
+}
+
 void proto_set_network(const struct mcu_network *n)
 {
 	uint8_t i;
@@ -431,6 +471,7 @@ void proto_init(const struct proto_ops *o, const char *dsp_version)
 {
 	ops = o;
 	retry_timer.cb = retry_cb;
+	power_timer.cb = power_timeout;
 	pad_copy(version, VERSION_LEN, dsp_version);
 	start();
 }

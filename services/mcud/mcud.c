@@ -83,6 +83,15 @@ static void on_ready(const struct mcu_model *m)
 	event("mcu.ready");
 }
 
+static const char *const power_names[] = {
+	[POWER_ON] = "on", [POWER_OFF] = "off", [POWER_RESET] = "reset",
+};
+
+static const char *power_name(uint8_t state)
+{
+	return state < ARRAY_SIZE(power_names) ? power_names[state] : "unknown";
+}
+
 static void on_frame(const struct link_frame *f, const char *name)
 {
 	const uint8_t *d = f->data;
@@ -139,6 +148,13 @@ static void on_frame(const struct link_frame *f, const char *name)
 
 		add_hex("data", d, f->len);
 		event("mcu.testtone");
+		return;
+	case MCU_POWER:
+		if (f->len) {
+			blobmsg_add_string(&b, "state", power_name(d[0]));
+		}
+
+		event("mcu.power");
 		return;
 	case MCU_NETWORK:
 		if (f->len) {
@@ -372,6 +388,34 @@ static int m_network(struct ubus_context *c, struct ubus_object *obj,
 	return 0;
 }
 
+enum { PW_STATE, __PW_MAX };
+
+static const struct blobmsg_policy power_policy[__PW_MAX] = {
+	[PW_STATE] = { .name = "state", .type = BLOBMSG_TYPE_STRING },
+};
+
+/* the policy is done with power off / reset, answer the MCU */
+static int m_power(struct ubus_context *c, struct ubus_object *obj,
+		   struct ubus_request_data *req, const char *method,
+		   struct blob_attr *msg)
+{
+	struct blob_attr *tb[__PW_MAX];
+	uint8_t i;
+
+	blobmsg_parse(power_policy, __PW_MAX, tb, blob_data(msg), blob_len(msg));
+	if (!tb[PW_STATE]) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(power_names); i++) {
+		if (!strcmp(blobmsg_get_string(tb[PW_STATE]), power_names[i])) {
+			return proto_power_done(i) ? UBUS_STATUS_NOT_FOUND : 0;
+		}
+	}
+
+	return UBUS_STATUS_INVALID_ARGUMENT;
+}
+
 enum { SEND_CMD, SEND_DATA, __SEND_MAX };
 
 static const struct blobmsg_policy send_policy[__SEND_MAX] = {
@@ -415,6 +459,7 @@ static const struct ubus_method mcu_methods[] = {
 	UBUS_METHOD("outputs", m_outputs, outputs_policy),
 	UBUS_METHOD("levels", m_levels, levels_policy),
 	UBUS_METHOD("network", m_network, network_policy),
+	UBUS_METHOD("power", m_power, power_policy),
 	UBUS_METHOD("send", m_send, send_policy),
 };
 
