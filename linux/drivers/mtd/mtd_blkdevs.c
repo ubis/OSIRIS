@@ -132,11 +132,16 @@ static int blktrans_open(struct block_device *bdev, fmode_t mode)
 {
 	struct mtd_blktrans_dev *dev = bdev->bd_disk->private_data;
 	struct mtd_blktrans_ops *tr = dev->tr;
-	int ret = -ENODEV;
+	struct mtd_info *mtd;
+	int ret;
 
-	if (!get_mtd_device(NULL, dev->mtd->index))
+	mtd = get_mtd_device(NULL, dev->mtd->index);
+	if (IS_ERR(mtd)) {
+		ret = PTR_ERR(mtd);
 		goto out;
+	}
 
+	ret = -ENODEV;
 	if (!try_module_get(tr->owner))
 		goto out_tr;
 
