@@ -132,9 +132,11 @@ static const struct reverb_preset *reverb;	/* NULL: off */
 
 #define CROSSOVER_MIN	20		/* Hz */
 #define CROSSOVER_MAX	250
+#define DOUBLE_BASS_HZ	80
 static int crossover[DSPAUDIO_OUT];	/* Hz, 0 = large: full range */
-static int subwoofer;
-static int sub_lowpass = 120;		/* Hz */
+static int subwoofer, double_bass;
+static int sub_lowpass = 120;		/* Hz, 0 = none */
+static uint32_t absent;			/* outputs without a speaker */
 
 static const char *const out_name[DSPAUDIO_OUT] = {
 	[DSPAUDIO_OUT_FL] = "fl", [DSPAUDIO_OUT_FR] = "fr",
@@ -247,26 +249,43 @@ static void apply_bass(void)
 {
 	uint32_t gen = sh->bass_gen + 1, next = gen & 1;
 	volatile struct dspaudio_bass *bm = &sh->bass[next];
-	uint32_t small = 0;
+	uint32_t small = 0, copy = 0;
 	unsigned int out, k;
+	int hz;
 
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
-		if (out == DSPAUDIO_OUT_SW || !crossover[out]) {
+		if (out == DSPAUDIO_OUT_SW || absent & (1u << out)) {
 			continue;
 		}
 
-		small |= 1u << out;
+		hz = crossover[out];
+		if (hz) {
+			small |= 1u << out;
+		} else if (double_bass && subwoofer &&
+			   (out == DSPAUDIO_OUT_FL || out == DSPAUDIO_OUT_FR)) {
+			copy |= 1u << out;
+			hz = DOUBLE_BASS_HZ;
+		} else {
+			continue;
+		}
+
 		for (k = 0; k < DSPAUDIO_XO; k++) {
-			pass(&bm->high[out][k], crossover[out], 1);
-			pass(&bm->low[out][k], crossover[out], 0);
+			pass(&bm->high[out][k], hz, 1);
+			pass(&bm->low[out][k], hz, 0);
 		}
 	}
 
 	for (k = 0; k < DSPAUDIO_XO; k++) {
-		pass(&bm->sub[k], sub_lowpass, 0);
+		if (sub_lowpass) {
+			pass(&bm->sub[k], sub_lowpass, 0);
+		} else {
+			bm->sub[k].b0 = 1;
+			bm->sub[k].b1 = bm->sub[k].b2 = bm->sub[k].a1 = bm->sub[k].a2 = 0;
+		}
 	}
 
 	bm->small = small;
+	bm->copy = copy;
 	bm->subwoofer = subwoofer;
 	__sync_synchronize();
 	sh->bass_gen = gen;
@@ -326,11 +345,30 @@ static uint32_t ms_samples(double ms)
 	return n > DSPAUDIO_SURROUND_DELAY_MAX ? DSPAUDIO_SURROUND_DELAY_MAX : n;
 }
 
-/* the DSP leaves the decoder alone while it is off: write it, then turn it on */
+/*
+ * The DSP leaves the decoder alone while it is off, so it is worked out
+ * first and only copied in that window. During it the DSP plays the gain
+ * matrix, which for a sample or two is the left input on every output.
+ */
 static void apply_surround(void)
 {
 	volatile struct dspaudio_surround *s = &sh->surround;
 	const struct surround_preset *p = surround;
+	struct dspaudio_surround n = { 0 };
+
+	if (p) {
+		n.smooth = 1.0 - exp(-1000.0 / (p->tau_ms * SAMPLE_HZ));
+		/* without a centre speaker the voice stays in the front pair */
+		n.center = absent & 1u << DSPAUDIO_OUT_C ? 0 : p->center;
+		n.surround = p->surround;
+		n.wrap = p->wrap;
+		n.back = p->back;
+		n.sub = p->sub;
+		n.delay = ms_samples(p->delay_ms);
+		n.back_delay = ms_samples(p->back_delay_ms);
+		pass(&n.band[0], p->high_pass_hz, 1);
+		pass(&n.band[1], p->low_pass_hz, 0);
+	}
 
 	s->on = 0;
 	__sync_synchronize();
@@ -338,16 +376,7 @@ static void apply_surround(void)
 		return;
 	}
 
-	s->smooth = 1.0 - exp(-1000.0 / (p->tau_ms * SAMPLE_HZ));
-	s->center = p->center;
-	s->surround = p->surround;
-	s->wrap = p->wrap;
-	s->back = p->back;
-	s->sub = p->sub;
-	s->delay = ms_samples(p->delay_ms);
-	s->back_delay = ms_samples(p->back_delay_ms);
-	pass(&s->band[0], p->high_pass_hz, 1);
-	pass(&s->band[1], p->low_pass_hz, 0);
+	put_words(s, &n, sizeof(n));
 	__sync_synchronize();
 	s->on = 1;
 }
@@ -397,7 +426,9 @@ static void apply(void)
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
 		for (in = 0; in < DSPAUDIO_IN; in++) {
 			/* the decoder makes the outputs; [0] only scales them */
-			if (surround) {
+			if (absent & 1u << out) {
+				sh->gain[out][in] = 0;
+			} else if (surround) {
 				sh->gain[out][in] = in == 0 ? g : 0;
 			} else {
 				sh->gain[out][in] = g / 2 * mix[outputs][out][in];
@@ -533,6 +564,15 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 
 	blobmsg_close_table(&b, a);
 	blobmsg_add_u8(&b, "subwoofer", subwoofer);
+	blobmsg_add_u8(&b, "double_bass", double_bass);
+	a = blobmsg_open_array(&b, "absent");
+	for (i = 0; i < DSPAUDIO_OUT; i++) {
+		if (absent & (1u << i)) {
+			blobmsg_add_string(&b, NULL, out_name[i]);
+		}
+	}
+
+	blobmsg_close_array(&b, a);
 	blobmsg_add_u32(&b, "sub_lowpass", (uint32_t)sub_lowpass);
 	ubus_send_reply(c, req, b.head);
 	return 0;
@@ -540,7 +580,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 
 enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
 	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, SET_CROSSOVER, SET_SUBWOOFER,
-	SET_SUB_LOWPASS, SET_REVERB, __SET_MAX };
+	SET_SUB_LOWPASS, SET_REVERB, SET_DOUBLE_BASS, SET_ABSENT, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -556,6 +596,8 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_SUBWOOFER] = { .name = "subwoofer", .type = BLOBMSG_TYPE_BOOL },
 	[SET_SUB_LOWPASS] = { .name = "sub_lowpass", .type = BLOBMSG_TYPE_INT32 },
 	[SET_REVERB] = { .name = "reverb", .type = BLOBMSG_TYPE_STRING },
+	[SET_DOUBLE_BASS] = { .name = "double_bass", .type = BLOBMSG_TYPE_BOOL },
+	[SET_ABSENT] = { .name = "absent", .type = BLOBMSG_TYPE_ARRAY },
 };
 
 static int out_index(const char *name)
@@ -571,14 +613,14 @@ static int out_index(const char *name)
 	return -1;
 }
 
-/* { "fl": 300, ... } in cm; outputs not named keep their distance */
-static int set_distances(struct blob_attr *t)
+/* { "fl": 300, ... } in cm over the current ones, checked, not stored yet */
+static int parse_distances(struct blob_attr *t, int *d)
 {
-	int d[DSPAUDIO_OUT], i, v;
 	struct blob_attr *cur;
 	unsigned int rem;
+	int i, v;
 
-	memcpy(d, distance, sizeof(d));
+	memcpy(d, distance, sizeof(distance));
 	blobmsg_for_each_attr(cur, t, rem) {
 		i = out_index(blobmsg_name(cur));
 		if (i < 0 || blobmsg_type(cur) != BLOBMSG_TYPE_INT32) {
@@ -593,19 +635,17 @@ static int set_distances(struct blob_attr *t)
 		d[i] = v;
 	}
 
-	memcpy(distance, d, sizeof(d));
-	apply_delays();
 	return 0;
 }
 
-/* { "fl": 80, ... } in Hz, 0 = large; outputs not named keep theirs */
-static int set_crossover(struct blob_attr *t)
+/* { "fl": 80, ... } in Hz, 0 = large, over the current ones, not stored yet */
+static int parse_crossover(struct blob_attr *t, int *x)
 {
-	int x[DSPAUDIO_OUT], i, v;
 	struct blob_attr *cur;
 	unsigned int rem;
+	int i, v;
 
-	memcpy(x, crossover, sizeof(x));
+	memcpy(x, crossover, sizeof(crossover));
 	blobmsg_for_each_attr(cur, t, rem) {
 		i = out_index(blobmsg_name(cur));
 		if (i < 0 || i == DSPAUDIO_OUT_SW || blobmsg_type(cur) != BLOBMSG_TYPE_INT32) {
@@ -620,34 +660,132 @@ static int set_crossover(struct blob_attr *t)
 		x[i] = v;
 	}
 
-	memcpy(crossover, x, sizeof(x));
 	return 0;
 }
 
+static int name_index(const char *name, const char *const *names, size_t n)
+{
+	size_t i;
+
+	for (i = 0; i < n; i++) {
+		if (names[i] && !strcmp(name, names[i])) {
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+/* everything is checked before anything changes: a bad call changes nothing */
 static int m_set(struct ubus_context *c, struct ubus_object *obj,
 		 struct ubus_request_data *req, const char *method,
 		 struct blob_attr *msg)
 {
-	struct blob_attr *tb[__SET_MAX];
-	unsigned int i;
+	struct blob_attr *tb[__SET_MAX], *cur;
+	const struct surround_preset *new_surround = surround;
+	const struct reverb_preset *new_reverb = reverb;
+	int new_outputs = outputs, nb = bass, nt = treble, level = noise_level;
+	int nout = noise_out, lowpass = sub_lowpass, i;
+	int dist[DSPAUDIO_OUT], xover[DSPAUDIO_OUT];
+	uint32_t new_absent = absent;
+	unsigned int rem;
 	const char *o;
 
 	blobmsg_parse(set_policy, __SET_MAX, tb, blob_data(msg), blob_len(msg));
 	if (tb[SET_OUTPUTS]) {
-		o = blobmsg_get_string(tb[SET_OUTPUTS]);
-		for (i = 0; i < __OUTPUTS_MAX; i++) {
-			if (!strcmp(o, outputs_name[i])) {
-				break;
+		new_outputs = name_index(blobmsg_get_string(tb[SET_OUTPUTS]), outputs_name,
+					 __OUTPUTS_MAX);
+		if (new_outputs < 0) {
+			return UBUS_STATUS_INVALID_ARGUMENT;
+		}
+	}
+
+	if (tb[SET_BASS]) {
+		nb = (int32_t)blobmsg_get_u32(tb[SET_BASS]);
+	}
+
+	if (tb[SET_TREBLE]) {
+		nt = (int32_t)blobmsg_get_u32(tb[SET_TREBLE]);
+	}
+
+	if (nb < -TONE_MAX || nb > TONE_MAX || nt < -TONE_MAX || nt > TONE_MAX) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	if (tb[SET_TESTTONE_LEVEL]) {
+		level = (int32_t)blobmsg_get_u32(tb[SET_TESTTONE_LEVEL]);
+		if (level < NOISE_MIN || level > NOISE_MAX) {
+			return UBUS_STATUS_INVALID_ARGUMENT;
+		}
+	}
+
+	if (tb[SET_TESTTONE]) {
+		o = blobmsg_get_string(tb[SET_TESTTONE]);
+		nout = name_index(o, out_name, DSPAUDIO_OUT);
+		if (nout < 0 && strcmp(o, "off")) {
+			return UBUS_STATUS_INVALID_ARGUMENT;
+		}
+	}
+
+	memcpy(dist, distance, sizeof(dist));
+	if (tb[SET_DISTANCES] && parse_distances(tb[SET_DISTANCES], dist)) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	memcpy(xover, crossover, sizeof(xover));
+	if (tb[SET_CROSSOVER] && parse_crossover(tb[SET_CROSSOVER], xover)) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	if (tb[SET_ABSENT]) {
+		new_absent = 0;
+		blobmsg_for_each_attr(cur, tb[SET_ABSENT], rem) {
+			i = blobmsg_type(cur) == BLOBMSG_TYPE_STRING ? out_index(blobmsg_get_string(cur)) : -1;
+			if (i < 0) {
+				return UBUS_STATUS_INVALID_ARGUMENT;
+			}
+
+			new_absent |= 1u << i;
+		}
+	}
+
+	if (tb[SET_SUB_LOWPASS]) {
+		lowpass = (int32_t)blobmsg_get_u32(tb[SET_SUB_LOWPASS]);
+		if (lowpass && (lowpass < CROSSOVER_MIN || lowpass > CROSSOVER_MAX)) {
+			return UBUS_STATUS_INVALID_ARGUMENT;
+		}
+	}
+
+	if (tb[SET_REVERB]) {
+		o = blobmsg_get_string(tb[SET_REVERB]);
+		new_reverb = NULL;
+		for (i = 0; i < (int)ARRAY_SIZE(reverb_presets); i++) {
+			if (!strcmp(o, reverb_presets[i].name)) {
+				new_reverb = &reverb_presets[i];
 			}
 		}
 
-		if (i == __OUTPUTS_MAX) {
+		if (!new_reverb && strcmp(o, "off")) {
 			return UBUS_STATUS_INVALID_ARGUMENT;
 		}
-
-		outputs = i;
 	}
 
+	if (tb[SET_SURROUND]) {
+		o = blobmsg_get_string(tb[SET_SURROUND]);
+		new_surround = NULL;
+		for (i = 0; i < (int)ARRAY_SIZE(surround_presets); i++) {
+			if (!strcmp(o, surround_presets[i].name)) {
+				new_surround = &surround_presets[i];
+			}
+		}
+
+		if (!new_surround && strcmp(o, "off")) {
+			return UBUS_STATUS_INVALID_ARGUMENT;
+		}
+	}
+
+	/* all good: store and apply */
+	outputs = new_outputs;
 	if (tb[SET_VOLUME]) {
 		volume = (int32_t)blobmsg_get_u32(tb[SET_VOLUME]);
 	}
@@ -657,106 +795,56 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 	}
 
 	if (tb[SET_BASS] || tb[SET_TREBLE]) {
-		int nb = tb[SET_BASS] ? (int32_t)blobmsg_get_u32(tb[SET_BASS]) : bass;
-		int nt = tb[SET_TREBLE] ? (int32_t)blobmsg_get_u32(tb[SET_TREBLE]) : treble;
-
-		if (nb < -TONE_MAX || nb > TONE_MAX || nt < -TONE_MAX || nt > TONE_MAX) {
-			return UBUS_STATUS_INVALID_ARGUMENT;
-		}
-
 		bass = nb;
 		treble = nt;
 		apply_tone();
 	}
 
-	if (tb[SET_TESTTONE_LEVEL]) {
-		int l = (int32_t)blobmsg_get_u32(tb[SET_TESTTONE_LEVEL]);
-
-		if (l < NOISE_MIN || l > NOISE_MAX) {
-			return UBUS_STATUS_INVALID_ARGUMENT;
-		}
-
-		noise_level = l;
-	}
-
-	if (tb[SET_TESTTONE]) {
-		o = blobmsg_get_string(tb[SET_TESTTONE]);
-		for (i = 0; i < DSPAUDIO_OUT; i++) {
-			if (!strcmp(o, out_name[i])) {
-				break;
-			}
-		}
-
-		if (i == DSPAUDIO_OUT && strcmp(o, "off")) {
-			return UBUS_STATUS_INVALID_ARGUMENT;
-		}
-
-		noise_out = i == DSPAUDIO_OUT ? -1 : (int)i;
-	}
-
 	if (tb[SET_TESTTONE] || tb[SET_TESTTONE_LEVEL]) {
+		noise_level = level;
+		noise_out = nout;
 		apply_noise();
 	}
 
-	if (tb[SET_DISTANCES] && set_distances(tb[SET_DISTANCES])) {
-		return UBUS_STATUS_INVALID_ARGUMENT;
+	if (tb[SET_DISTANCES]) {
+		memcpy(distance, dist, sizeof(distance));
+		apply_delays();
 	}
 
-	if (tb[SET_SUB_LOWPASS]) {
-		int v = (int32_t)blobmsg_get_u32(tb[SET_SUB_LOWPASS]);
+	if (tb[SET_CROSSOVER] || tb[SET_SUBWOOFER] || tb[SET_SUB_LOWPASS] ||
+	    tb[SET_DOUBLE_BASS] || tb[SET_ABSENT]) {
+		/* the decoder only cares whether there is a centre speaker */
+		int centre = (absent ^ new_absent) & 1u << DSPAUDIO_OUT_C;
 
-		if (v < CROSSOVER_MIN || v > CROSSOVER_MAX) {
-			return UBUS_STATUS_INVALID_ARGUMENT;
+		memcpy(crossover, xover, sizeof(crossover));
+		absent = new_absent;
+		sub_lowpass = lowpass;
+		if (tb[SET_SUBWOOFER]) {
+			subwoofer = blobmsg_get_bool(tb[SET_SUBWOOFER]);
 		}
 
-		sub_lowpass = v;
-	}
+		if (tb[SET_DOUBLE_BASS]) {
+			double_bass = blobmsg_get_bool(tb[SET_DOUBLE_BASS]);
+		}
 
-	if (tb[SET_SUBWOOFER]) {
-		subwoofer = blobmsg_get_bool(tb[SET_SUBWOOFER]);
-	}
-
-	if (tb[SET_CROSSOVER] && set_crossover(tb[SET_CROSSOVER])) {
-		return UBUS_STATUS_INVALID_ARGUMENT;
-	}
-
-	if (tb[SET_CROSSOVER] || tb[SET_SUBWOOFER] || tb[SET_SUB_LOWPASS]) {
 		apply_bass();
+		if (centre && !tb[SET_SURROUND]) {
+			apply_surround();
+		}
 	}
 
 	if (tb[SET_REVERB]) {
-		const struct reverb_preset *p = NULL;
-
-		o = blobmsg_get_string(tb[SET_REVERB]);
-		for (i = 0; i < ARRAY_SIZE(reverb_presets); i++) {
-			if (!strcmp(o, reverb_presets[i].name)) {
-				p = &reverb_presets[i];
-			}
-		}
-
-		if (!p && strcmp(o, "off")) {
-			return UBUS_STATUS_INVALID_ARGUMENT;
-		}
-
-		reverb = p;
+		reverb = new_reverb;
 		apply_reverb();
 	}
 
 	if (tb[SET_SURROUND]) {
-		const struct surround_preset *p = NULL;
-
-		o = blobmsg_get_string(tb[SET_SURROUND]);
-		for (i = 0; i < ARRAY_SIZE(surround_presets); i++) {
-			if (!strcmp(o, surround_presets[i].name)) {
-				p = &surround_presets[i];
-			}
+		surround = new_surround;
+		/* turning it off: the matrix gains first, or L plays everywhere */
+		if (!surround) {
+			apply();
 		}
 
-		if (!p && strcmp(o, "off")) {
-			return UBUS_STATUS_INVALID_ARGUMENT;
-		}
-
-		surround = p;
 		apply_surround();
 	}
 

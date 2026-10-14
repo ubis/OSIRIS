@@ -14,7 +14,7 @@
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		8
+#define DSPAUDIO_ABI		9
 
 #define DSPAUDIO_IN		2	/* PCM9211 I2S: left, right */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
@@ -100,9 +100,11 @@ struct dspaudio_reverb {
  * Bass management: a small speaker's output goes through a high pass, and
  * its bass, through the matching low pass, to the subwoofer, or to the
  * front pair when there is none. The subwoofer has a low pass of its own.
+ * Double bass also sends the bass of large speakers to the subwoofer.
  */
 struct dspaudio_bass {
 	uint32_t small;			/* one bit per output: bass managed */
+	uint32_t copy;			/* one bit per output: bass also to the subwoofer */
 	uint32_t subwoofer;		/* 0: the bass goes to the front pair */
 	struct dspaudio_biquad high[DSPAUDIO_OUT][DSPAUDIO_XO];
 	struct dspaudio_biquad low[DSPAUDIO_OUT][DSPAUDIO_XO];
