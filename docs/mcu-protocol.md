@@ -137,7 +137,9 @@ Payload layouts not listed are unknown so far.
 ## Listening modes (D2)
 
 D2 carries the mode the receiver is in; byte 1 is the mode, byte 2 a
-variant within it. The MCU also reports the mode as ISCP text (`!1LMDxx`).
+variant within it. The MCU also reports the mode as ISCP text (`!1LMDxx`,
+the codes of Onkyo's ISCP documentation) when it changes, and answers
+`!1LMDQSTN` (73 00 "!1LMDQSTN" CR); mcud names the mode from that code.
 Seen on the TX-NR717 and checked against the front display:
 
 | D2 [1] | [2] | ISCP | mode |
@@ -233,7 +235,7 @@ Events (`ubus listen mcu`):
 | `mcu.input` | C1, E5 | decoded fields |
 | `mcu.volume` | D3 | `volume` (0.01 dB) |
 | `mcu.speakers` | C2, C9 | raw payload until decoded |
-| `mcu.listening_mode` | D2 | `mode` (also kept in `mcu status` as `listening_mode`) |
+| `mcu.listening_mode` | D2, F3 !1LMD | `mode` (the D2 byte), `name` (from the ISCP code); both also in `mcu status` |
 | `mcu.testtone` | D0, D1 | `channel` |
 | `mcu.distance` | C3 | `distances` (cm by speaker), `unit` (C3 [0]) |
 | `mcu.iscp` | F3 | `command` |

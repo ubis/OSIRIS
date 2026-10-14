@@ -156,24 +156,28 @@ flowchart LR
     DIR -->|I2S, AXR1_4| RX[McASP1 receive]
     subgraph dspaudio
         RX --> TONE[bass and treble<br/>shelf filters]
-        TONE --> MIX[mix: L and R gain<br/>per output]
+        TONE --> MIX[mix: L and R gain<br/>per output, or the<br/>surround decoder]
         NOISE[pink noise] --> MIX
-        MIX --> TX[McASP1 transmit]
+        MIX --> DELAY[delay per output<br/>speaker distance]
+        DELAY --> TX[McASP1 transmit]
     end
     TX -->|AXR1_0 front<br/>AXR1_1 centre, sub<br/>AXR1_2 surround<br/>AXR1_3 surround back| DAC[PCM1690]
     DAC --> VOL[MCU analog volume] --> AMP[Amplifiers]
 ```
 
 dspaudio polls McASP1 directly, without interrupts or DMA. For every input
-sample pair it runs the bass and treble filters, computes the eight outputs,
-each the left and the right input times a gain of its own, adds the test
-noise on the output the level setup asks for, and writes them to the four
-serial lines of the DAC. dspd sets these gains in a block of DSP memory both sides share
+sample pair it runs the bass and treble filters and computes the eight
+outputs: each the left and the right input times a gain of its own, or, in
+the surround modes, from a matrix decoder that moves correlated, in-phase
+sound to the centre and the difference of left and right to the surrounds.
+It plays the test noise on the output the level setup asks for, holds each
+output back by its speaker's distance and writes them to the four serial
+lines of the DAC. dspd sets these gains in a block of DSP memory both sides share
 ([dspaudio.h](../services/dspd/dspaudio.h)), and the DSP reports its state,
 counters and input peaks in the same block.
 
-Next on the DSP: per-channel delay for the speaker distances, bass
-management and the surround modes.
+Next on the DSP: bass management, the sound field modes (reverb) and the
+other modes of the receiver.
 
 ## Software versions
 

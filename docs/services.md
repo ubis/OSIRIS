@@ -43,7 +43,7 @@ mcud -v                           # (with S10osiris stopped) log every frame
 | `mcu.ready` | handshake done, with the receiver model |
 | `mcu.volume` | volume changed, in 0.01 dB (the MCU applies it itself) |
 | `mcu.input` | input or stream format changed |
-| `mcu.listening_mode` | listening mode changed (codes in [mcu-protocol.md](mcu-protocol.md)) |
+| `mcu.listening_mode` | listening mode changed: `mode` (the MCU's byte, codes in [mcu-protocol.md](mcu-protocol.md)) and `name` (`plii_movie`, `all_ch_stereo`, ...) |
 | `mcu.tone` | front bass and treble changed, in dB |
 | `mcu.distance` | speaker distances changed, in cm per speaker (also in `mcu status`) |
 | `mcu.network` | the network menu asks for the settings; answer with `ubus call mcu network` |
@@ -74,6 +74,7 @@ ubus call dsp set '{"outputs": "all"}'            # "front", "all" (stereo every
 ubus call dsp set '{"bass": 4, "treble": -2}'      # dB, -12..+12
 ubus call dsp set '{"testtone": "fl", "testtone_level": -30}'  # pink noise on one output, dBFS RMS; "off" stops it
 ubus call dsp set '{"distances": {"fl": 300, "c": 250}}'  # cm; nearer speakers are held back, 0 = not known
+ubus call dsp set '{"surround": "movie"}'           # surround from stereo: "movie", "music", "game" or "off"
 ```
 
 dspaudio takes the I2S input from the PCM9211 (the tuner and analog inputs
@@ -89,8 +90,9 @@ What it does today:
   `/data/osiris/state`, unless `/data/etc/hostname` exists)
 - makes the receiver show "OSIRIS <build>" as its DSP version
 - picks the speakers from the listening mode: All Ch Stereo plays stereo on
-  every speaker, Full Mono mono on every speaker, everything else the front
-  pair (the DSP cannot decode surround yet)
+  every speaker, Full Mono mono on every speaker; the Dolby PLII, DTS Neo:6,
+  THX and sound field modes make surround from stereo with the movie, music
+  or game preset; everything else plays on the front pair
 - plays pink noise on the channel level calibration asks for (front high
   and wide on the surround back pair)
 - passes the receiver's bass and treble to the DSP and keeps them in the
