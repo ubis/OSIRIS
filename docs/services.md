@@ -45,6 +45,7 @@ mcud -v                           # (with S10osiris stopped) log every frame
 | `mcu.input` | input or stream format changed |
 | `mcu.listening_mode` | listening mode changed (codes in [mcu-protocol.md](mcu-protocol.md)) |
 | `mcu.tone` | front bass and treble changed, in dB |
+| `mcu.distance` | speaker distances changed, in cm per speaker (also in `mcu status`) |
 | `mcu.network` | the network menu asks for the settings; answer with `ubus call mcu network` |
 | `mcu.power` | the receiver goes to standby (`off`) or resets (`reset`); confirm with `ubus call mcu power` |
 | `mcu.speakers` | speaker setup |
@@ -72,6 +73,7 @@ ubus call dsp set '{"volume": -600}'              # gain in 0.01 dB, 0 = unity
 ubus call dsp set '{"outputs": "all"}'            # "front", "all" (stereo everywhere) or "mono"
 ubus call dsp set '{"bass": 4, "treble": -2}'      # dB, -12..+12
 ubus call dsp set '{"testtone": "fl", "testtone_level": -30}'  # pink noise on one output, dBFS RMS; "off" stops it
+ubus call dsp set '{"distances": {"fl": 300, "c": 250}}'  # cm; nearer speakers are held back, 0 = not known
 ```
 
 dspaudio takes the I2S input from the PCM9211 (the tuner and analog inputs
@@ -93,6 +95,9 @@ What it does today:
   and wide on the surround back pair)
 - passes the receiver's bass and treble to the DSP and keeps them in the
   state file
+- passes the speaker distances to the DSP and keeps them in the state file
+  (the MCU sends them only when they change); front high uses the surround
+  back distance's place when there is no surround back
 - answers the network menu with the address, link state and MAC of eth0
 - offers an update bundle of another version on a USB stick when the
   receiver asks for updates: the receiver shows its update notice, and its

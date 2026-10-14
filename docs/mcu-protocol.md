@@ -84,7 +84,7 @@ only sends it when a field changes.
 | C0 | initial_settings | |
 | C1 | input_settings | [1] decode mode [2] interface [3] fs code [4] MCLK [5] status |
 | C2 | speaker_config | speaker setup changed (stock answers with 45) |
-| C3 | distance | [1..26] 13 x u16 LE in cm: fl, c, fr, sl, sr, sbl, sbr, fhl, fhr, fwl, fwr, sw, (0); 5 cm steps |
+| C3 | distance | [0] not known (perhaps the unit the menu shows), [1..26] 13 x u16 LE in cm: fl, c, fr, sl, sr, sbl, sbr, fhl, fhr, fwl, fwr, sw, (0); 5 cm steps; sent when changed |
 | C4 | equalizer | |
 | C5 | thx | |
 | C6 | multiplex_mono | |
@@ -232,9 +232,10 @@ Events (`ubus listen mcu`):
 | `mcu.ready` | end of start-up | `model`, `make`, `code` |
 | `mcu.input` | C1, E5 | decoded fields |
 | `mcu.volume` | D3 | `volume` (0.01 dB) |
-| `mcu.speakers` | C2, C3, C9 | raw payload until decoded |
+| `mcu.speakers` | C2, C9 | raw payload until decoded |
 | `mcu.listening_mode` | D2 | `mode` (also kept in `mcu status` as `listening_mode`) |
 | `mcu.testtone` | D0, D1 | `channel` |
+| `mcu.distance` | C3 | `distances` (cm by speaker), `unit` (C3 [0]) |
 | `mcu.iscp` | F3 | `command` |
 | `mcu.update` | E8 | `stage` (`check`, `download`, `install`, `upload`), `source` (`network`, `usb`) |
 | `mcu.frame` | everything else | `cmd`, `name`, `data` (hex) |
