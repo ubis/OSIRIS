@@ -93,7 +93,7 @@ local INSTALL_STEPS = {
 	{ "writing u-boot", 90 }, { "will be tried", 100 },
 }
 
-local mode_now
+local mode_now, mode_name
 local testtone_ch = "fl"
 local media = {}		-- mounted USB storage, by directory
 local bundle			-- { path, version } of an update on it
@@ -237,7 +237,7 @@ local function set_mode(mode, name)
 		save_state({ listening_mode = mode or "", listening_mode_name = name or "" })
 	end
 
-	mode_now = mode
+	mode_now, mode_name = mode, name
 	call("dsp", "set", {
 		outputs = MODE_OUTPUTS[name] or MODE_OUTPUTS[mode] or "front",
 		surround = mode ~= LM_TESTTONE and MODE_SURROUND[name] or "off",
@@ -497,6 +497,14 @@ local function power(state)
 end
 
 local handlers = {
+	["dsp.ready"] = function()
+		local saved = load_state()
+
+		log("DSP started again, setting it up")
+		set_mode(mode_now, mode_name)
+		set_tone(tonumber(saved.bass or ""), tonumber(saved.treble or ""))
+		set_distances(saved_distances(saved))
+	end,
 	["mcu.ready"] = function(msg)
 		set_model(msg)
 		set_usb()

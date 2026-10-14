@@ -647,6 +647,10 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	/* a new DSP knows nothing: the policy sets it up again */
+	blob_buf_init(&b, 0);
+	ubus_send_event(ctx, "dsp.ready", b.head);
+
 	uloop_run();
 	mute_lines(1);
 	dsp_stop();
