@@ -53,7 +53,9 @@ E3 -> 63, EA -> 6A).
 | 63 | item | ask for system item n (0-7 on this MCU, 0-0x0C on the NR828) -> E3 |
 | 64 | 0 / 1 | ask for display info (0 text, 1 OSD) -> E4 |
 | 65 | 2 bytes | network module state (00 01 start, 05 00, 05 01, 00 02 ready) |
+| 65 | 03 00 port n | USB port state: n 1..31 = storage present, 0 = none; storage makes the MCU check for an update on USB |
 | 66 | item | answer to E6. Item 1: [1] 1, [3] DHCP, [4..23] IP, netmask, gateway, DNS 1, DNS 2 (each a 32-bit little endian value), [24..29] MAC. Item 5: 05 + friendly name |
+| 68 | type ... | answers in the firmware update, see below |
 | 6A | 1 byte | reply to EA, echoes its byte; after 6A 01 the MCU cuts the board's power |
 | 73 | 01 "!1..." | ISCP towards the MCU (tried for NTI, no visible effect yet) |
 
@@ -113,7 +115,7 @@ only sends it when a field changes.
 | E4 | display info | [0] 0 text / 1 OSD |
 | E5 | inputsel | input selected |
 | E6 | network | [0] item: 0 status, 1 IP settings, 2 proxy, 3 network control, 4 interface, 5 friendly name, 6-0A change a setting, 0B-0D tests. The network menu shows item 1; stock does not answer 2 |
-| E8 | update | firmware update (unused) |
+| E8 | update | firmware update, see below |
 | EA | power | [0] 00 on, 01 off, 02 factory reset -> 6A with the same byte. 01 comes only when the main zone, Zone 2 and Zone 3 are all off; stock syncs the file systems before answering |
 | F1-F3 | update_source / update_mode / update_start, ISCP | F3 01 "!1..." = ISCP from the MCU |
 
@@ -152,6 +154,43 @@ Seen on the TX-NR717 and checked against the front display:
 | D0 | 01 | LMDA1 | PLII Music + Audyssey DSX |
 | F1 | | | test tone (automatic level setup) |
 
+## Firmware update (E8 / 68)
+
+The MCU runs the update screens; the network side only answers. E8 [0]:
+
+| E8 | meaning |
+|---|---|
+| 00 src | the MCU looks for an update on the network (0) or USB (1) |
+| 01 versions | its parts' versions (7 x 5 ASCII: DSP2 VSP1 VMPU OSD DSP1 NET MMPU): is there an update? |
+| 03 part | download it |
+| 04 | write it |
+| 05 | send the MCU its own firmware (68 type 2 blocks, the MCU flashes itself): never answered |
+
+68 [0] is the type, [1] a code (0 success; 0x1A "DL Error", 0x28 "Update Error"):
+
+| 68 | meaning |
+|---|---|
+| 00 code n0..n6 | answer to E8 01: 1 for each part that has an update |
+| 01 code size | download done, size u32 LE; the MCU then sends E8 04 |
+| 03 percent | progress; the MCU gives up after ~20 s without one |
+| 04 code | written; taken only after progress 100 |
+
+The MCU asks (E8 00 + 01) at power-on and again about every 150 s until it
+gets an answer, and when USB storage appears (65 03). An answer with a part
+set to 1 to the power-on check shows the update notice (if the receiver's
+update notice setting is on) and adds "Update via NET"; to a USB check it
+adds "Update via USB" to Setup / Firmware Update.
+
+OSIRIS answers for part 4 (DSP1, shown as "ARM"): the MCU sends E8 03 04,
+shows "ARM writing" after E8 04 and "Completed!" after 68 04 00.
+
+Part 5 (NET) does not work here: after the result the MCU checks the
+BridgeCo network module of other models, which this board does not have,
+and shows "Error 9-1".
+
+Errors are shown as `<part>-<code>`: part 9 NET, 6 ARM, the code as in the
+68 answers.
+
 ## Calibration (unfinished)
 
 During automatic level setup the MCU sends D2 F1 (test tone listening mode),
@@ -182,6 +221,8 @@ ubus object `mcu`:
 | `stream` | 0x42 fields by name | updates the stream status, sent if changed |
 | `outputs` | `mask` | 4A |
 | `levels` | 13 values | 45 |
+| `update` | one of `available` (bool), `progress` (%), `downloaded` (bytes), `result` (`ok`/`error`) | the 68 answers; a failed download is told as a failed 68 01 |
+| `usb` | `present`, `port` | 65 03 |
 | `send` | `cmd`, `data` (hex) | any frame, for experiments |
 
 Events (`ubus listen mcu`):
@@ -195,4 +236,5 @@ Events (`ubus listen mcu`):
 | `mcu.listening_mode` | D2 | `mode` (also kept in `mcu status` as `listening_mode`) |
 | `mcu.testtone` | D0, D1 | `channel` |
 | `mcu.iscp` | F3 | `command` |
+| `mcu.update` | E8 | `stage` (`check`, `download`, `install`, `upload`), `source` (`network`, `usb`) |
 | `mcu.frame` | everything else | `cmd`, `name`, `data` (hex) |

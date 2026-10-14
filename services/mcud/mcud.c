@@ -98,6 +98,13 @@ static const char *power_name(uint8_t state)
 	return state < ARRAY_SIZE(power_names) ? power_names[state] : "unknown";
 }
 
+static const char *const update_stages[] = {
+	[UPDATE_VERSIONS] = "check", [UPDATE_MODE] = "download",
+	[UPDATE_START] = "install", [UPDATE_UPLOAD] = "upload",
+};
+
+static int update_usb;			/* the MCU looks on USB, not the network */
+
 static void on_frame(const struct link_frame *f, const char *name)
 {
 	const uint8_t *d = f->data;
@@ -179,6 +186,24 @@ static void on_frame(const struct link_frame *f, const char *name)
 		add_hex("data", d, f->len);
 		event("mcu.network");
 		return;
+	case MCU_UPDATE:
+		if (!f->len) {
+			break;
+		}
+
+		if (d[0] == UPDATE_SOURCE) {
+			update_usb = f->len > 1 && d[1] == 1;
+			return;
+		}
+
+		if (d[0] >= ARRAY_SIZE(update_stages) || !update_stages[d[0]]) {
+			break;
+		}
+
+		blobmsg_add_string(&b, "stage", update_stages[d[0]]);
+		blobmsg_add_string(&b, "source", update_usb ? "usb" : "network");
+		event("mcu.update");
+		return;
 	case MCU_ISCP:
 		if (f->len > 1) {
 			char *s = blobmsg_alloc_string_buffer(&b, "command", f->len);
@@ -222,6 +247,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 		blobmsg_add_u32(&b, "listening_mode", listening_mode);
 	}
 
+	blobmsg_add_u8(&b, "update_check", proto_update_waiting());
 	blobmsg_add_u32(&b, "queued", link_queued());
 	ubus_send_reply(c, req, b.head);
 	return 0;
@@ -437,6 +463,63 @@ static int m_power(struct ubus_context *c, struct ubus_object *obj,
 	return UBUS_STATUS_INVALID_ARGUMENT;
 }
 
+enum { UP_AVAILABLE, UP_DOWNLOADED, UP_PROGRESS, UP_RESULT, __UP_MAX };
+
+static const struct blobmsg_policy update_policy[__UP_MAX] = {
+	[UP_AVAILABLE] = { .name = "available", .type = BLOBMSG_TYPE_BOOL },
+	[UP_DOWNLOADED] = { .name = "downloaded", .type = BLOBMSG_TYPE_INT32 },
+	[UP_PROGRESS] = { .name = "progress", .type = BLOBMSG_TYPE_INT32 },
+	[UP_RESULT] = { .name = "result", .type = BLOBMSG_TYPE_STRING },
+};
+
+/* the answers in the update dialogue: one of them per call */
+static int m_update(struct ubus_context *c, struct ubus_object *obj,
+		    struct ubus_request_data *req, const char *method,
+		    struct blob_attr *msg)
+{
+	struct blob_attr *tb[__UP_MAX];
+
+	blobmsg_parse(update_policy, __UP_MAX, tb, blob_data(msg), blob_len(msg));
+	if (tb[UP_AVAILABLE]) {
+		proto_update_check(blobmsg_get_bool(tb[UP_AVAILABLE]));
+	} else if (tb[UP_PROGRESS]) {
+		int32_t p = blobmsg_get_u32(tb[UP_PROGRESS]);
+
+		proto_update_progress(p < 0 ? 0 : p > 100 ? 100 : p);
+	} else if (tb[UP_DOWNLOADED]) {
+		proto_update_downloaded(blobmsg_get_u32(tb[UP_DOWNLOADED]));
+	} else if (tb[UP_RESULT]) {
+		proto_update_result(!strcmp(blobmsg_get_string(tb[UP_RESULT]), "ok"));
+	} else {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	return 0;
+}
+
+enum { USB_PRESENT, USB_PORT, __USB_MAX };
+
+static const struct blobmsg_policy usb_policy[__USB_MAX] = {
+	[USB_PRESENT] = { .name = "present", .type = BLOBMSG_TYPE_BOOL },
+	[USB_PORT] = { .name = "port", .type = BLOBMSG_TYPE_INT32 },
+};
+
+static int m_usb(struct ubus_context *c, struct ubus_object *obj,
+		 struct ubus_request_data *req, const char *method,
+		 struct blob_attr *msg)
+{
+	struct blob_attr *tb[__USB_MAX];
+
+	blobmsg_parse(usb_policy, __USB_MAX, tb, blob_data(msg), blob_len(msg));
+	if (!tb[USB_PRESENT] || (tb[USB_PORT] && blobmsg_get_u32(tb[USB_PORT]) > 1)) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	proto_set_usb(tb[USB_PORT] ? blobmsg_get_u32(tb[USB_PORT]) : 0,
+		      blobmsg_get_bool(tb[USB_PRESENT]));
+	return 0;
+}
+
 enum { SEND_CMD, SEND_DATA, __SEND_MAX };
 
 static const struct blobmsg_policy send_policy[__SEND_MAX] = {
@@ -481,6 +564,8 @@ static const struct ubus_method mcu_methods[] = {
 	UBUS_METHOD("levels", m_levels, levels_policy),
 	UBUS_METHOD("network", m_network, network_policy),
 	UBUS_METHOD("power", m_power, power_policy),
+	UBUS_METHOD("update", m_update, update_policy),
+	UBUS_METHOD("usb", m_usb, usb_policy),
 	UBUS_METHOD("send", m_send, send_policy),
 };
 

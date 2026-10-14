@@ -25,6 +25,7 @@ enum mcu_cmd {
 	NET_DISPLAY		= 0x64,	/* ask for MCU_DISPLAY 0 (text) / 1 (OSD) */
 	NET_STATE		= 0x65,	/* two bytes, NET_STATE_* */
 	NET_NETWORK		= 0x66,	/* answer to MCU_NETWORK */
+	NET_UPDATE		= 0x68,	/* [0] UPDATE_CHECK..., answers MCU_UPDATE */
 	NET_POWER		= 0x6a,	/* answer to MCU_POWER, echoes its byte */
 	NET_ISCP		= 0x73,	/* 01 "!1..." */
 
@@ -62,7 +63,7 @@ enum mcu_cmd {
 	MCU_DISPLAY		= 0xe4,
 	MCU_INPUT_SELECT	= 0xe5,
 	MCU_NETWORK		= 0xe6,	/* [0] item, asked when the network menu opens */
-	MCU_UPDATE		= 0xe8,
+	MCU_UPDATE		= 0xe8,	/* [0] UPDATE_SOURCE... */
 	MCU_POWER		= 0xea,	/* POWER_* */
 	MCU_UPDATE_SOURCE	= 0xf1,
 	MCU_UPDATE_MODE		= 0xf2,
@@ -74,6 +75,27 @@ enum mcu_cmd {
 #define NET_STATE_UP_0		0x05, 0x00
 #define NET_STATE_UP_1		0x05, 0x01
 #define NET_STATE_READY		0x00, 0x02	/* MCU closes the speaker relays */
+#define NET_STATE_USB		0x03	/* [1] 0 [2] port [3] devices, 1..31 = storage */
+
+/*
+ * The firmware update dialogue (docs/mcu-protocol.md). MCU_UPDATE [0]: the
+ * MCU asks whether there is an update, then to download and to write it.
+ */
+#define UPDATE_SOURCE		0x00	/* [1] 0 network, 1 USB */
+#define UPDATE_VERSIONS		0x01	/* the MCU's parts' versions: is there one? */
+#define UPDATE_MODE		0x03	/* [1] part: download it */
+#define UPDATE_START		0x04	/* write it */
+#define UPDATE_UPLOAD		0x05	/* send the MCU its own firmware: never */
+
+/* NET_UPDATE [0]; a code of 0 is success */
+#define UPDATE_CHECK		0x00	/* [1] code, [2..8] one byte per part: 1 newer */
+#define UPDATE_DOWNLOADED	0x01	/* [1] code, [2..5] u32 LE size */
+#define UPDATE_PROGRESS		0x03	/* [1] percent; the MCU gives up after ~20 s */
+#define UPDATE_RESULT		0x04	/* [1] code */
+#define UPDATE_PARTS		7
+#define UPDATE_PART_ARM		4	/* "DSP1", shown as ARM */
+#define UPDATE_DL_ERROR		0x1a	/* "DL Error" */
+#define UPDATE_ERROR		0x28	/* "Update Error" */
 
 /* MCU_NETWORK items we answer; proxy (2) is not answered by stock either */
 #define NETWORK_STATUS		0x00
