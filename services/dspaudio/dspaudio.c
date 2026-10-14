@@ -6,7 +6,8 @@
  *   McASP1 AXR1_0..3 (transmit, BCK = AHCLKX / 4) --I2S--> PCM1690
  *
  * Every output is the sum of the inputs, each times the gain dspd sets for
- * that output and input (struct dspaudio_shared), clipped. No DMA, FIFO or interrupts: the DSP
+ * that output and input (struct dspaudio_shared), clipped, then held back by
+ * the output's delay (speaker distance). No DMA, FIFO or interrupts: the DSP
  * polls the McASP and moves one sample per slot through XBUF/RBUF. Clock
  * and format settings are the ones the stock DSP image uses.
  */
@@ -280,13 +281,18 @@ static int32_t noise(void)
 	return (int32_t)p;
 }
 
-static uint32_t output(unsigned int out)
+#define DELAY_LEN	(DSPAUDIO_DELAY_MAX + 1)
+
+static int32_t delay_buf[DSPAUDIO_OUT][DELAY_LEN];
+static unsigned int delay_pos[DSPAUDIO_OUT];
+
+static int32_t mix(unsigned int out)
 {
 	int64_t v = 0;
 	unsigned int i;
 
 	if (out == SH->noise_out) {
-		return (uint32_t)noise();
+		return noise();
 	}
 
 	for (i = 0; i < DSPAUDIO_IN; i++) {
@@ -300,7 +306,21 @@ static uint32_t output(unsigned int out)
 		v = INT32_MIN;
 	}
 
-	return (uint32_t)v;
+	return (int32_t)v;
+}
+
+static uint32_t output(unsigned int out)
+{
+	unsigned int w = delay_pos[out], d = SH->delay[out], r;
+
+	if (d > DSPAUDIO_DELAY_MAX) {
+		d = DSPAUDIO_DELAY_MAX;
+	}
+
+	delay_buf[out][w] = mix(out);
+	delay_pos[out] = w + 1 == DELAY_LEN ? 0 : w + 1;
+	r = w >= d ? w - d : w + DELAY_LEN - d;
+	return (uint32_t)delay_buf[out][r];
 }
 
 static void report_start(void)

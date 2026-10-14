@@ -2,7 +2,7 @@
 /*
  * The block the DSP firmware (dspaudio) and dspd share in DSP L2 RAM: the
  * DSP reports its state there, dspd sets how much of each input goes to
- * each output, the tone filters and the test noise.
+ * each output, the tone filters, the test noise and the output delays.
  * Both sides are 32-bit little endian; the ARM reaches it through /dev/mem.
  */
 #ifndef DSPAUDIO_H
@@ -13,13 +13,14 @@
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		4
+#define DSPAUDIO_ABI		5
 
 #define DSPAUDIO_IN		2	/* PCM9211 I2S: left, right */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
 #define DSPAUDIO_GAIN_ONE	(1 << 24)	/* gains are 8.24 fixed point */
 #define DSPAUDIO_TONE		2	/* biquads on every input: bass, treble */
 #define DSPAUDIO_NOISE_OFF	0xff
+#define DSPAUDIO_DELAY_MAX	2047	/* samples at 48 kHz: 42 ms, 14.6 m */
 
 /*
  * Outputs: serializer AXR1_n slot s is output 2n + s, and AXR1_n feeds
@@ -72,6 +73,7 @@ struct dspaudio_shared {
 	uint32_t tone_sel;
 	uint32_t noise_out;		/* output playing pink noise, or NOISE_OFF */
 	float noise_gain;		/* sample value for an RMS of 1 */
+	uint32_t delay[DSPAUDIO_OUT];	/* samples each output is held back */
 };
 
 #endif
