@@ -224,6 +224,34 @@ static void tx_restart(void)
 }
 
 static int32_t input[DSPAUDIO_IN];
+static float tone_z[DSPAUDIO_IN][DSPAUDIO_TONE][2];
+
+/* the biquads in transposed direct form II, on one input sample */
+static int32_t tone(unsigned int in, int32_t smp)
+{
+	const volatile struct dspaudio_biquad *q = SH->tone[SH->tone_sel & 1];
+	float x = (float)smp, y;
+	unsigned int k;
+
+	for (k = 0; k < DSPAUDIO_TONE; k++) {
+		float *z = tone_z[in][k];
+
+		y = q[k].b0 * x + z[0];
+		z[0] = q[k].b1 * x - q[k].a1 * y + z[1];
+		z[1] = q[k].b2 * x - q[k].a2 * y;
+		x = y;
+	}
+
+	if (x >= 2147483520.0f) {
+		return INT32_MAX;
+	}
+
+	if (x <= -2147483648.0f) {
+		return INT32_MIN;
+	}
+
+	return (int32_t)x;
+}
 
 static uint32_t output(unsigned int out)
 {
@@ -289,7 +317,7 @@ void dspaudio_main(void)
 		if (rs & STAT_DATA) {
 			slot = (rs & STAT_ODD_SLOT) ? 1 : 0;
 			smp = (int32_t)REG(RBUF(RX_SER));
-			input[slot] = smp;
+			input[slot] = tone(slot, smp);
 			mag = smp < 0 ? -(uint32_t)smp : (uint32_t)smp;
 			if (mag > SH->peak[slot]) {
 				SH->peak[slot] = mag;
