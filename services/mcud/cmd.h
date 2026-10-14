@@ -41,7 +41,7 @@ enum mcu_cmd {
 	MCU_LFE_LEVEL		= 0xc9,
 	MCU_AV_SYNC		= 0xca,
 	MCU_HDMI_AUDIO		= 0xcb,
-	MCU_BASS_TREBLE		= 0xcc,
+	MCU_BASS_TREBLE		= 0xcc,	/* [0] 0 front, [1] bass, [8] treble: s8 dB */
 	MCU_RE_EQ		= 0xcd,
 	MCU_MUSIC_OPTIMIZER	= 0xce,
 	MCU_LATE_NIGHT		= 0xcf,
