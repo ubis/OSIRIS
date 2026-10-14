@@ -332,7 +332,8 @@ void dspaudio_main(void)
 
 		xs = REG(XSTAT);
 		if (xs & STAT_DATA) {
-			slot = (xs & STAT_ODD_SLOT) ? 1 : 0;
+			/* XTDMSLOT is the slot going out now; XBUF is for the next one */
+			slot = (xs & STAT_ODD_SLOT) ? 0 : 1;
 			for (i = 0; i < TX_SERS; i++) {
 				REG(XBUF(i)) = output(2 * i + slot);
 			}
