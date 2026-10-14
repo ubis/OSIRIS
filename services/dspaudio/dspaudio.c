@@ -253,10 +253,41 @@ static int32_t tone(unsigned int in, int32_t smp)
 	return (int32_t)x;
 }
 
+static uint32_t noise_x = 0x12345678;
+static float noise_b[3];
+
+/* white noise from xorshift32, through Paul Kellet's economy pink filter */
+static int32_t noise(void)
+{
+	float w, p;
+
+	noise_x ^= noise_x << 13;
+	noise_x ^= noise_x >> 17;
+	noise_x ^= noise_x << 5;
+	w = (float)(noise_x >> 8) / 8388608.0f - 1.0f;
+	noise_b[0] = 0.99765f * noise_b[0] + w * 0.0990460f;
+	noise_b[1] = 0.96300f * noise_b[1] + w * 0.2965164f;
+	noise_b[2] = 0.57000f * noise_b[2] + w * 1.0526913f;
+	p = (noise_b[0] + noise_b[1] + noise_b[2] + w * 0.1848f) * SH->noise_gain;
+	if (p >= 2147483520.0f) {
+		return INT32_MAX;
+	}
+
+	if (p <= -2147483648.0f) {
+		return INT32_MIN;
+	}
+
+	return (int32_t)p;
+}
+
 static uint32_t output(unsigned int out)
 {
 	int64_t v = 0;
 	unsigned int i;
+
+	if (out == SH->noise_out) {
+		return (uint32_t)noise();
+	}
 
 	for (i = 0; i < DSPAUDIO_IN; i++) {
 		v += (int64_t)input[i] * SH->gain[out][i];
