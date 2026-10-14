@@ -6,8 +6,10 @@
  *   McASP1 AXR1_0..3 (transmit, BCK = AHCLKX / 4) --I2S--> PCM1690
  *
  * Every output is the sum of the inputs, each times the gain dspd sets for
- * that output and input (struct dspaudio_shared), clipped, then held back by
- * the output's delay (speaker distance). No DMA, FIFO or interrupts: the DSP
+ * that output and input (struct dspaudio_shared), clipped, or comes from the
+ * surround decoder; the bass of small speakers moves to the subwoofer, and
+ * each output is held back by its speaker's distance. The eight outputs are
+ * made together, one frame per sample period. No DMA, FIFO or interrupts: the DSP
  * polls the McASP and moves one sample per slot through XBUF/RBUF. Clock
  * and format settings are the ones the stock DSP image uses.
  */
@@ -407,7 +409,7 @@ static int32_t mix(unsigned int out)
 	return (int32_t)v;
 }
 
-static uint32_t output(unsigned int out)
+static int32_t delayed(unsigned int out, int32_t v)
 {
 	unsigned int w = delay_pos[out], d = SH->delay[out], r;
 
@@ -415,10 +417,142 @@ static uint32_t output(unsigned int out)
 		d = DSPAUDIO_DELAY_MAX;
 	}
 
-	delay_buf[out][w] = mix(out);
+	delay_buf[out][w] = v;
 	delay_pos[out] = w + 1 == DELAY_LEN ? 0 : w + 1;
 	r = w >= d ? w - d : w + DELAY_LEN - d;
-	return (uint32_t)delay_buf[out][r];
+	return delay_buf[out][r];
+}
+
+/*
+ * A copy of the set dspd selected, so that the filters run from plain
+ * memory. Copying it at once takes longer than a sample period: it is
+ * copied a few words per frame into the spare one, then switched to.
+ */
+#define BASS_WORDS	(sizeof(struct dspaudio_bass) / 4)
+#define BASS_STEP	16
+
+static struct dspaudio_bass bass_buf[2];
+static const struct dspaudio_bass *bm = &bass_buf[0];
+static uint32_t bass_gen, copy_gen, bass_copy;	/* words of the spare done */
+static float bass_z[DSPAUDIO_OUT][2][DSPAUDIO_XO][2];	/* [high, low] */
+static float sub_z[DSPAUDIO_XO][2];
+
+static float cascade(const struct dspaudio_biquad *q, float (*z)[2], float x)
+{
+	unsigned int k;
+
+	for (k = 0; k < DSPAUDIO_XO; k++) {
+		float y = q[k].b0 * x + z[k][0];
+
+		z[k][0] = q[k].b1 * x - q[k].a1 * y + z[k][1];
+		z[k][1] = q[k].b2 * x - q[k].a2 * y;
+		x = y;
+	}
+
+	return x;
+}
+
+static void bass_follow(void)
+{
+	uint32_t gen = SH->bass_gen;
+	struct dspaudio_bass *spare = bm == &bass_buf[0] ? &bass_buf[1] : &bass_buf[0];
+	const volatile uint32_t *src = (const volatile uint32_t *)&SH->bass[gen & 1];
+	uint32_t *dst = (uint32_t *)spare;
+	unsigned int end;
+
+	if (gen == bass_gen) {
+		return;
+	}
+
+	/* a newer set than the one being copied: start over */
+	if (gen != copy_gen) {
+		copy_gen = gen;
+		bass_copy = 0;
+	}
+
+	end = bass_copy + BASS_STEP < BASS_WORDS ? bass_copy + BASS_STEP : BASS_WORDS;
+	for (; bass_copy < end; bass_copy++) {
+		dst[bass_copy] = src[bass_copy];
+	}
+
+	if (bass_copy < BASS_WORDS) {
+		return;
+	}
+
+	bass_copy = 0;
+	/* dspd may have rewritten this set while it was copied */
+	if (SH->bass_gen != gen) {
+		return;
+	}
+
+	/* the old filters' state does not fit the new ones */
+	for (end = 0; end < sizeof(bass_z) / sizeof(float); end++) {
+		((float *)bass_z)[end] = 0.0f;
+	}
+
+	for (end = 0; end < sizeof(sub_z) / sizeof(float); end++) {
+		((float *)sub_z)[end] = 0.0f;
+	}
+
+	bm = spare;
+	bass_gen = gen;
+}
+
+static void bass_manage(float *y)
+{
+	float sub = 0.0f;
+	unsigned int out;
+
+	bass_follow();
+	for (out = 0; out < DSPAUDIO_OUT; out++) {
+		if (out == DSPAUDIO_OUT_SW || !(bm->small & (1u << out))) {
+			continue;
+		}
+
+		sub += cascade(bm->low[out], bass_z[out][1], y[out]);
+		y[out] = cascade(bm->high[out], bass_z[out][0], y[out]);
+	}
+
+	if (bm->subwoofer) {
+		y[DSPAUDIO_OUT_SW] = cascade(bm->sub, sub_z, y[DSPAUDIO_OUT_SW] + sub);
+	} else {
+		y[DSPAUDIO_OUT_FL] += 0.5f * sub;
+		y[DSPAUDIO_OUT_FR] += 0.5f * sub;
+	}
+}
+
+#define LIMIT		0.95f		/* -0.45 dBFS */
+#define LIMIT_RELEASE	0.99995f	/* per sample: ~0.4 s back to unity */
+
+static int32_t frame[DSPAUDIO_OUT];
+static float peak_env[DSPAUDIO_OUT];
+
+/*
+ * The bass the small speakers send can add up past full scale: rather than
+ * clip, turn the output down at once and back up slowly.
+ */
+static float limit(unsigned int out, float x)
+{
+	float a = x < 0.0f ? -x : x;
+
+	peak_env[out] = a > peak_env[out] ? a : peak_env[out] * LIMIT_RELEASE;
+	return peak_env[out] > LIMIT ? x * (LIMIT / peak_env[out]) : x;
+}
+
+static void make_frame(void)
+{
+	float y[DSPAUDIO_OUT];
+	unsigned int out;
+
+	for (out = 0; out < DSPAUDIO_OUT; out++) {
+		y[out] = mix(out) / FULL_SCALE;
+	}
+
+	bass_manage(y);
+	for (out = 0; out < DSPAUDIO_OUT; out++) {
+		y[out] = limit(out, y[out]);
+		frame[out] = delayed(out, (int32_t)(clampf(y[out], -1.0f, 0.99999994f) * FULL_SCALE));
+	}
 }
 
 static void report_start(void)
@@ -487,8 +621,12 @@ void dspaudio_main(void)
 		if (xs & STAT_DATA) {
 			/* XTDMSLOT is the slot going out now; XBUF is for the next one */
 			slot = (xs & STAT_ODD_SLOT) ? 0 : 1;
+			if (slot == 0) {
+				make_frame();
+			}
+
 			for (i = 0; i < TX_SERS; i++) {
-				REG(XBUF(i)) = output(2 * i + slot);
+				REG(XBUF(i)) = (uint32_t)frame[2 * i + slot];
 			}
 
 			idle = 0;

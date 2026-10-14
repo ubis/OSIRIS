@@ -104,6 +104,12 @@ static const struct surround_preset surround_presets[] = {
 
 static const struct surround_preset *surround;	/* NULL: off */
 
+#define CROSSOVER_MIN	20		/* Hz */
+#define CROSSOVER_MAX	250
+static int crossover[DSPAUDIO_OUT];	/* Hz, 0 = large: full range */
+static int subwoofer;
+static int sub_lowpass = 120;		/* Hz */
+
 static const char *const out_name[DSPAUDIO_OUT] = {
 	[DSPAUDIO_OUT_FL] = "fl", [DSPAUDIO_OUT_FR] = "fr",
 	[DSPAUDIO_OUT_C] = "c", [DSPAUDIO_OUT_SW] = "sw",
@@ -208,6 +214,36 @@ static void pass(volatile struct dspaudio_biquad *q, double hz, int high)
 	q->b2 = k / a0;
 	q->a1 = -2.0 * c / a0;
 	q->a2 = (1.0 - alpha) / a0;
+}
+
+/* Linkwitz-Riley: two Butterworth sections each side, the sides add up flat */
+static void apply_bass(void)
+{
+	uint32_t gen = sh->bass_gen + 1, next = gen & 1;
+	volatile struct dspaudio_bass *bm = &sh->bass[next];
+	uint32_t small = 0;
+	unsigned int out, k;
+
+	for (out = 0; out < DSPAUDIO_OUT; out++) {
+		if (out == DSPAUDIO_OUT_SW || !crossover[out]) {
+			continue;
+		}
+
+		small |= 1u << out;
+		for (k = 0; k < DSPAUDIO_XO; k++) {
+			pass(&bm->high[out][k], crossover[out], 1);
+			pass(&bm->low[out][k], crossover[out], 0);
+		}
+	}
+
+	for (k = 0; k < DSPAUDIO_XO; k++) {
+		pass(&bm->sub[k], sub_lowpass, 0);
+	}
+
+	bm->small = small;
+	bm->subwoofer = subwoofer;
+	__sync_synchronize();
+	sh->bass_gen = gen;
 }
 
 static uint32_t ms_samples(double ms)
@@ -345,6 +381,7 @@ static int dsp_start(const char *image)
 	apply_noise();
 	apply_delays();
 	apply_surround();
+	apply_bass();
 	msync((void *)l2, L2_SIZE, MS_SYNC);
 	syscfg[HOST1CFG / 4] = DSPAUDIO_LOAD;
 	psc[PSC_MDCTL_DSP / 4] |= MDCTL_LRST;
@@ -412,12 +449,23 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	}
 
 	blobmsg_close_table(&b, a);
+	a = blobmsg_open_table(&b, "crossover");
+	for (i = 0; i < DSPAUDIO_OUT; i++) {
+		if (crossover[i]) {
+			blobmsg_add_u32(&b, out_name[i], (uint32_t)crossover[i]);
+		}
+	}
+
+	blobmsg_close_table(&b, a);
+	blobmsg_add_u8(&b, "subwoofer", subwoofer);
+	blobmsg_add_u32(&b, "sub_lowpass", (uint32_t)sub_lowpass);
 	ubus_send_reply(c, req, b.head);
 	return 0;
 }
 
 enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
-	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, __SET_MAX };
+	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, SET_CROSSOVER, SET_SUBWOOFER,
+	SET_SUB_LOWPASS, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -429,6 +477,9 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_TESTTONE_LEVEL] = { .name = "testtone_level", .type = BLOBMSG_TYPE_INT32 },
 	[SET_DISTANCES] = { .name = "distances", .type = BLOBMSG_TYPE_TABLE },
 	[SET_SURROUND] = { .name = "surround", .type = BLOBMSG_TYPE_STRING },
+	[SET_CROSSOVER] = { .name = "crossover", .type = BLOBMSG_TYPE_TABLE },
+	[SET_SUBWOOFER] = { .name = "subwoofer", .type = BLOBMSG_TYPE_BOOL },
+	[SET_SUB_LOWPASS] = { .name = "sub_lowpass", .type = BLOBMSG_TYPE_INT32 },
 };
 
 static int out_index(const char *name)
@@ -468,6 +519,32 @@ static int set_distances(struct blob_attr *t)
 
 	memcpy(distance, d, sizeof(d));
 	apply_delays();
+	return 0;
+}
+
+/* { "fl": 80, ... } in Hz, 0 = large; outputs not named keep theirs */
+static int set_crossover(struct blob_attr *t)
+{
+	int x[DSPAUDIO_OUT], i, v;
+	struct blob_attr *cur;
+	unsigned int rem;
+
+	memcpy(x, crossover, sizeof(x));
+	blobmsg_for_each_attr(cur, t, rem) {
+		i = out_index(blobmsg_name(cur));
+		if (i < 0 || i == DSPAUDIO_OUT_SW || blobmsg_type(cur) != BLOBMSG_TYPE_INT32) {
+			return -1;
+		}
+
+		v = (int32_t)blobmsg_get_u32(cur);
+		if (v && (v < CROSSOVER_MIN || v > CROSSOVER_MAX)) {
+			return -1;
+		}
+
+		x[i] = v;
+	}
+
+	memcpy(crossover, x, sizeof(x));
 	return 0;
 }
 
@@ -547,6 +624,28 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 
 	if (tb[SET_DISTANCES] && set_distances(tb[SET_DISTANCES])) {
 		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	if (tb[SET_SUB_LOWPASS]) {
+		int v = (int32_t)blobmsg_get_u32(tb[SET_SUB_LOWPASS]);
+
+		if (v < CROSSOVER_MIN || v > CROSSOVER_MAX) {
+			return UBUS_STATUS_INVALID_ARGUMENT;
+		}
+
+		sub_lowpass = v;
+	}
+
+	if (tb[SET_SUBWOOFER]) {
+		subwoofer = blobmsg_get_bool(tb[SET_SUBWOOFER]);
+	}
+
+	if (tb[SET_CROSSOVER] && set_crossover(tb[SET_CROSSOVER])) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	if (tb[SET_CROSSOVER] || tb[SET_SUBWOOFER] || tb[SET_SUB_LOWPASS]) {
+		apply_bass();
 	}
 
 	if (tb[SET_SURROUND]) {

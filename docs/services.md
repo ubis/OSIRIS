@@ -75,6 +75,7 @@ ubus call dsp set '{"bass": 4, "treble": -2}'      # dB, -12..+12
 ubus call dsp set '{"testtone": "fl", "testtone_level": -30}'  # pink noise on one output, dBFS RMS; "off" stops it
 ubus call dsp set '{"distances": {"fl": 300, "c": 250}}'  # cm; nearer speakers are held back, 0 = not known
 ubus call dsp set '{"surround": "movie"}'           # surround from stereo: "movie", "music", "game" or "off"
+ubus call dsp set '{"crossover": {"fl": 80, "c": 80}, "subwoofer": true, "sub_lowpass": 120}'  # Hz, 0 = large
 ```
 
 dspaudio takes the I2S input from the PCM9211 (the tuner and analog inputs

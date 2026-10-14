@@ -158,7 +158,8 @@ flowchart LR
         RX --> TONE[bass and treble<br/>shelf filters]
         TONE --> MIX[mix: L and R gain<br/>per output, or the<br/>surround decoder]
         NOISE[pink noise] --> MIX
-        MIX --> DELAY[delay per output<br/>speaker distance]
+        MIX --> BASS[bass management:<br/>small speakers' bass<br/>to the subwoofer]
+        BASS --> DELAY[delay per output<br/>speaker distance]
         DELAY --> TX[McASP1 transmit]
     end
     TX -->|AXR1_0 front<br/>AXR1_1 centre, sub<br/>AXR1_2 surround<br/>AXR1_3 surround back| DAC[PCM1690]
@@ -170,14 +171,15 @@ sample pair it runs the bass and treble filters and computes the eight
 outputs: each the left and the right input times a gain of its own, or, in
 the surround modes, from a matrix decoder that moves correlated, in-phase
 sound to the centre and the difference of left and right to the surrounds.
-It plays the test noise on the output the level setup asks for, holds each
-output back by its speaker's distance and writes them to the four serial
-lines of the DAC. dspd sets these gains in a block of DSP memory both sides share
+It plays the test noise on the output the level setup asks for, moves the
+bass of small speakers to the subwoofer (Linkwitz-Riley crossovers), holds
+each output back by its speaker's distance and writes them to the four
+serial lines of the DAC. dspd sets these gains in a block of DSP memory both sides share
 ([dspaudio.h](../services/dspd/dspaudio.h)), and the DSP reports its state,
 counters and input peaks in the same block.
 
-Next on the DSP: bass management, the sound field modes (reverb) and the
-other modes of the receiver.
+Next on the DSP: the sound field modes (reverb) and the other modes of the
+receiver.
 
 ## Software versions
 
