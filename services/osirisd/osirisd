@@ -62,7 +62,7 @@ local MODE_OUTPUTS = {
 }
 
 -- the surround decoder's preset for the modes that make surround from
--- stereo; the receiver's sound field modes use the nearest one for now
+-- stereo, the sound field modes too
 local MODE_SURROUND = {
 	surround = "movie", film = "movie", thx = "movie", thx_cinema = "movie",
 	tv_logic = "movie", neural_surround = "movie",
@@ -77,6 +77,12 @@ local MODE_SURROUND = {
 	action = "game", thx_games = "game",
 	plii_game = "game", plii_thx_games = "game", plii_game_dsx = "game",
 	neo6_thx_games = "game", pliiz_height_thx_games = "game",
+}
+
+-- the room the sound field modes add on top of it
+local MODE_REVERB = {
+	orchestra = "hall", unplugged = "club", studio_mix = "studio",
+	film = "theater", musical = "theater", action = "theater", tv_logic = "tv",
 }
 
 local IFACE = "eth0"
@@ -238,9 +244,12 @@ local function set_mode(mode, name)
 	end
 
 	mode_now, mode_name = mode, name
+	local surround = mode ~= LM_TESTTONE and MODE_SURROUND[name] or "off"
+
 	call("dsp", "set", {
 		outputs = MODE_OUTPUTS[name] or MODE_OUTPUTS[mode] or "front",
-		surround = mode ~= LM_TESTTONE and MODE_SURROUND[name] or "off",
+		surround = surround,
+		reverb = surround ~= "off" and MODE_REVERB[name] or "off",
 	})
 	set_testtone()
 end
