@@ -34,7 +34,7 @@ events.
 
 ```sh
 ubus listen                       # watch the events
-ubus call mcu status              # link state, handshake stage, model
+ubus call mcu status              # handshake stage, model, the settings it knows
 mcud -v                           # (with S10osiris stopped) log every frame
 ```
 
@@ -48,11 +48,17 @@ mcud -v                           # (with S10osiris stopped) log every frame
 | `mcu.distance` | speaker distances changed, in cm per speaker (also in `mcu status`) |
 | `mcu.network` | the network menu asks for the settings; answer with `ubus call mcu network` |
 | `mcu.power` | the receiver goes to standby (`off`) or resets (`reset`); confirm with `ubus call mcu power` |
-| `mcu.speakers` | speaker setup |
+| `mcu.speakers` | speaker setup: which speakers there are, large or their crossover in Hz, subwoofers, LFE low pass, double bass, what the surround back amplifiers drive |
+| `mcu.lfe_level` | LFE level per source format, in dB |
 | `mcu.testtone` | level calibration picked a channel (`fl`, `c`, `fr`, `sr`, `sbr`, `sbl`, `sl`, `sw`, `fhl`, `fhr`, `fwl`, `fwr`) |
 | `mcu.update` | the receiver's update screens: `check` for an update, `download` it, `install` it; answer with `ubus call mcu update` |
 | `mcu.iscp` | ISCP text commands, e.g. `!1MVL21` |
 | `mcu.frame` | anything not decoded yet, as raw bytes |
+
+dspd sends `dsp.ready` when it has started the DSP; osirisd then sets it up
+again. The hotplug helper sends `osiris.media` (`dir`, `present`) when USB
+storage is mounted or goes, and `osiris.update` (`version`, `path`) for an
+update bundle on it.
 
 [mcu-protocol.md](mcu-protocol.md) has everything known about the
 protocol: framing, timing, the start-up sequence and every command.
@@ -67,7 +73,7 @@ output and the tone filters: a low shelf for bass (100 Hz) and a high shelf
 for treble (10 kHz) on both inputs, worked out by dspd from the dB values.
 
 ```sh
-ubus call dsp status                              # state, counters, input peaks
+ubus call dsp status                              # state, counters, input peaks, all settings
 ubus call dsp set '{"mute": true}'
 ubus call dsp set '{"volume": -600}'              # gain in 0.01 dB, 0 = unity
 ubus call dsp set '{"outputs": "all"}'            # "front", "all" (stereo everywhere) or "mono"
@@ -76,7 +82,8 @@ ubus call dsp set '{"testtone": "fl", "testtone_level": -30}'  # pink noise on o
 ubus call dsp set '{"distances": {"fl": 300, "c": 250}}'  # cm; nearer speakers are held back, 0 = not known
 ubus call dsp set '{"surround": "movie"}'           # surround from stereo: "movie", "music", "game" or "off"
 ubus call dsp set '{"reverb": "hall"}'              # with surround on: "hall", "theater", "club", "studio", "tv" or "off"
-ubus call dsp set '{"crossover": {"fl": 80, "c": 80}, "subwoofer": true, "sub_lowpass": 120}'  # Hz, 0 = large
+ubus call dsp set '{"crossover": {"fl": 80, "c": 80}, "subwoofer": true, "sub_lowpass": 120}'  # Hz, 0 = large / no low pass
+ubus call dsp set '{"double_bass": true, "absent": ["sbl", "sbr"]}'  # large fronts' bass to the sub too; outputs without a speaker
 ```
 
 dspaudio takes the I2S input from the PCM9211 (the tuner and analog inputs
@@ -103,15 +110,17 @@ What it does today:
     a small room
   - everything else, Theater-Dimensional, Enhanced, Mono Movie, THX Surround
     EX and THX U2 among them, plays on the front pair
-  Which code the receiver reports for which mode is checked only for All Ch
-  Stereo so far.
 - plays pink noise on the channel level calibration asks for (front high
   and wide on the surround back pair)
 - passes the receiver's bass and treble to the DSP and keeps them in the
   state file
+- passes the speaker setup to the DSP: small speakers' bass goes to the
+  subwoofer at their crossover, or to the front pair when there is none;
+  missing speakers get nothing (no centre: the
+  voice stays in the fronts), and the surround back outputs take the
+  crossover and distance of what the receiver's layout puts there (surround
+  back, front high or front wide)
 - passes the speaker distances to the DSP and keeps them in the state file
-  (the MCU sends them only when they change); front high uses the surround
-  back distance's place when there is no surround back
 - answers the network menu with the address, link state and MAC of eth0
 - offers an update bundle of another version on a USB stick when the
   receiver asks for updates: the receiver shows its update notice, and its

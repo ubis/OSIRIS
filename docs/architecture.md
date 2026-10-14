@@ -134,11 +134,13 @@ flowchart LR
   `mcu.volume`, `mcu.input`, `mcu.listening_mode` and so on.
 - **dspd** loads the DSP firmware, starts it, releases the mute lines and
   offers `dsp status` and `dsp set` (gain, mute, outputs, bass and treble,
-  test noise).
+  test noise, distances, surround decoder, reverb, crossovers, subwoofer,
+  missing speakers).
 - **osirisd** is the policy, a LuaJIT script: it listens to the events and
   decides what happens. It names the system after the receiver model, sets
-  the DSP version the receiver shows, picks the speakers from the
-  listening mode, passes bass and treble on, plays the test noise for the
+  the DSP version the receiver shows, picks the speakers, the surround
+  decoder and the reverb from the listening mode, passes bass and treble,
+  the speaker setup and the distances on, plays the test noise for the
   level setup, answers the network menu and offers updates from a USB
   stick.
 - **dspaudio** is the DSP firmware itself.
@@ -158,7 +160,7 @@ flowchart LR
         RX --> TONE[bass and treble<br/>shelf filters]
         TONE --> MIX[mix: L and R gain<br/>per output, or the<br/>surround decoder<br/>and reverb]
         NOISE[pink noise] --> MIX
-        MIX --> BASS[bass management:<br/>small speakers' bass<br/>to the subwoofer]
+        MIX --> BASS[bass management:<br/>small speakers' bass<br/>to the subwoofer<br/>or the front pair]
         BASS --> DELAY[delay per output<br/>speaker distance]
         DELAY --> TX[McASP1 transmit]
     end
@@ -174,7 +176,8 @@ sound to the centre and the difference of left and right to the surrounds;
 the sound field modes add a reverb (a feedback delay network whose delay
 lines are in the on-chip shared RAM).
 It plays the test noise on the output the level setup asks for, moves the
-bass of small speakers to the subwoofer (Linkwitz-Riley crossovers), holds
+bass of small speakers to the subwoofer, or to the front pair when there is
+none (Linkwitz-Riley crossovers), limits each output below full scale, holds
 each output back by its speaker's distance and writes them to the four
 serial lines of the DAC. dspd sets these gains in a block of DSP memory both sides share
 ([dspaudio.h](../services/dspd/dspaudio.h)), and the DSP reports its state,
