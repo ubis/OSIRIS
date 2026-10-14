@@ -57,7 +57,7 @@ E3 -> 63, EA -> 6A).
 | 66 | item | answer to E6. Item 1: [1] 1, [3] DHCP, [4..23] IP, netmask, gateway, DNS 1, DNS 2 (each a 32-bit little endian value), [24..29] MAC. Item 5: 05 + friendly name |
 | 68 | type ... | answers in the firmware update, see below |
 | 6A | 1 byte | reply to EA, echoes its byte; after 6A 01 the MCU cuts the board's power |
-| 73 | 01 "!1..." | ISCP towards the MCU (tried for NTI, no visible effect yet) |
+| 73 | 00 or 01, "!1...", CR | ISCP towards the MCU: mcud asks `!1LMDQSTN` (00); 01 with NTI shows nothing |
 
 ### 0x42 stream status
 
@@ -81,28 +81,28 @@ only sends it when a field changes.
 
 | cmd | name (AudioApp) | known payload |
 |---|---|---|
-| C0 | initial_settings | |
+| C0 | initial_settings | everything at start-up: [1..10] as C2, [11] and [13..38] as C3 [0] and [1..26], [0xC6] as D5 [1] |
 | C1 | input_settings | [1] decode mode [2] interface [3] fs code [4] MCLK [5] status |
-| C2 | speaker_config | speaker setup changed (stock answers with 45) |
+| C2 | speaker_config | [1] subwoofers (0, 1, 2), [2..7] front, center, surround, surround back, front high, front wide: 0 none, 1 large, 2..15 small with the crossover 40, 45, 50, 55, 60, 70, 80, 90, 100, 110, 120, 130, 150, 200 Hz; [8] surround back 0 one, 1 two channels; [9] LFE low pass 80, 90, 100, 110, 120 Hz, 5 bypass; [10] double bass; [11..17] wireless; stock answers with 45 |
 | C3 | distance | [0] not known (perhaps the unit the menu shows), [1..26] 13 x u16 LE in cm: fl, c, fr, sl, sr, sbl, sbr, fhl, fhr, fwl, fwr, sw, (0); 5 cm steps; sent when changed |
 | C4 | equalizer | |
 | C5 | thx | |
 | C6 | multiplex_mono | |
 | C7 | dd_dts_adsy_td | |
 | C8 | dsd_dac_direct | |
-| C9 | lfe_level | |
-| CA | av_sync | |
+| C9 | lfe_level | [0] format: DD, DTS, AAC, multichannel PCM, TrueHD, DTS-HD MA, DSD; [1] 0 off, 1 -20 dB, 2 -10 dB, 3 0 dB |
+| CA | av_sync | [1..2] u16 LE, probably ms; AudioApp limits it to 800, 400 or 200 by sample rate |
 | CB | hdmi_audio_tv_out | |
 | CC | bass_treble | [0] 0 = front, [1] bass, [8] treble: signed dB, -10..+10 in 2 dB steps |
-| CD | re_eq | |
-| CE | music_optimizer | |
-| CF | late_night | |
+| CD | re_eq | [0] 0 THX Re-EQ, 1 Re-EQ; [1] 0 off, 1 on |
+| CE | music_optimizer | [1] 0 off, 1 on |
+| CF | late_night | [0] 0 Dolby Digital: [1] 0 off, 1 low, 2 high; [0] 1 TrueHD: [1] 0 on, 1 off, 2 auto |
 | D0 | testtone_ch | level calibration: [1] channel 0 fl, 1 c, 2 fr, 3 sr, 4 sbr, 5 sbl, 6 sl, 7 sw, 8 fhl, 9 fhr, 10 fwl, 11 fwr. Comes with listening mode F1; the MCU sets the reference volume (MVL52) and the channel levels itself |
 | D1 | testmode | |
 | D2 | listening_mode | [1] mode, [2] variant, see below; F1 = test tone (calibration) |
 | D3 | volume | [1..2] s16 LE, 0.01 dB; for information, the MCU sets it in the analog stage |
-| D4 | headphone | |
-| D5 | ch_layout | |
+| D4 | headphone | [1] 1 = headphones plugged in |
+| D5 | ch_layout | [1] what the surround back amplifiers drive: 0 nothing, 1 SB, 2 FH, 3 FW, 4 SB+FH, 5 SB+FW, 6 FH+FW, 7 FH+SB(pre), 8 FW+SB(pre), 9 FW+FH(pre), 10 SB(pre), 11 FH(pre), 12 FW(pre), 13 SB+FH+FW(pre) |
 | D6 | special_mode | |
 | DB | net_mute | |
 | DC | netaudio_info | |
@@ -139,7 +139,9 @@ Payload layouts not listed are unknown so far.
 D2 carries the mode the receiver is in; byte 1 is the mode, byte 2 a
 variant within it. The MCU also reports the mode as ISCP text (`!1LMDxx`,
 the codes of Onkyo's ISCP documentation) when it changes, and answers
-`!1LMDQSTN` (73 00 "!1LMDQSTN" CR); mcud names the mode from that code.
+`!1LMDQSTN` (73 00 "!1LMDQSTN" CR); mcud names the mode from that code. It
+asks after the handshake and again 5 s later, as the MCU drops the first
+question after a cold start.
 Seen on the TX-NR717 and checked against the front display:
 
 | D2 [1] | [2] | ISCP | mode |
@@ -200,7 +202,8 @@ mode), then D0 with the channel and D3 0 dB, and turns the analog volume up
 to its reference level. The DSP plays test noise on that channel; OSIRIS
 plays pink noise at -70 dBFS RMS. The MCU applies the levels itself in the
 analog stage and sends nothing back for them. The distances come as C3 (and
-in C0 at start-up); the DSP does not delay the outputs by them yet.
+in C0 at start-up); osirisd passes them on, and the DSP holds the nearer
+speakers back.
 
 ## mcud
 
@@ -218,7 +221,7 @@ ubus object `mcu`:
 
 | method | arguments | |
 |---|---|---|
-| `status` | | link state, handshake stage, model |
+| `status` | | handshake stage, model, stream status, and once known: bass and treble, the listening mode (`listening_mode`, `listening_mode_name`), the distances, the speaker setup, `update_check` (the MCU waits for an answer to its update check) |
 | `identity` | `dsp_version`, `dsp_id` | strings for 41 and 46 |
 | `stream` | 0x42 fields by name | updates the stream status, sent if changed |
 | `outputs` | `mask` | 4A |
@@ -234,10 +237,11 @@ Events (`ubus listen mcu`):
 | `mcu.ready` | end of start-up | `model`, `make`, `code` |
 | `mcu.input` | C1, E5 | decoded fields |
 | `mcu.volume` | D3 | `volume` (0.01 dB) |
-| `mcu.speakers` | C2, C9 | raw payload until decoded |
-| `mcu.listening_mode` | D2, F3 !1LMD | `mode` (the D2 byte), `name` (from the ISCP code); both also in `mcu status` |
-| `mcu.testtone` | D0, D1 | `channel` |
-| `mcu.distance` | C3 | `distances` (cm by speaker), `unit` (C3 [0]) |
+| `mcu.speakers` | C0, C2, D5 | `speakers` (crossover in Hz by speaker, 0 large, missing ones left out), `subwoofers`, `surround_back_channels`, `lfe_lowpass` (0 bypass), `double_bass`, `layout`; also in `mcu status` |
+| `mcu.lfe_level` | C9 | `format`, `level` (dB, -100 off) |
+| `mcu.listening_mode` | D2, F3 !1LMD | `mode` (the D2 byte), `name` (from the ISCP code); also in `mcu status` as `listening_mode` and `listening_mode_name` |
+| `mcu.testtone` | D0 | `channel` |
+| `mcu.distance` | C0, C3 | `distances` (cm by speaker); C3 [0] is only logged |
 | `mcu.iscp` | F3 | `command` |
 | `mcu.update` | E8 | `stage` (`check`, `download`, `install`, `upload`), `source` (`network`, `usb`) |
 | `mcu.frame` | everything else | `cmd`, `name`, `data` (hex) |
