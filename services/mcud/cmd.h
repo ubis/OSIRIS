@@ -27,7 +27,7 @@ enum mcu_cmd {
 	NET_NETWORK		= 0x66,	/* answer to MCU_NETWORK */
 	NET_UPDATE		= 0x68,	/* [0] UPDATE_CHECK..., answers MCU_UPDATE */
 	NET_POWER		= 0x6a,	/* answer to MCU_POWER, echoes its byte */
-	NET_ISCP		= 0x73,	/* 01 "!1..." */
+	NET_ISCP		= 0x73,	/* 00 or 01, "!1...", CR */
 
 	/* MCU -> DSP */
 	MCU_INITIAL		= 0xc0,

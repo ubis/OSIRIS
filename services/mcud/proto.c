@@ -20,6 +20,7 @@
 #define RETRIES		3
 #define NO_ARG		(-1)
 #define POWER_WAIT_MS	3000	/* for the policy before power off / reset */
+#define LMD_ASK_AGAIN_MS	5000
 
 static const struct proto_ops *ops;
 static enum stage stage;
@@ -29,6 +30,7 @@ static uint8_t pend_cmd, pend_arg;
 static struct mcu_network network;
 static uint32_t network_asked;	/* MCU_NETWORK items, one bit each */
 static struct uloop_timeout power_timer;
+static struct uloop_timeout lmd_timer;
 static int power_pending = -1;	/* MCU_POWER state not answered yet */
 static int pend, retries;
 static uint8_t update_stage;	/* the last MCU_UPDATE [0] */
@@ -211,6 +213,14 @@ static void model_from_beacon(const uint8_t *d, uint16_t len)
 	}
 }
 
+/* NET_ISCP as stock sends it: 00, the command, CR */
+static const char iscp_lmd_query[] = "\0!1LMDQSTN\r";
+
+void proto_ask_listening_mode(void)
+{
+	queue(NET_ISCP, iscp_lmd_query, sizeof(iscp_lmd_query) - 1);
+}
+
 static void handshake(uint8_t cmd, const uint8_t *d, uint16_t len)
 {
 	static const uint8_t done[][2] = {
@@ -247,6 +257,12 @@ static void handshake(uint8_t cmd, const uint8_t *d, uint16_t len)
 		pend = 0;
 		uloop_timeout_cancel(&retry_timer);
 		stage = STAGE_READY;
+		/*
+		 * The MCU reports the listening mode as ISCP only when it changes;
+		 * right after a cold start it drops the first question.
+		 */
+		proto_ask_listening_mode();
+		uloop_timeout_set(&lmd_timer, LMD_ASK_AGAIN_MS);
 		ops->ready(&model);
 	}
 }
@@ -374,6 +390,9 @@ static void pad_copy(uint8_t *dst, size_t size, const char *src)
 static void start(void)
 {
 	static const uint8_t state_start[2] = { NET_STATE_START };
+
+	/* a question in the middle of the handshake would be dropped */
+	uloop_timeout_cancel(&lmd_timer);
 
 	/* the AudioApp part, in the stock order */
 	queue(DSP_VERSION, version, VERSION_LEN);
@@ -536,11 +555,17 @@ void proto_set_usb(uint8_t port, int present)
 	queue(NET_STATE, d, sizeof(d));
 }
 
+static void lmd_ask(struct uloop_timeout *t)
+{
+	proto_ask_listening_mode();
+}
+
 void proto_init(const struct proto_ops *o, const char *dsp_version)
 {
 	ops = o;
 	retry_timer.cb = retry_cb;
 	power_timer.cb = power_timeout;
+	lmd_timer.cb = lmd_ask;
 	pad_copy(version, VERSION_LEN, dsp_version);
 	start();
 }

@@ -62,6 +62,8 @@ int proto_power_done(uint8_t state);
 /* answers the MCU_NETWORK items asked for since the last call */
 void proto_set_network(const struct mcu_network *n);
 void proto_set_usb(uint8_t port, int present);
+/* the MCU answers with the ISCP code of its listening mode */
+void proto_ask_listening_mode(void);
 
 /* the answers to MCU_UPDATE, in the order the MCU asks for them */
 void proto_update_check(int available);
