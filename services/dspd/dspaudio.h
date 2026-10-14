@@ -2,7 +2,7 @@
 /*
  * The block the DSP firmware (dspaudio) and dspd share in DSP L2 RAM: the
  * DSP reports its state there, dspd sets how much of each input goes to
- * each output.
+ * each output and the tone filters.
  * Both sides are 32-bit little endian; the ARM reaches it through /dev/mem.
  */
 #ifndef DSPAUDIO_H
@@ -13,11 +13,12 @@
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		2
+#define DSPAUDIO_ABI		3
 
 #define DSPAUDIO_IN		2	/* PCM9211 I2S: left, right */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
 #define DSPAUDIO_GAIN_ONE	(1 << 24)	/* gains are 8.24 fixed point */
+#define DSPAUDIO_TONE		2	/* biquads on every input: bass, treble */
 
 /*
  * Outputs: serializer AXR1_n slot s is output 2n + s, and AXR1_n feeds
@@ -48,6 +49,11 @@ enum dspaudio_state {
 	DSPAUDIO_STUCK		= 100,	/* + the init step that timed out */
 };
 
+/* y = b0 x + b1 x[-1] + b2 x[-2] - a1 y[-1] - a2 y[-2] */
+struct dspaudio_biquad {
+	float b0, b1, b2, a1, a2;
+};
+
 struct dspaudio_shared {
 	/* written by the DSP */
 	uint32_t magic;
@@ -60,6 +66,9 @@ struct dspaudio_shared {
 	uint32_t peak[DSPAUDIO_IN];	/* largest |input| since dspd cleared it */
 	/* written by dspd */
 	int32_t gain[DSPAUDIO_OUT][DSPAUDIO_IN];	/* output = sum of input x gain */
+	/* dspd fills the set the DSP does not use, then flips tone_sel */
+	struct dspaudio_biquad tone[2][DSPAUDIO_TONE];
+	uint32_t tone_sel;
 };
 
 #endif

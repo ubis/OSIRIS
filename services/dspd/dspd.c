@@ -49,6 +49,10 @@ struct gpio_cmd {
 
 #define START_WAIT_MS	1000
 #define VOLUME_MUTE	(-10000)	/* -100 dB, what the MCU sends at the bottom */
+#define TONE_MAX	12		/* dB either way; the MCU sends -10..+10 */
+#define BASS_HZ		100.0
+#define TREBLE_HZ	10000.0
+#define SAMPLE_HZ	48000.0
 
 enum outputs { OUTPUTS_FRONT, OUTPUTS_ALL, OUTPUTS_MONO, __OUTPUTS_MAX };
 
@@ -68,6 +72,7 @@ static int gpio_fd = -1;
 static int volume;			/* 0.01 dB */
 static int muted;
 static enum outputs outputs = OUTPUTS_FRONT;
+static int bass, treble;		/* dB */
 
 static volatile uint32_t *map(int fd, uint32_t phys, uint32_t len)
 {
@@ -140,6 +145,32 @@ static const uint8_t mix[__OUTPUTS_MAX][DSPAUDIO_OUT][DSPAUDIO_IN] = {
 	},
 };
 
+/* RBJ cookbook shelving filter, slope 1: low shelf for bass, high for treble */
+static void shelf(volatile struct dspaudio_biquad *q, double hz, int db, int high)
+{
+	double a = pow(10.0, db / 40.0), w = 2.0 * M_PI * hz / SAMPLE_HZ;
+	double c = cos(w), alpha = sin(w) / 2.0 * sqrt(2.0), r = 2.0 * sqrt(a) * alpha;
+	double s = high ? -1.0 : 1.0, a0;
+
+	a0 = (a + 1) + s * (a - 1) * c + r;
+	q->b0 = a * ((a + 1) - s * (a - 1) * c + r) / a0;
+	q->b1 = s * 2 * a * ((a - 1) - s * (a + 1) * c) / a0;
+	q->b2 = a * ((a + 1) - s * (a - 1) * c - r) / a0;
+	q->a1 = -s * 2 * ((a - 1) + s * (a + 1) * c) / a0;
+	q->a2 = ((a + 1) + s * (a - 1) * c - r) / a0;
+}
+
+/* fill the set the DSP is not using, then switch it over */
+static void apply_tone(void)
+{
+	uint32_t next = (sh->tone_sel + 1) & 1;
+
+	shelf(&sh->tone[next][0], BASS_HZ, bass, 0);
+	shelf(&sh->tone[next][1], TREBLE_HZ, treble, 1);
+	__sync_synchronize();
+	sh->tone_sel = next;
+}
+
 static void apply(void)
 {
 	int32_t g = gain_of(volume);
@@ -196,6 +227,7 @@ static int dsp_start(const char *image)
 	free(img);
 	memset((void *)sh, 0, sizeof(*sh));
 	apply();
+	apply_tone();
 	msync((void *)l2, L2_SIZE, MS_SYNC);
 	syscfg[HOST1CFG / 4] = DSPAUDIO_LOAD;
 	psc[PSC_MDCTL_DSP / 4] |= MDCTL_LRST;
@@ -250,16 +282,20 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_u32(&b, "volume", (uint32_t)volume);
 	blobmsg_add_u8(&b, "mute", muted);
 	blobmsg_add_string(&b, "outputs", outputs_name[outputs]);
+	blobmsg_add_u32(&b, "bass", (uint32_t)bass);
+	blobmsg_add_u32(&b, "treble", (uint32_t)treble);
 	ubus_send_reply(c, req, b.head);
 	return 0;
 }
 
-enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, __SET_MAX };
+enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
 	[SET_MUTE] = { .name = "mute", .type = BLOBMSG_TYPE_BOOL },
 	[SET_OUTPUTS] = { .name = "outputs", .type = BLOBMSG_TYPE_STRING },
+	[SET_BASS] = { .name = "bass", .type = BLOBMSG_TYPE_INT32 },
+	[SET_TREBLE] = { .name = "treble", .type = BLOBMSG_TYPE_INT32 },
 };
 
 static int m_set(struct ubus_context *c, struct ubus_object *obj,
@@ -292,6 +328,19 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 
 	if (tb[SET_MUTE]) {
 		muted = blobmsg_get_bool(tb[SET_MUTE]);
+	}
+
+	if (tb[SET_BASS] || tb[SET_TREBLE]) {
+		int nb = tb[SET_BASS] ? (int32_t)blobmsg_get_u32(tb[SET_BASS]) : bass;
+		int nt = tb[SET_TREBLE] ? (int32_t)blobmsg_get_u32(tb[SET_TREBLE]) : treble;
+
+		if (nb < -TONE_MAX || nb > TONE_MAX || nt < -TONE_MAX || nt > TONE_MAX) {
+			return UBUS_STATUS_INVALID_ARGUMENT;
+		}
+
+		bass = nb;
+		treble = nt;
+		apply_tone();
 	}
 
 	apply();
