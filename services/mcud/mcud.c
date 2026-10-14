@@ -90,7 +90,36 @@ static const char *const distance_ch[] = {
 	"fl", "c", "fr", "sl", "sr", "sbl", "sbr", "fhl", "fhr", "fwl", "fwr", "sw",
 };
 
-static int distance_known, distance_unit, distance[ARRAY_SIZE(distance_ch)];
+static int distance_known, distance_unit = -1, distance[ARRAY_SIZE(distance_ch)];
+
+/* MCU_SPEAKERS [2..7]: 0 no speaker, 1 large, else small with that crossover */
+static const char *const speaker_name[] = {
+	"front", "center", "surround", "surround_back", "front_high", "front_wide",
+};
+
+static const uint8_t crossover_hz[16] = {
+	0, 0, 40, 45, 50, 55, 60, 70, 80, 90, 100, 110, 120, 130, 150, 200,
+};
+
+static const uint8_t lfe_lowpass_hz[] = { 80, 90, 100, 110, 120 };	/* 5: bypass */
+
+/* MCU_CH_LAYOUT: front high, front wide or surround back, then pre-outs */
+static const char *const layout_name[] = {
+	"none", "sb", "fh", "fw", "sb_fh", "sb_fw", "fh_fw", "fh_sb_pre", "fw_sb_pre",
+	"fw_fh_pre", "sb_pre", "fh_pre", "fw_pre", "sb_fh_fw_pre",
+};
+
+static const char *const lfe_format[] = {
+	"dd", "dts", "aac", "multichannel_pcm", "truehd", "dts_hd_ma", "dsd",
+};
+
+static const int lfe_level_db[] = { -100, -20, -10, 0 };	/* -100: off */
+
+static struct {
+	int known;
+	uint8_t setup[10];		/* MCU_SPEAKERS [1..10] */
+	int layout;			/* -1 not known */
+} speakers = { .layout = -1 };
 
 /* MCU_TESTTONE_CH channel codes, in the receiver's own order */
 static const char *const testtone_ch[] = {
@@ -141,8 +170,50 @@ static void add_distances(void)
 	}
 
 	blobmsg_close_table(&b, t);
-	/* [0], not known yet: perhaps the unit the menu shows */
-	blobmsg_add_u32(&b, "unit", distance_unit);
+}
+
+/* unit: the byte before them in MCU_DISTANCE; d: the 13 values */
+static void set_distances(uint8_t unit, const uint8_t *d)
+{
+	size_t i;
+
+	distance_known = 1;
+	/* not known yet, perhaps the unit the menu shows: logged, not reported */
+	if (unit != distance_unit) {
+		log_msg(LOG_INFO, "distance byte 0: %u", unit);
+		distance_unit = unit;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(distance_ch); i++) {
+		distance[i] = d[2 * i] | (d[1 + 2 * i] << 8);
+	}
+}
+
+/*
+ * The speakers there are, each with its crossover in Hz, 0 for a large one;
+ * the subwoofers, the LFE low pass (0 bypass), double bass and what the
+ * surround back amplifiers drive.
+ */
+static void add_speakers(void)
+{
+	const uint8_t *s = speakers.setup;
+	void *t = blobmsg_open_table(&b, "speakers");
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(speaker_name); i++) {
+		if (s[1 + i]) {
+			blobmsg_add_u32(&b, speaker_name[i], crossover_hz[s[1 + i] & 15]);
+		}
+	}
+
+	blobmsg_close_table(&b, t);
+	blobmsg_add_u32(&b, "subwoofers", s[0]);
+	blobmsg_add_u32(&b, "surround_back_channels", s[7] ? 2 : 1);
+	blobmsg_add_u32(&b, "lfe_lowpass", s[8] < ARRAY_SIZE(lfe_lowpass_hz) ? lfe_lowpass_hz[s[8]] : 0);
+	blobmsg_add_u8(&b, "double_bass", s[9] == 1);
+	if (speakers.layout >= 0 && speakers.layout < (int)ARRAY_SIZE(layout_name)) {
+		blobmsg_add_string(&b, "layout", layout_name[speakers.layout]);
+	}
 }
 
 static void add_model(const struct mcu_model *m)
@@ -215,25 +286,58 @@ static void on_frame(const struct link_frame *f, const char *name)
 		return;
 	case MCU_DISTANCE:
 		if (f->len >= 1 + 2 * ARRAY_SIZE(distance_ch)) {
-			size_t i;
-
-			distance_known = 1;
-			distance_unit = d[0];
-			for (i = 0; i < ARRAY_SIZE(distance_ch); i++) {
-				distance[i] = d[1 + 2 * i] | (d[2 + 2 * i] << 8);
-			}
-
+			set_distances(d[0], d + 1);
 			add_distances();
 			event("mcu.distance");
 			return;
 		}
 
 		break;
+	case MCU_INITIAL:
+		/* everything at start-up: the speakers, the distances, the layout */
+		if (f->len > 0xc6) {
+			memcpy(speakers.setup, d + 1, sizeof(speakers.setup));
+			speakers.known = 1;
+			speakers.layout = d[0xc6];
+			add_speakers();
+			event("mcu.speakers");
+			blob_buf_init(&b, 0);
+			set_distances(d[11], d + 13);
+			add_distances();
+			event("mcu.distance");
+			blob_buf_init(&b, 0);
+		}
+
+		break;
 	case MCU_SPEAKERS:
+		if (f->len >= 1 + sizeof(speakers.setup)) {
+			memcpy(speakers.setup, d + 1, sizeof(speakers.setup));
+			speakers.known = 1;
+			add_speakers();
+			event("mcu.speakers");
+			return;
+		}
+
+		break;
+	case MCU_CH_LAYOUT:
+		if (f->len >= 2) {
+			speakers.layout = d[1];
+			if (speakers.known) {
+				add_speakers();
+				event("mcu.speakers");
+				return;
+			}
+		}
+
+		break;
 	case MCU_LFE_LEVEL:
-		blobmsg_add_string(&b, "name", name);
-		add_hex("data", d, f->len);
-		event("mcu.speakers");
+		if (f->len < 2 || d[0] >= ARRAY_SIZE(lfe_format) || d[1] >= ARRAY_SIZE(lfe_level_db)) {
+			break;
+		}
+
+		blobmsg_add_string(&b, "format", lfe_format[d[0]]);
+		blobmsg_add_u32(&b, "level", (uint32_t)lfe_level_db[d[1]]);
+		event("mcu.lfe_level");
 		return;
 	case MCU_LISTENING_MODE:
 		if (f->len < 2) {
@@ -365,6 +469,10 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 
 	if (distance_known) {
 		add_distances();
+	}
+
+	if (speakers.known) {
+		add_speakers();
 	}
 
 	blobmsg_add_u8(&b, "update_check", proto_update_waiting());
