@@ -386,7 +386,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_string(&b, "version", version);
 	blobmsg_add_u8(&b, "running", sh->magic == DSPAUDIO_MAGIC);
 	blobmsg_add_u32(&b, "state", sh->state);
-	blobmsg_add_u32(&b, "samples", sh->samples);
+	blobmsg_add_u64(&b, "samples", sh->samples);	/* a u32 would print as signed */
 	blobmsg_add_u32(&b, "underruns", sh->underruns);
 	blobmsg_add_u32(&b, "overruns", sh->overruns);
 	a = blobmsg_open_array(&b, "peak_db");
