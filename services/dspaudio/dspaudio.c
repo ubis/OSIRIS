@@ -576,12 +576,14 @@ static void bass_manage(float *y)
 
 	bass_follow();
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
-		if (out == DSPAUDIO_OUT_SW || !(bm->small & (1u << out))) {
+		if (out == DSPAUDIO_OUT_SW || !((bm->small | bm->copy) & (1u << out))) {
 			continue;
 		}
 
 		sub += cascade(bm->low[out], bass_z[out][1], y[out]);
-		y[out] = cascade(bm->high[out], bass_z[out][0], y[out]);
+		if (bm->small & (1u << out)) {
+			y[out] = cascade(bm->high[out], bass_z[out][0], y[out]);
+		}
 	}
 
 	if (bm->subwoofer) {
