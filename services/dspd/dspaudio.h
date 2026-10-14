@@ -3,7 +3,7 @@
  * The block the DSP firmware (dspaudio) and dspd share in DSP L2 RAM: the
  * DSP reports its state there, dspd sets how much of each input goes to
  * each output, the tone filters, the test noise, the output delays, the
- * surround decoder and the bass management.
+ * surround decoder, the reverb and the bass management.
  * Both sides are 32-bit little endian; the ARM reaches it through /dev/mem.
  */
 #ifndef DSPAUDIO_H
@@ -14,7 +14,7 @@
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		7
+#define DSPAUDIO_ABI		8
 
 #define DSPAUDIO_IN		2	/* PCM9211 I2S: left, right */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
@@ -24,6 +24,9 @@
 #define DSPAUDIO_DELAY_MAX	2047	/* samples at 48 kHz: 42 ms, 14.6 m */
 #define DSPAUDIO_SURROUND_DELAY_MAX	2047	/* surround and back delay, samples */
 #define DSPAUDIO_XO		2	/* biquads per crossover side: Linkwitz-Riley */
+#define DSPAUDIO_REVERB_LINES	4
+#define DSPAUDIO_REVERB_LINE_MAX	4095	/* samples per feedback line */
+#define DSPAUDIO_PREDELAY_MAX	4095	/* samples before the reverb starts */
 
 /*
  * Outputs: serializer AXR1_n slot s is output 2n + s, and AXR1_n feeds
@@ -79,6 +82,21 @@ struct dspaudio_surround {
 };
 
 /*
+ * Reverb for the sound field modes, on top of the surround decoder: the
+ * mono sum, held back by the pre-delay, goes into four feedback delay lines
+ * mixed by a Hadamard matrix, each with a decay gain and a low pass for the
+ * damping. Taps of the lines go to the fronts, the surrounds and the back.
+ */
+struct dspaudio_reverb {
+	uint32_t on;
+	uint32_t length[DSPAUDIO_REVERB_LINES];	/* samples */
+	float decay[DSPAUDIO_REVERB_LINES];	/* gain per round, from the reverb time */
+	float damping;			/* one-pole low pass in the loop, 0 = none */
+	uint32_t predelay;		/* samples */
+	float front, surround, back;	/* how much of the reverb each pair gets */
+};
+
+/*
  * Bass management: a small speaker's output goes through a high pass, and
  * its bass, through the matching low pass, to the subwoofer, or to the
  * front pair when there is none. The subwoofer has a low pass of its own.
@@ -110,6 +128,7 @@ struct dspaudio_shared {
 	float noise_gain;		/* sample value for an RMS of 1 */
 	uint32_t delay[DSPAUDIO_OUT];	/* samples each output is held back */
 	struct dspaudio_surround surround;	/* gain[out][0] scales each output */
+	struct dspaudio_reverb reverb;	/* only with the surround decoder */
 	/*
 	 * dspd fills bass[(bass_gen + 1) & 1], then increments bass_gen. The
 	 * DSP copies the set in pieces and takes it only if bass_gen has not

@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dspaudio runs from DSP L2 RAM at 0x11800000, where dspd loads it. Image,
- * bss and stack stay below 0x1181F000, the block shared with dspd.
+ * bss and stack stay below 0x1181F000, the block shared with dspd. The
+ * reverb's delay lines are in the on-chip shared RAM, which Linux does not
+ * use; dspaudio clears them itself.
  */
 OUTPUT_FORMAT("elf32-tic6x-le")
 ENTRY(_start)
@@ -9,6 +11,7 @@ ENTRY(_start)
 MEMORY
 {
 	L2 (rwx) : ORIGIN = 0x11800000, LENGTH = 0x1F000
+	SHRAM (rw) : ORIGIN = 0x80000000, LENGTH = 0x20000
 }
 
 STACK_SIZE = 0x1000;		/* worst-case frame chain measured with -fstack-usage: < 1 KiB */
@@ -43,6 +46,13 @@ SECTIONS
 	} > L2
 
 	__image_end = .;
+
+	.shram (NOLOAD) : ALIGN(8) {
+		__shram_start = .;
+		*(.shram .shram.*)
+		. = ALIGN(8);
+		__shram_end = .;
+	} > SHRAM
 
 	/DISCARD/ : {
 		*(.c6xabi.exidx* .c6xabi.extab* .comment .note* .ARM.attributes)
