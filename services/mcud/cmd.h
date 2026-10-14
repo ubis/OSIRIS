@@ -30,16 +30,16 @@ enum mcu_cmd {
 	NET_ISCP		= 0x73,	/* 00 or 01, "!1...", CR */
 
 	/* MCU -> DSP */
-	MCU_INITIAL		= 0xc0,
+	MCU_INITIAL		= 0xc0,	/* [1..10] as MCU_SPEAKERS, [11] and [13..38] as MCU_DISTANCE, [0xc6] as MCU_CH_LAYOUT [1] */
 	MCU_INPUT		= 0xc1,	/* [1] decode [2] interface [3] fs [4] MCLK [5] status */
-	MCU_SPEAKERS		= 0xc2,
+	MCU_SPEAKERS		= 0xc2,	/* [1] subwoofers, [2..7] SPEAKER_* crossover codes, [8] SB channels, [9] LFE low pass, [10] double bass */
 	MCU_DISTANCE		= 0xc3,	/* [0] ?, [1..26] 13 x u16 LE cm, DISTANCE_ORDER */
 	MCU_EQUALIZER		= 0xc4,
 	MCU_THX			= 0xc5,
 	MCU_MULTIPLEX_MONO	= 0xc6,
 	MCU_DD_DTS		= 0xc7,
 	MCU_DSD_DIRECT		= 0xc8,
-	MCU_LFE_LEVEL		= 0xc9,
+	MCU_LFE_LEVEL		= 0xc9,	/* [0] format, [1] 0 off, 1 -20 dB, 2 -10 dB, 3 0 dB */
 	MCU_AV_SYNC		= 0xca,
 	MCU_HDMI_AUDIO		= 0xcb,
 	MCU_BASS_TREBLE		= 0xcc,	/* [0] 0 front, [1] bass, [8] treble: s8 dB */
@@ -51,7 +51,7 @@ enum mcu_cmd {
 	MCU_LISTENING_MODE	= 0xd2,	/* [1] mode, LM_TESTTONE for calibration */
 	MCU_VOLUME		= 0xd3,	/* [1..2] s16 LE, 0.01 dB */
 	MCU_HEADPHONE		= 0xd4,
-	MCU_CH_LAYOUT		= 0xd5,
+	MCU_CH_LAYOUT		= 0xd5,	/* [1] what the surround back amplifiers drive */
 	MCU_SPECIAL_MODE	= 0xd6,
 	MCU_NET_MUTE		= 0xdb,
 	MCU_NETAUDIO_INFO	= 0xdc,
