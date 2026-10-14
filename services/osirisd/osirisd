@@ -87,9 +87,17 @@ local MODE_REVERB = {
 
 local IFACE = "eth0"
 
--- the DSP's outputs; the surround back pair also plays front high or wide
+-- the DSP's outputs; the surround back amplifiers drive surround back,
+-- front high or front wide speakers, as the receiver's layout says
 local OUTPUTS = { "fl", "fr", "c", "sw", "sl", "sr", "sbl", "sbr" }
-local DISTANCE_ALT = { sbl = "fhl", sbr = "fhr" }
+local BACK = {
+	sb = { speaker = "surround_back", l = "sbl", r = "sbr" },
+	fh = { speaker = "front_high", l = "fhl", r = "fhr" },
+	fw = { speaker = "front_wide", l = "fwl", r = "fwr" },
+}
+local OUTPUT_SPEAKER = {
+	fl = "front", fr = "front", c = "center", sl = "surround", sr = "surround",
+}
 
 local UPGRADE_LOG = "/tmp/osiris-upgrade.log"
 local PROGRESS_MS = 4000	-- the MCU gives up after ~20 s without progress
@@ -100,6 +108,8 @@ local INSTALL_STEPS = {
 }
 
 local mode_now, mode_name
+local back = BACK.sb		-- what the surround back outputs play
+local distances_now		-- the MCU's distances by speaker
 local testtone_ch = "fl"
 local media = {}		-- mounted USB storage, by directory
 local bundle			-- { path, version } of an update on it
@@ -272,19 +282,58 @@ local function set_distances(d)
 
 	local out, save = {}, {}
 
+	distances_now = d
 	for _, o in ipairs(OUTPUTS) do
-		local cm = tonumber(d[o]) or 0
+		local cm
 
-		if cm == 0 and DISTANCE_ALT[o] then
-			cm = tonumber(d[DISTANCE_ALT[o]]) or 0
+		if o == "sbl" or o == "sbr" then
+			cm = d[o == "sbl" and back.l or back.r] or d[o]
+		else
+			cm = d[o]
 		end
 
-		out[o] = cm
-		save["distance_" .. o] = cm
+		out[o] = tonumber(cm) or 0
+		save["distance_" .. o] = out[o]
 	end
 
 	save_state(save)
 	call("dsp", "set", { distances = out })
+end
+
+-- the speakers there are, small ones' bass to the subwoofer
+local function set_speakers(m)
+	if not m or not m.speakers then
+		return
+	end
+
+	local sp, crossover, absent = m.speakers, {}, {}
+	local kind = (m.layout or "sb"):match("^(%a%a)")
+
+	back = BACK[kind] or BACK.sb
+	for _, o in ipairs(OUTPUTS) do
+		local name = o == "sbl" and back.speaker or o == "sbr" and back.speaker or
+			     OUTPUT_SPEAKER[o]
+
+		if o == "sw" then
+			if (m.subwoofers or 0) == 0 then
+				absent[#absent + 1] = o
+			end
+		elseif kind == "no" and (o == "sbl" or o == "sbr") or sp[name] == nil then
+			absent[#absent + 1] = o
+			crossover[o] = 0
+		else
+			crossover[o] = sp[name]
+		end
+	end
+
+	call("dsp", "set", {
+		crossover = crossover,
+		subwoofer = (m.subwoofers or 0) > 0,
+		sub_lowpass = m.lfe_lowpass or 0,
+		double_bass = m.double_bass and true or false,
+		absent = absent,
+	})
+	set_distances(distances_now)
 end
 
 local function saved_distances(saved)
@@ -512,7 +561,8 @@ local handlers = {
 		log("DSP started again, setting it up")
 		set_mode(mode_now, mode_name)
 		set_tone(tonumber(saved.bass or ""), tonumber(saved.treble or ""))
-		set_distances(saved_distances(saved))
+		set_speakers(call("mcu", "status"))
+		set_distances(distances_now or saved_distances(saved))
 	end,
 	["mcu.ready"] = function(msg)
 		set_model(msg)
@@ -542,6 +592,9 @@ local handlers = {
 	end,
 	["mcu.distance"] = function(msg)
 		set_distances(msg.distances)
+	end,
+	["mcu.speakers"] = function(msg)
+		set_speakers(msg)
 	end,
 	["mcu.network"] = function()
 		set_network()
@@ -587,6 +640,7 @@ else
 	set_tone(tonumber(saved.bass or ""), tonumber(saved.treble or ""))
 end
 
+set_speakers(st)
 set_distances(st and st.distances or saved_distances(saved))
 
 uloop.run()
