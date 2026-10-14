@@ -2,8 +2,8 @@
 /*
  * The block the DSP firmware (dspaudio) and dspd share in DSP L2 RAM: the
  * DSP reports its state there, dspd sets how much of each input goes to
- * each output, the tone filters, the test noise, the output delays and the
- * surround decoder.
+ * each output, the tone filters, the test noise, the output delays, the
+ * surround decoder and the bass management.
  * Both sides are 32-bit little endian; the ARM reaches it through /dev/mem.
  */
 #ifndef DSPAUDIO_H
@@ -14,7 +14,7 @@
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		6
+#define DSPAUDIO_ABI		7
 
 #define DSPAUDIO_IN		2	/* PCM9211 I2S: left, right */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
@@ -23,6 +23,7 @@
 #define DSPAUDIO_NOISE_OFF	0xff
 #define DSPAUDIO_DELAY_MAX	2047	/* samples at 48 kHz: 42 ms, 14.6 m */
 #define DSPAUDIO_SURROUND_DELAY_MAX	2047	/* surround and back delay, samples */
+#define DSPAUDIO_XO		2	/* biquads per crossover side: Linkwitz-Riley */
 
 /*
  * Outputs: serializer AXR1_n slot s is output 2n + s, and AXR1_n feeds
@@ -77,6 +78,19 @@ struct dspaudio_surround {
 	struct dspaudio_biquad band[2];	/* on the difference: high pass, low pass */
 };
 
+/*
+ * Bass management: a small speaker's output goes through a high pass, and
+ * its bass, through the matching low pass, to the subwoofer, or to the
+ * front pair when there is none. The subwoofer has a low pass of its own.
+ */
+struct dspaudio_bass {
+	uint32_t small;			/* one bit per output: bass managed */
+	uint32_t subwoofer;		/* 0: the bass goes to the front pair */
+	struct dspaudio_biquad high[DSPAUDIO_OUT][DSPAUDIO_XO];
+	struct dspaudio_biquad low[DSPAUDIO_OUT][DSPAUDIO_XO];
+	struct dspaudio_biquad sub[DSPAUDIO_XO];
+};
+
 struct dspaudio_shared {
 	/* written by the DSP */
 	uint32_t magic;
@@ -96,6 +110,13 @@ struct dspaudio_shared {
 	float noise_gain;		/* sample value for an RMS of 1 */
 	uint32_t delay[DSPAUDIO_OUT];	/* samples each output is held back */
 	struct dspaudio_surround surround;	/* gain[out][0] scales each output */
+	/*
+	 * dspd fills bass[(bass_gen + 1) & 1], then increments bass_gen. The
+	 * DSP copies the set in pieces and takes it only if bass_gen has not
+	 * moved on meanwhile.
+	 */
+	struct dspaudio_bass bass[2];
+	uint32_t bass_gen;
 };
 
 #endif
