@@ -191,14 +191,14 @@ and shows "Error 9-1".
 Errors are shown as `<part>-<code>`: part 9 NET, 6 ARM, the code as in the
 68 answers.
 
-## Calibration (unfinished)
+## Level calibration
 
-During automatic level setup the MCU sends D2 F1 (test tone listening mode),
-then D0 with the channel and D3 0 dB, turns the analog volume up to 0 dB and
-expects the DSP to play test noise on that channel. If the DSP keeps passing audio instead, the MCU keeps the
-DAC muted afterwards. AudioApp names: `HostRsv_Testmode_On/Off`,
-`uw_dsp_test_tone_set_cmd`, `uw_dsp_test_tone_noise_set_cmd[%d]`. The replies
-it expects are not known yet.
+During the speaker level setup the MCU sends D2 F1 (test tone listening
+mode), then D0 with the channel and D3 0 dB, and turns the analog volume up
+to its reference level. The DSP plays test noise on that channel; OSIRIS
+plays pink noise at -70 dBFS RMS. The MCU applies the levels itself in the
+analog stage and sends nothing back for them. The distances come as C3 (and
+in C0 at start-up); the DSP does not delay the outputs by them yet.
 
 ## mcud
 
