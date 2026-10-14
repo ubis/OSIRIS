@@ -69,6 +69,7 @@ ubus call dsp set '{"mute": true}'
 ubus call dsp set '{"volume": -600}'              # gain in 0.01 dB, 0 = unity
 ubus call dsp set '{"outputs": "all"}'            # "front", "all" (stereo everywhere) or "mono"
 ubus call dsp set '{"bass": 4, "treble": -2}'      # dB, -12..+12
+ubus call dsp set '{"testtone": "fl", "testtone_level": -30}'  # pink noise on one output, dBFS RMS; "off" stops it
 ```
 
 dspaudio takes the I2S input from the PCM9211 (the tuner and analog inputs

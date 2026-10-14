@@ -53,6 +53,9 @@ struct gpio_cmd {
 #define BASS_HZ		100.0
 #define TREBLE_HZ	10000.0
 #define SAMPLE_HZ	48000.0
+#define NOISE_RMS	0.58194		/* the pink filter's output for an RMS of 1 */
+#define NOISE_MAX	(-15)		/* dBFS RMS; peaks are 12.8 dB higher */
+#define NOISE_MIN	(-80)
 
 enum outputs { OUTPUTS_FRONT, OUTPUTS_ALL, OUTPUTS_MONO, __OUTPUTS_MAX };
 
@@ -73,6 +76,15 @@ static int volume;			/* 0.01 dB */
 static int muted;
 static enum outputs outputs = OUTPUTS_FRONT;
 static int bass, treble;		/* dB */
+static int noise_out = -1;		/* enum dspaudio_out, -1 off */
+static int noise_level = -30;		/* dBFS RMS */
+
+static const char *const out_name[DSPAUDIO_OUT] = {
+	[DSPAUDIO_OUT_FL] = "fl", [DSPAUDIO_OUT_FR] = "fr",
+	[DSPAUDIO_OUT_C] = "c", [DSPAUDIO_OUT_SW] = "sw",
+	[DSPAUDIO_OUT_SL] = "sl", [DSPAUDIO_OUT_SR] = "sr",
+	[DSPAUDIO_OUT_SBL] = "sbl", [DSPAUDIO_OUT_SBR] = "sbr",
+};
 
 static volatile uint32_t *map(int fd, uint32_t phys, uint32_t len)
 {
@@ -160,6 +172,13 @@ static void shelf(volatile struct dspaudio_biquad *q, double hz, int db, int hig
 	q->a2 = ((a + 1) + s * (a - 1) * c - r) / a0;
 }
 
+static void apply_noise(void)
+{
+	sh->noise_gain = pow(10.0, noise_level / 20.0) * NOISE_RMS * 2147483647.0;
+	__sync_synchronize();
+	sh->noise_out = noise_out < 0 ? DSPAUDIO_NOISE_OFF : (uint32_t)noise_out;
+}
+
 /* fill the set the DSP is not using, then switch it over */
 static void apply_tone(void)
 {
@@ -173,7 +192,8 @@ static void apply_tone(void)
 
 static void apply(void)
 {
-	int32_t g = gain_of(volume);
+	/* the test noise plays alone */
+	int32_t g = noise_out < 0 ? gain_of(volume) : 0;
 	unsigned int out, in;
 
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
@@ -228,6 +248,7 @@ static int dsp_start(const char *image)
 	memset((void *)sh, 0, sizeof(*sh));
 	apply();
 	apply_tone();
+	apply_noise();
 	msync((void *)l2, L2_SIZE, MS_SYNC);
 	syscfg[HOST1CFG / 4] = DSPAUDIO_LOAD;
 	psc[PSC_MDCTL_DSP / 4] |= MDCTL_LRST;
@@ -284,11 +305,14 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_string(&b, "outputs", outputs_name[outputs]);
 	blobmsg_add_u32(&b, "bass", (uint32_t)bass);
 	blobmsg_add_u32(&b, "treble", (uint32_t)treble);
+	blobmsg_add_string(&b, "testtone", noise_out < 0 ? "off" : out_name[noise_out]);
+	blobmsg_add_u32(&b, "testtone_level", (uint32_t)noise_level);
 	ubus_send_reply(c, req, b.head);
 	return 0;
 }
 
-enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, __SET_MAX };
+enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
+	SET_TESTTONE_LEVEL, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -296,6 +320,8 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_OUTPUTS] = { .name = "outputs", .type = BLOBMSG_TYPE_STRING },
 	[SET_BASS] = { .name = "bass", .type = BLOBMSG_TYPE_INT32 },
 	[SET_TREBLE] = { .name = "treble", .type = BLOBMSG_TYPE_INT32 },
+	[SET_TESTTONE] = { .name = "testtone", .type = BLOBMSG_TYPE_STRING },
+	[SET_TESTTONE_LEVEL] = { .name = "testtone_level", .type = BLOBMSG_TYPE_INT32 },
 };
 
 static int m_set(struct ubus_context *c, struct ubus_object *obj,
@@ -341,6 +367,35 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 		bass = nb;
 		treble = nt;
 		apply_tone();
+	}
+
+	if (tb[SET_TESTTONE_LEVEL]) {
+		int l = (int32_t)blobmsg_get_u32(tb[SET_TESTTONE_LEVEL]);
+
+		if (l < NOISE_MIN || l > NOISE_MAX) {
+			return UBUS_STATUS_INVALID_ARGUMENT;
+		}
+
+		noise_level = l;
+	}
+
+	if (tb[SET_TESTTONE]) {
+		o = blobmsg_get_string(tb[SET_TESTTONE]);
+		for (i = 0; i < DSPAUDIO_OUT; i++) {
+			if (!strcmp(o, out_name[i])) {
+				break;
+			}
+		}
+
+		if (i == DSPAUDIO_OUT && strcmp(o, "off")) {
+			return UBUS_STATUS_INVALID_ARGUMENT;
+		}
+
+		noise_out = i == DSPAUDIO_OUT ? -1 : (int)i;
+	}
+
+	if (tb[SET_TESTTONE] || tb[SET_TESTTONE_LEVEL]) {
+		apply_noise();
 	}
 
 	apply();
