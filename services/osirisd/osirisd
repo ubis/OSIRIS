@@ -6,7 +6,7 @@
 -- becomes the hostname, the display shows "OSIRIS <build>" as the DSP
 -- version, the listening mode picks the speakers the DSP plays on and the
 -- tone controls set its bass and treble filters;
--- the DSP goes quiet while the receiver runs its test tone. The network
+-- level calibration plays pink noise on the channel it asks for. The network
 -- menu gets the address and link state from the system. Before the MCU
 -- switches the board off the data is synced; a factory reset wipes it.
 --
@@ -39,6 +39,14 @@ local LM_ALL_CH_STEREO = 0x0A			-- LMD0C
 local LM_FULL_MONO = 0x0B			-- LMD13
 local LM_TESTTONE = 0xF1			-- level calibration (C_LM_TESTTONE)
 
+-- calibration channel -> DSP output; front high and wide share the
+-- surround back pair
+local TESTTONE_OUT = {
+	fl = "fl", fr = "fr", c = "c", sw = "sw", sl = "sl", sr = "sr",
+	sbl = "sbl", sbr = "sbr", fhl = "sbl", fhr = "sbr", fwl = "sbl", fwr = "sbr",
+}
+local TESTTONE_LEVEL = -70		-- dBFS RMS, at the MCU's reference volume
+
 -- speakers per listening mode; anything else (stereo, direct and the
 -- surround modes the DSP cannot do yet) plays on the front pair
 local MODE_OUTPUTS = {
@@ -47,6 +55,9 @@ local MODE_OUTPUTS = {
 }
 
 local IFACE = "eth0"
+
+local mode_now
+local testtone_ch = "fl"
 
 local conn
 
@@ -166,20 +177,26 @@ local function set_model(m)
 	log("%s %s (%s), hostname %s", m.make or "", m.model, m.code or "", host)
 end
 
+-- noise only during level calibration, on the channel the MCU picked
+local function set_testtone()
+	local out = mode_now == LM_TESTTONE and TESTTONE_OUT[testtone_ch] or "off"
+
+	call("dsp", "set", { testtone = out, testtone_level = TESTTONE_LEVEL })
+end
+
 local function set_mode(mode)
 	if not mode then
 		return
 	end
 
-	-- not the test tone: a restart during calibration must not start muted
+	-- not the test tone: a restart must not come back into calibration
 	if mode ~= LM_TESTTONE then
 		save_state({ listening_mode = mode })
 	end
 
-	-- until the DSP makes the test noise itself, play nothing: the MCU
-	-- turns the analog volume up to the reference level for it
-	call("dsp", "set", { mute = mode == LM_TESTTONE,
-			     outputs = MODE_OUTPUTS[mode] or "front" })
+	mode_now = mode
+	call("dsp", "set", { outputs = MODE_OUTPUTS[mode] or "front" })
+	set_testtone()
 end
 
 -- front bass and treble in dB, from the receiver's tone controls
@@ -246,6 +263,10 @@ local handlers = {
 	end,
 	["mcu.listening_mode"] = function(msg)
 		set_mode(msg.mode)
+	end,
+	["mcu.testtone"] = function(msg)
+		testtone_ch = msg.channel or testtone_ch
+		set_testtone()
 	end,
 	["mcu.tone"] = function(msg)
 		set_tone(msg.bass, msg.treble)
