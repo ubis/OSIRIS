@@ -7,6 +7,7 @@
  *   mcud [-s spi_hz] [-v]
  *     -v  log every frame with a timestamp on stderr
  */
+#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +28,61 @@
 static struct ubus_context *ctx;
 static struct blob_buf b;
 static int listening_mode = -1;		/* the last one the MCU sent */
+static int lmd = -1;			/* its ISCP code (LMDxx) */
+
+/* ISCP listening mode codes, as the MCU reports them (!1LMDxx) */
+static const struct {
+	uint8_t code;
+	const char *name;
+} lmd_names[] = {
+	{ 0x00, "stereo" }, { 0x01, "direct" }, { 0x02, "surround" },
+	{ 0x03, "film" }, { 0x04, "thx" }, { 0x05, "action" }, { 0x06, "musical" },
+	{ 0x07, "mono_movie" }, { 0x08, "orchestra" }, { 0x09, "unplugged" },
+	{ 0x0a, "studio_mix" }, { 0x0b, "tv_logic" }, { 0x0c, "all_ch_stereo" },
+	{ 0x0d, "theater_dimensional" }, { 0x0e, "enhanced" }, { 0x0f, "mono" },
+	{ 0x11, "pure_audio" }, { 0x12, "multiplex" }, { 0x13, "full_mono" },
+	{ 0x14, "dolby_virtual" }, { 0x15, "dts_surround_sensation" },
+	{ 0x16, "audyssey_dsx" }, { 0x40, "straight_decode" }, { 0x41, "dolby_ex" },
+	{ 0x42, "thx_cinema" }, { 0x43, "thx_surround_ex" }, { 0x44, "thx_music" },
+	{ 0x45, "thx_games" }, { 0x50, "thx_u2_cinema" }, { 0x51, "thx_u2_music" },
+	{ 0x52, "thx_u2_games" }, { 0x80, "plii_movie" }, { 0x81, "plii_music" },
+	{ 0x82, "neo6_cinema" }, { 0x83, "neo6_music" }, { 0x84, "plii_thx_cinema" },
+	{ 0x85, "neo6_thx_cinema" }, { 0x86, "plii_game" }, { 0x87, "neural_surround" },
+	{ 0x88, "neural_thx" }, { 0x89, "plii_thx_games" }, { 0x8a, "neo6_thx_games" },
+	{ 0x8b, "plii_thx_music" }, { 0x8c, "neo6_thx_music" },
+	{ 0x90, "pliiz_height" }, { 0x94, "pliiz_height_thx_cinema" },
+	{ 0x95, "pliiz_height_thx_music" }, { 0x96, "pliiz_height_thx_games" },
+	{ 0xa0, "plii_movie_dsx" }, { 0xa1, "plii_music_dsx" }, { 0xa2, "plii_game_dsx" },
+	{ 0xa3, "neo6_cinema_dsx" }, { 0xa4, "neo6_music_dsx" },
+	{ 0xa5, "neural_surround_dsx" }, { 0xa7, "dolby_ex_dsx" },
+};
+
+static const char *lmd_name(int code)
+{
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(lmd_names); i++) {
+		if (lmd_names[i].code == code) {
+			return lmd_names[i].name;
+		}
+	}
+
+	return NULL;
+}
+
+/* the mode as the MCU's own byte and, once it reported it, by name */
+static void add_listening_mode(void)
+{
+	const char *n = lmd_name(lmd);
+
+	if (listening_mode >= 0) {
+		blobmsg_add_u32(&b, "mode", listening_mode);
+	}
+
+	if (n) {
+		blobmsg_add_string(&b, "name", n);
+	}
+}
 static int tone_known, bass, treble;	/* front tone, dB */
 
 /* MCU_DISTANCE, in the receiver's order; the 13th value is not a speaker */
@@ -180,12 +236,20 @@ static void on_frame(const struct link_frame *f, const char *name)
 		event("mcu.speakers");
 		return;
 	case MCU_LISTENING_MODE:
-		if (f->len >= 2) {
-			listening_mode = d[1];
-			blobmsg_add_u32(&b, "mode", d[1]);
+		if (f->len < 2) {
+			break;
 		}
 
-		add_hex("data", d, f->len);
+		/*
+		 * The ISCP code comes only when it changes, and may come before or
+		 * after this: ask for it, the name follows if it is a new one.
+		 */
+		if (d[1] != listening_mode) {
+			proto_ask_listening_mode();
+		}
+
+		listening_mode = d[1];
+		add_listening_mode();
 		event("mcu.listening_mode");
 		return;
 	case MCU_BASS_TREBLE:
@@ -241,6 +305,18 @@ static void on_frame(const struct link_frame *f, const char *name)
 		event("mcu.update");
 		return;
 	case MCU_ISCP:
+		if (f->len >= 8 && !memcmp(d + 1, "!1LMD", 5) && isxdigit(d[6]) && isxdigit(d[7])) {
+			char hex[3] = { d[6], d[7], 0 };
+			long v = strtol(hex, NULL, 16);
+
+			if (v != lmd) {
+				lmd = v;
+				add_listening_mode();
+				event("mcu.listening_mode");
+				blob_buf_init(&b, 0);
+			}
+		}
+
 		if (f->len > 1) {
 			char *s = blobmsg_alloc_string_buffer(&b, "command", f->len);
 
@@ -281,6 +357,10 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 
 	if (listening_mode >= 0) {
 		blobmsg_add_u32(&b, "listening_mode", listening_mode);
+	}
+
+	if (lmd_name(lmd)) {
+		blobmsg_add_string(&b, "listening_mode_name", lmd_name(lmd));
 	}
 
 	if (distance_known) {
