@@ -4,10 +4,10 @@
 -- osirisd: the receiver's policy. It listens to the events mcud reports
 -- and tells the other services what to do: the model the MCU reports
 -- becomes the hostname, the display shows "OSIRIS <build>" as the DSP
--- version, the listening mode picks the speakers the DSP plays on and the
--- tone controls set its bass and treble filters, the speaker distances
--- the outputs' delays;
--- level calibration plays pink noise on the channel it asks for. The network
+-- version, the listening mode picks the speakers and the surround decoder
+-- preset the DSP plays with, the tone controls set its bass and treble
+-- filters and the speaker distances the outputs' delays; level calibration
+-- plays pink noise on the channel it asks for. The network
 -- menu gets the address and link state from the system. Before the MCU
 -- switches the board off the data is synced; a factory reset wipes it.
 -- An update bundle of another version on a USB stick is offered when the
@@ -51,11 +51,32 @@ local TESTTONE_OUT = {
 }
 local TESTTONE_LEVEL = -70		-- dBFS RMS, at the MCU's reference volume
 
--- speakers per listening mode; anything else (stereo, direct and the
--- surround modes the DSP cannot do yet) plays on the front pair
+-- speakers per listening mode, by the MCU's byte until it names the mode;
+-- anything else (stereo, direct, the modes the DSP cannot do yet) plays on
+-- the front pair
 local MODE_OUTPUTS = {
 	[LM_ALL_CH_STEREO] = "all",
 	[LM_FULL_MONO] = "mono",
+	all_ch_stereo = "all",
+	full_mono = "mono",
+}
+
+-- the surround decoder's preset for the modes that make surround from
+-- stereo; the receiver's sound field modes use the nearest one for now
+local MODE_SURROUND = {
+	surround = "movie", film = "movie", thx = "movie", thx_cinema = "movie",
+	tv_logic = "movie", neural_surround = "movie",
+	plii_movie = "movie", plii_thx_cinema = "movie", plii_movie_dsx = "movie",
+	neo6_cinema = "movie", neo6_thx_cinema = "movie", neo6_cinema_dsx = "movie",
+	pliiz_height = "movie", pliiz_height_thx_cinema = "movie",
+	musical = "music", orchestra = "music", unplugged = "music",
+	studio_mix = "music", thx_music = "music",
+	plii_music = "music", plii_thx_music = "music", plii_music_dsx = "music",
+	neo6_music = "music", neo6_thx_music = "music", neo6_music_dsx = "music",
+	pliiz_height_thx_music = "music",
+	action = "game", thx_games = "game",
+	plii_game = "game", plii_thx_games = "game", plii_game_dsx = "game",
+	neo6_thx_games = "game", pliiz_height_thx_games = "game",
 }
 
 local IFACE = "eth0"
@@ -204,18 +225,23 @@ local function set_testtone()
 	call("dsp", "set", { testtone = out, testtone_level = TESTTONE_LEVEL })
 end
 
-local function set_mode(mode)
-	if not mode then
+-- by the name of the mode's ISCP code, the MCU's byte only where there is
+-- no name yet; either can be missing
+local function set_mode(mode, name)
+	if not mode and not name then
 		return
 	end
 
 	-- not the test tone: a restart must not come back into calibration
 	if mode ~= LM_TESTTONE then
-		save_state({ listening_mode = mode })
+		save_state({ listening_mode = mode or "", listening_mode_name = name or "" })
 	end
 
 	mode_now = mode
-	call("dsp", "set", { outputs = MODE_OUTPUTS[mode] or "front" })
+	call("dsp", "set", {
+		outputs = MODE_OUTPUTS[name] or MODE_OUTPUTS[mode] or "front",
+		surround = mode ~= LM_TESTTONE and MODE_SURROUND[name] or "off",
+	})
 	set_testtone()
 end
 
@@ -487,7 +513,8 @@ local handlers = {
 		set_bundle(msg.path, msg.version)
 	end,
 	["mcu.listening_mode"] = function(msg)
-		set_mode(msg.mode)
+		-- the name can come without the MCU's byte, after a restart
+		set_mode(msg.mode or mode_now, msg.name)
 	end,
 	["mcu.testtone"] = function(msg)
 		testtone_ch = msg.channel or testtone_ch
@@ -532,7 +559,11 @@ if st and st.stage == "ready" then
 end
 
 local saved = load_state()
-set_mode(st and st.listening_mode or tonumber(saved.listening_mode or ""))
+if st and (st.listening_mode or st.listening_mode_name) then
+	set_mode(st.listening_mode, st.listening_mode_name)
+else
+	set_mode(tonumber(saved.listening_mode or ""), saved.listening_mode_name)
+end
 if st and st.bass then
 	set_tone(st.bass, st.treble)
 else
