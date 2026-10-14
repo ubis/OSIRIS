@@ -1,0 +1,26 @@
+#!/bin/sh
+#
+# USB storage: mount points on a tmpfs, osiris-hotplug as the kernel's
+# hotplug helper, and whatever was plugged in before boot.
+#
+
+start() {
+	mount -t tmpfs -o mode=0755,size=64k tmpfs /media
+	echo /usr/sbin/osiris-hotplug > /proc/sys/kernel/hotplug
+	for u in /sys/block/sd*/uevent /sys/block/sd*/sd*/uevent; do
+		[ -e "$u" ] && echo add > "$u"
+	done
+}
+
+stop() {
+	echo > /proc/sys/kernel/hotplug
+	for m in /media/*; do
+		grep -q " $m " /proc/mounts && umount -l "$m"
+	done
+}
+
+case "$1" in
+start|stop)	$1 ;;
+restart|reload)	stop; start ;;
+*)	echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac
