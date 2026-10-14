@@ -82,7 +82,7 @@ only sends it when a field changes.
 | C0 | initial_settings | |
 | C1 | input_settings | [1] decode mode [2] interface [3] fs code [4] MCLK [5] status |
 | C2 | speaker_config | speaker setup changed (stock answers with 45) |
-| C3 | distance | speaker distances |
+| C3 | distance | [1..26] 13 x u16 LE in cm: fl, c, fr, sl, sr, sbl, sbr, fhl, fhr, fwl, fwr, sw, (0); 5 cm steps |
 | C4 | equalizer | |
 | C5 | thx | |
 | C6 | multiplex_mono | |
@@ -95,7 +95,7 @@ only sends it when a field changes.
 | CD | re_eq | |
 | CE | music_optimizer | |
 | CF | late_night | |
-| D0 | testtone_ch | calibration: channel for the test tone (00, 02, 00, 07 seen) |
+| D0 | testtone_ch | level calibration: [1] channel 0 fl, 1 c, 2 fr, 3 sr, 4 sbr, 5 sbl, 6 sl, 7 sw, 8 fhl, 9 fhr, 10 fwl, 11 fwr. Comes with listening mode F1; the MCU sets the reference volume (MVL52) and the channel levels itself |
 | D1 | testmode | |
 | D2 | listening_mode | [1] mode, [2] variant, see below; F1 = test tone (calibration) |
 | D3 | volume | [1..2] s16 LE, 0.01 dB; for information, the MCU sets it in the analog stage |
