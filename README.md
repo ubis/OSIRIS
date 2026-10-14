@@ -52,21 +52,29 @@ Tested on the TX-NR717.
 | Automatic level setup (test noise) | ✅ |
 | Network menu (address, MAC, name) | ✅ |
 | Standby: board switched off, data synced | ✅ |
+| Speaker distances (delays) | ✅ |
+| Bass management (crossovers, double bass) | ✅ |
+| Surround from stereo in the Surround, PLII, Neo:6, Neural and THX Cinema/Music/Games modes | ✅ ¹ |
+| Sound field modes (Orchestra, Unplugged, Studio-Mix, TV Logic, ...) | ✅ ¹ |
 | Factory reset | ❓ not tested |
 | Zone line outputs, headphones | ❓ not tested |
-| Subwoofer and 7.2 pre-outs | ❓ not tested |
+| Subwoofer pre-out | ✅ |
+| Other 7.2 pre-outs | ❓ not tested |
 | Phono input, AM radio, RDS | ❓ not tested |
 | 12 V trigger, IR input | ❓ not tested |
 | HDMI video switching, on-screen menu | ❓ not tested |
 | Digital inputs (optical, coax), PCM | ❓ not tested, no sources yet |
-| Speaker distances (delays) | ❌ not yet |
-| Crossover, A/V sync, bi-amp / front high / wide | ❌ not yet |
+| A/V sync, Late Night, Re-EQ, Music Optimizer, headphone downmix | ❌ not yet |
 | Audyssey 2EQ, Dynamic EQ, Dynamic Volume | ❌ not yet |
-| Surround modes (Dolby PLII, DTS Neo:6, THX, Audyssey DSX) | ❌ not yet, play on the front pair |
 | HDMI audio, ARC | ❌ not yet |
 | Network control (Onkyo Remote app) | ❌ not yet |
 | Network audio, USB playback, NET menu | ❌ not yet |
 | Dolby Digital / DTS decoding | ❌ not yet, maybe in the far future (open AC-3 / DTS core decoders like liba52 exist) |
+
+¹ OSIRIS's own processing: it does what these modes are for, surround
+from stereo and a room around the music, but it is not Dolby's, DTS's,
+THX's or Onkyo's algorithm, so it does not sound exactly like the stock
+firmware.
 
 ## Documentation
 
