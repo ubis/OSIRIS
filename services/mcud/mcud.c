@@ -29,6 +29,11 @@ static struct blob_buf b;
 static int listening_mode = -1;		/* the last one the MCU sent */
 static int tone_known, bass, treble;	/* front tone, dB */
 
+/* MCU_TESTTONE_CH channel codes, in the receiver's own order */
+static const char *const testtone_ch[] = {
+	"fl", "c", "fr", "sr", "sbr", "sbl", "sl", "sw", "fhl", "fhr", "fwl", "fwr",
+};
+
 static void add_hex(const char *name, const uint8_t *d, size_t len)
 {
 	char *s;
@@ -152,15 +157,13 @@ static void on_frame(const struct link_frame *f, const char *name)
 		event("mcu.tone");
 		return;
 	case MCU_TESTTONE_CH:
-	case MCU_TESTMODE:
-		blobmsg_add_string(&b, "name", name);
-		if (f->len >= 2) {
-			blobmsg_add_u32(&b, "channel", d[1]);
+		if (f->len >= 2 && d[1] < ARRAY_SIZE(testtone_ch)) {
+			blobmsg_add_string(&b, "channel", testtone_ch[d[1]]);
+			event("mcu.testtone");
+			return;
 		}
 
-		add_hex("data", d, f->len);
-		event("mcu.testtone");
-		return;
+		break;
 	case MCU_POWER:
 		if (f->len) {
 			blobmsg_add_string(&b, "state", power_name(d[0]));
@@ -188,12 +191,13 @@ static void on_frame(const struct link_frame *f, const char *name)
 		event("mcu.iscp");
 		return;
 	default:
-		blobmsg_add_u32(&b, "cmd", f->cmd);
-		blobmsg_add_string(&b, "name", name);
-		add_hex("data", d, f->len);
-		event("mcu.frame");
-		return;
+		break;
 	}
+
+	blobmsg_add_u32(&b, "cmd", f->cmd);
+	blobmsg_add_string(&b, "name", name);
+	add_hex("data", d, f->len);
+	event("mcu.frame");
 }
 
 /* Methods */

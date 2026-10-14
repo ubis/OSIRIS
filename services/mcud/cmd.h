@@ -45,7 +45,7 @@ enum mcu_cmd {
 	MCU_RE_EQ		= 0xcd,
 	MCU_MUSIC_OPTIMIZER	= 0xce,
 	MCU_LATE_NIGHT		= 0xcf,
-	MCU_TESTTONE_CH		= 0xd0,
+	MCU_TESTTONE_CH		= 0xd0,	/* [1] channel of the calibration noise */
 	MCU_TESTMODE		= 0xd1,
 	MCU_LISTENING_MODE	= 0xd2,	/* [1] mode, LM_TESTTONE for calibration */
 	MCU_VOLUME		= 0xd3,	/* [1..2] s16 LE, 0.01 dB */
