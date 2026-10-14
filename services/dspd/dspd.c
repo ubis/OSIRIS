@@ -81,6 +81,28 @@ static int noise_out = -1;		/* enum dspaudio_out, -1 off */
 static int noise_level = -30;		/* dBFS RMS */
 static int distance[DSPAUDIO_OUT];	/* cm, 0 = not known */
 
+/*
+ * Surround from stereo (struct dspaudio_surround). Movie puts dialogue in
+ * the centre and holds the surrounds back so that the front wins; music
+ * keeps a wider front and wraps some of it around; game reacts fastest and
+ * keeps the surrounds bright.
+ */
+struct surround_preset {
+	const char *name;
+	double tau_ms;		/* correlation estimate */
+	double center, surround, wrap, back, sub;
+	double delay_ms, back_delay_ms;
+	double high_pass_hz, low_pass_hz;	/* band of the surrounds */
+};
+
+static const struct surround_preset surround_presets[] = {
+	{ "movie", 10, 1.0, 1.0, 0.0, 0.7, 0.5, 10, 5, 100, 7000 },
+	{ "music", 40, 0.5, 0.8, 0.25, 0.5, 0.5, 2, 5, 100, 16000 },
+	{ "game", 10, 0.8, 1.0, 0.15, 0.8, 0.5, 0, 3, 80, 18000 },
+};
+
+static const struct surround_preset *surround;	/* NULL: off */
+
 static const char *const out_name[DSPAUDIO_OUT] = {
 	[DSPAUDIO_OUT_FL] = "fl", [DSPAUDIO_OUT_FR] = "fr",
 	[DSPAUDIO_OUT_C] = "c", [DSPAUDIO_OUT_SW] = "sw",
@@ -174,6 +196,52 @@ static void shelf(volatile struct dspaudio_biquad *q, double hz, int db, int hig
 	q->a2 = ((a + 1) + s * (a - 1) * c - r) / a0;
 }
 
+/* RBJ cookbook high or low pass, Q 0.707 */
+static void pass(volatile struct dspaudio_biquad *q, double hz, int high)
+{
+	double w = 2.0 * M_PI * hz / SAMPLE_HZ, c = cos(w), alpha = sin(w) / (2.0 * M_SQRT1_2);
+	double a0 = 1.0 + alpha, k = high ? (1.0 + c) / 2.0 : (1.0 - c) / 2.0;
+
+	q->b0 = k / a0;
+	q->b1 = (high ? -2.0 * k : 2.0 * k) / a0;
+	q->b2 = k / a0;
+	q->a1 = -2.0 * c / a0;
+	q->a2 = (1.0 - alpha) / a0;
+}
+
+static uint32_t ms_samples(double ms)
+{
+	uint32_t n = lround(ms * SAMPLE_HZ / 1000.0);
+
+	return n > DSPAUDIO_SURROUND_DELAY_MAX ? DSPAUDIO_SURROUND_DELAY_MAX : n;
+}
+
+/* the DSP leaves the decoder alone while it is off: write it, then turn it on */
+static void apply_surround(void)
+{
+	volatile struct dspaudio_surround *s = &sh->surround;
+	const struct surround_preset *p = surround;
+
+	s->on = 0;
+	__sync_synchronize();
+	if (!p) {
+		return;
+	}
+
+	s->smooth = 1.0 - exp(-1000.0 / (p->tau_ms * SAMPLE_HZ));
+	s->center = p->center;
+	s->surround = p->surround;
+	s->wrap = p->wrap;
+	s->back = p->back;
+	s->sub = p->sub;
+	s->delay = ms_samples(p->delay_ms);
+	s->back_delay = ms_samples(p->back_delay_ms);
+	pass(&s->band[0], p->high_pass_hz, 1);
+	pass(&s->band[1], p->low_pass_hz, 0);
+	__sync_synchronize();
+	s->on = 1;
+}
+
 static void apply_noise(void)
 {
 	sh->noise_gain = pow(10.0, noise_level / 20.0) * NOISE_RMS * 2147483647.0;
@@ -218,7 +286,12 @@ static void apply(void)
 
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
 		for (in = 0; in < DSPAUDIO_IN; in++) {
-			sh->gain[out][in] = g / 2 * mix[outputs][out][in];
+			/* the decoder makes the outputs; [0] only scales them */
+			if (surround) {
+				sh->gain[out][in] = in == 0 ? g : 0;
+			} else {
+				sh->gain[out][in] = g / 2 * mix[outputs][out][in];
+			}
 		}
 	}
 }
@@ -270,6 +343,7 @@ static int dsp_start(const char *image)
 	apply_tone();
 	apply_noise();
 	apply_delays();
+	apply_surround();
 	msync((void *)l2, L2_SIZE, MS_SYNC);
 	syscfg[HOST1CFG / 4] = DSPAUDIO_LOAD;
 	psc[PSC_MDCTL_DSP / 4] |= MDCTL_LRST;
@@ -324,6 +398,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_u32(&b, "volume", (uint32_t)volume);
 	blobmsg_add_u8(&b, "mute", muted);
 	blobmsg_add_string(&b, "outputs", outputs_name[outputs]);
+	blobmsg_add_string(&b, "surround", surround ? surround->name : "off");
 	blobmsg_add_u32(&b, "bass", (uint32_t)bass);
 	blobmsg_add_u32(&b, "treble", (uint32_t)treble);
 	blobmsg_add_string(&b, "testtone", noise_out < 0 ? "off" : out_name[noise_out]);
@@ -341,7 +416,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 }
 
 enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
-	SET_TESTTONE_LEVEL, SET_DISTANCES, __SET_MAX };
+	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -352,6 +427,7 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_TESTTONE] = { .name = "testtone", .type = BLOBMSG_TYPE_STRING },
 	[SET_TESTTONE_LEVEL] = { .name = "testtone_level", .type = BLOBMSG_TYPE_INT32 },
 	[SET_DISTANCES] = { .name = "distances", .type = BLOBMSG_TYPE_TABLE },
+	[SET_SURROUND] = { .name = "surround", .type = BLOBMSG_TYPE_STRING },
 };
 
 static int out_index(const char *name)
@@ -470,6 +546,24 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 
 	if (tb[SET_DISTANCES] && set_distances(tb[SET_DISTANCES])) {
 		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	if (tb[SET_SURROUND]) {
+		const struct surround_preset *p = NULL;
+
+		o = blobmsg_get_string(tb[SET_SURROUND]);
+		for (i = 0; i < ARRAY_SIZE(surround_presets); i++) {
+			if (!strcmp(o, surround_presets[i].name)) {
+				p = &surround_presets[i];
+			}
+		}
+
+		if (!p && strcmp(o, "off")) {
+			return UBUS_STATUS_INVALID_ARGUMENT;
+		}
+
+		surround = p;
+		apply_surround();
 	}
 
 	apply();

@@ -286,6 +286,97 @@ static int32_t noise(void)
 static int32_t delay_buf[DSPAUDIO_OUT][DELAY_LEN];
 static unsigned int delay_pos[DSPAUDIO_OUT];
 
+#define SUR_LEN		(DSPAUDIO_SURROUND_DELAY_MAX + 1)
+#define FULL_SCALE	2147483648.0f
+
+static float sur_ll, sur_rr, sur_lr;	/* smoothed L*L, R*R, L*R */
+static float sur_z[2][2];		/* the band filters' state */
+static float sur_buf[SUR_LEN];
+static unsigned int sur_pos;
+static float sur_ap;			/* all-pass state, right surround */
+static float upmixed[DSPAUDIO_OUT];	/* -1..1 */
+
+static float clampf(float x, float lo, float hi)
+{
+	return x < lo ? lo : x > hi ? hi : x;
+}
+
+/* 1 / sqrt(x) for x > 0, close enough for a gain: bit trick, two Newton steps */
+static float rsqrt(float x)
+{
+	union {
+		float f;
+		uint32_t u;
+	} v = { .f = x };
+	float h = 0.5f * x;
+
+	v.u = 0x5f3759df - (v.u >> 1);
+	v.f = v.f * (1.5f - h * v.f * v.f);
+	v.f = v.f * (1.5f - h * v.f * v.f);
+	return v.f;
+}
+
+static float biquad(const volatile struct dspaudio_biquad *q, float *z, float x)
+{
+	float y = q->b0 * x + z[0];
+
+	z[0] = q->b1 * x - q->a1 * y + z[1];
+	z[1] = q->b2 * x - q->a2 * y;
+	return y;
+}
+
+static float sur_tap(unsigned int d)
+{
+	if (d > DSPAUDIO_SURROUND_DELAY_MAX) {
+		d = DSPAUDIO_SURROUND_DELAY_MAX;
+	}
+
+	return sur_buf[sur_pos >= d ? sur_pos - d : sur_pos + SUR_LEN - d];
+}
+
+/* the eight outputs from one stereo sample pair, struct dspaudio_surround */
+static void upmix(int32_t li, int32_t ri)
+{
+	const volatile struct dspaudio_surround *s = &SH->surround;
+	float l = li / FULL_SCALE, r = ri / FULL_SCALE, a = s->smooth;
+	float rho, c, m, diff, sl, sr, x, ap;
+	unsigned int d = s->delay, bd = d + s->back_delay;
+
+	sur_ll += a * (l * l - sur_ll);
+	sur_rr += a * (r * r - sur_rr);
+	sur_lr += a * (l * r - sur_lr);
+
+	/* in-phase correlation 0..1: how much of the sound sits between the speakers */
+	rho = sur_ll * sur_rr > 1e-12f ? clampf(sur_lr * rsqrt(sur_ll * sur_rr), 0.0f, 1.0f) : 0.0f;
+	m = 0.5f * (l + r);
+	c = s->center * rho * m;
+	upmixed[DSPAUDIO_OUT_FL] = l - c;
+	upmixed[DSPAUDIO_OUT_FR] = r - c;
+	/* same power as the two front speakers gave it */
+	upmixed[DSPAUDIO_OUT_C] = 1.41421356f * c;
+	upmixed[DSPAUDIO_OUT_SW] = s->sub * m;
+
+	/* the difference, less of it the more the sound is in phase */
+	diff = 0.5f * (l - r) * s->surround * (1.0f - rho);
+	diff = biquad(&s->band[0], sur_z[0], diff);
+	diff = biquad(&s->band[1], sur_z[1], diff);
+	sur_buf[sur_pos] = diff;
+
+	x = sur_tap(d);
+	/* first order all-pass on the right one: the pair is not one mono source */
+	ap = -0.6f * x + sur_ap;
+	sur_ap = x + 0.6f * ap;
+	sl = x + s->wrap * upmixed[DSPAUDIO_OUT_FL];
+	sr = -ap + s->wrap * upmixed[DSPAUDIO_OUT_FR];
+	upmixed[DSPAUDIO_OUT_SL] = sl;
+	upmixed[DSPAUDIO_OUT_SR] = sr;
+
+	x = sur_tap(bd);
+	upmixed[DSPAUDIO_OUT_SBL] = s->back * x;
+	upmixed[DSPAUDIO_OUT_SBR] = -s->back * x;
+	sur_pos = sur_pos + 1 == SUR_LEN ? 0 : sur_pos + 1;
+}
+
 static int32_t mix(unsigned int out)
 {
 	int64_t v = 0;
@@ -293,6 +384,13 @@ static int32_t mix(unsigned int out)
 
 	if (out == SH->noise_out) {
 		return noise();
+	}
+
+	if (SH->surround.on) {
+		float y = upmixed[out] * (SH->gain[out][0] / (float)DSPAUDIO_GAIN_ONE);
+
+		y = clampf(y, -1.0f, 0.99999994f);
+		return (int32_t)(y * FULL_SCALE);
 	}
 
 	for (i = 0; i < DSPAUDIO_IN; i++) {
@@ -369,6 +467,10 @@ void dspaudio_main(void)
 			slot = (rs & STAT_ODD_SLOT) ? 1 : 0;
 			smp = (int32_t)REG(RBUF(RX_SER));
 			input[slot] = tone(slot, smp);
+			if (slot == 1 && SH->surround.on) {
+				upmix(input[0], input[1]);
+			}
+
 			mag = smp < 0 ? -(uint32_t)smp : (uint32_t)smp;
 			if (mag > SH->peak[slot]) {
 				SH->peak[slot] = mag;
