@@ -4,7 +4,8 @@
 -- osirisd: the receiver's policy. It listens to the events mcud reports
 -- and tells the other services what to do: the model the MCU reports
 -- becomes the hostname, the display shows "OSIRIS <build>" as the DSP
--- version, and the listening mode picks the speakers the DSP plays on;
+-- version, the listening mode picks the speakers the DSP plays on and the
+-- tone controls set its bass and treble filters;
 -- the DSP goes quiet while the receiver runs its test tone. The network
 -- menu gets the address and link state from the system. Before the MCU
 -- switches the board off the data is synced; a factory reset wipes it.
@@ -181,6 +182,16 @@ local function set_mode(mode)
 			     outputs = MODE_OUTPUTS[mode] or "front" })
 end
 
+-- front bass and treble in dB, from the receiver's tone controls
+local function set_tone(bass, treble)
+	if not bass or not treble then
+		return
+	end
+
+	save_state({ bass = bass, treble = treble })
+	call("dsp", "set", { bass = bass, treble = treble })
+end
+
 -- what the network menu shows; mcud answers the MCU with it
 local function set_network()
 	local p = io.popen("ifconfig " .. IFACE .. " 2> /dev/null")
@@ -236,6 +247,9 @@ local handlers = {
 	["mcu.listening_mode"] = function(msg)
 		set_mode(msg.mode)
 	end,
+	["mcu.tone"] = function(msg)
+		set_tone(msg.bass, msg.treble)
+	end,
 	["mcu.network"] = function()
 		set_network()
 	end,
@@ -261,6 +275,12 @@ if st and st.stage == "ready" then
 	set_model(st)
 end
 
-set_mode(st and st.listening_mode or tonumber(load_state().listening_mode or ""))
+local saved = load_state()
+set_mode(st and st.listening_mode or tonumber(saved.listening_mode or ""))
+if st and st.bass then
+	set_tone(st.bass, st.treble)
+else
+	set_tone(tonumber(saved.bass or ""), tonumber(saved.treble or ""))
+end
 
 uloop.run()
