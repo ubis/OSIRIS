@@ -27,6 +27,7 @@
 static struct ubus_context *ctx;
 static struct blob_buf b;
 static int listening_mode = -1;		/* the last one the MCU sent */
+static int tone_known, bass, treble;	/* front tone, dB */
 
 static void add_hex(const char *name, const uint8_t *d, size_t len)
 {
@@ -139,6 +140,17 @@ static void on_frame(const struct link_frame *f, const char *name)
 		add_hex("data", d, f->len);
 		event("mcu.listening_mode");
 		return;
+	case MCU_BASS_TREBLE:
+		if (f->len >= 9 && d[0] == 0) {
+			tone_known = 1;
+			bass = (int8_t)d[1];
+			treble = (int8_t)d[8];
+			blobmsg_add_u32(&b, "bass", (uint32_t)bass);
+			blobmsg_add_u32(&b, "treble", (uint32_t)treble);
+		}
+
+		event("mcu.tone");
+		return;
 	case MCU_TESTTONE_CH:
 	case MCU_TESTMODE:
 		blobmsg_add_string(&b, "name", name);
@@ -197,6 +209,11 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	add_model(proto_model());
 	proto_get_stream(s);
 	add_hex("stream", s, STREAM_LEN);
+	if (tone_known) {
+		blobmsg_add_u32(&b, "bass", (uint32_t)bass);
+		blobmsg_add_u32(&b, "treble", (uint32_t)treble);
+	}
+
 	if (listening_mode >= 0) {
 		blobmsg_add_u32(&b, "listening_mode", listening_mode);
 	}
