@@ -1,9 +1,9 @@
 #!/bin/sh
 #
 # osiris-hotplug: the kernel's hotplug helper. USB storage (FAT) is mounted
-# read-only on /media/<partition> and unmounted when it goes. An OSIRIS
-# update bundle in its top directory is announced as the ubus event
-# osiris.update with its version and path.
+# read-only on /media/<partition> and unmounted when it goes, announced as
+# the ubus event osiris.media. An OSIRIS update bundle in its top directory
+# is announced as osiris.update with its version and path.
 #
 [ "$SUBSYSTEM" = block ] || exit 0
 case "$DEVNAME" in
@@ -27,6 +27,7 @@ add)
 	fi
 
 	logger -t usb "$DEVNAME mounted on $dir"
+	ubus send osiris.media "{\"dir\": \"$dir\", \"present\": true}"
 	for f in $dir/osiris-*.tar; do
 		[ -f "$f" ] || continue
 		v=$(tar -xOf "$f" VERSION 2> /dev/null)
@@ -36,7 +37,9 @@ add)
 	done
 	;;
 remove)
-	grep -q " $dir " /proc/mounts && umount -l $dir
+	grep -q " $dir " /proc/mounts || exit 0
+	umount -l $dir
 	rmdir $dir 2> /dev/null
+	ubus send osiris.media "{\"dir\": \"$dir\", \"present\": false}"
 	;;
 esac
