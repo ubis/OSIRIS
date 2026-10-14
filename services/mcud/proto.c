@@ -31,6 +31,8 @@ static uint32_t network_asked;	/* MCU_NETWORK items, one bit each */
 static struct uloop_timeout power_timer;
 static int power_pending = -1;	/* MCU_POWER state not answered yet */
 static int pend, retries;
+static uint8_t update_stage;	/* the last MCU_UPDATE [0] */
+static int update_waiting;	/* asked for an update, not answered yet */
 
 /* PCM, 48 kHz, " 2.0", DSP detected: a capture from the stock firmware */
 static uint8_t stream[STREAM_LEN] = {
@@ -326,6 +328,21 @@ void proto_rx(const struct link_frame *f)
 		}
 
 		break;
+	case MCU_UPDATE:
+		if (!f->len) {
+			break;
+		}
+
+		update_stage = d[0];
+		if (d[0] == UPDATE_VERSIONS) {
+			update_waiting = 1;
+		}
+
+		if (d[0] == UPDATE_UPLOAD) {
+			log_msg(LOG_WARNING, "MCU asks to upload its own firmware, not answered");
+		}
+
+		break;
 	case MCU_SYSTEM:
 		model_from_system(d, f->len);
 		break;
@@ -465,6 +482,58 @@ void proto_set_network(const struct mcu_network *n)
 	}
 
 	network_asked = 0;
+}
+
+/* the ARM part: the NET part ends in "Error 9-1", it checks for a BridgeCo module */
+void proto_update_check(int available)
+{
+	uint8_t d[2 + UPDATE_PARTS] = { UPDATE_CHECK };
+
+	d[2 + UPDATE_PART_ARM] = !!available;
+	update_waiting = 0;
+	queue(NET_UPDATE, d, sizeof(d));
+}
+
+int proto_update_waiting(void)
+{
+	return update_waiting;
+}
+
+void proto_update_downloaded(uint32_t size)
+{
+	uint8_t d[6] = { UPDATE_DOWNLOADED, 0, size, size >> 8, size >> 16, size >> 24 };
+
+	queue(NET_UPDATE, d, sizeof(d));
+}
+
+void proto_update_progress(uint8_t percent)
+{
+	uint8_t d[2] = { UPDATE_PROGRESS, percent > 100 ? 100 : percent };
+
+	queue(NET_UPDATE, d, sizeof(d));
+}
+
+/* a failed download is told in the answer the MCU waits for there */
+void proto_update_result(int ok)
+{
+	uint8_t d[6] = { UPDATE_RESULT, ok ? 0 : UPDATE_ERROR };
+
+	if (update_stage == UPDATE_MODE) {
+		d[0] = UPDATE_DOWNLOADED;
+		d[1] = ok ? 0 : UPDATE_DL_ERROR;
+		queue(NET_UPDATE, d, 6);
+		return;
+	}
+
+	queue(NET_UPDATE, d, 2);
+}
+
+/* storage on a USB port makes the MCU look for an update there */
+void proto_set_usb(uint8_t port, int present)
+{
+	uint8_t d[4] = { NET_STATE_USB, 0, port, !!present };
+
+	queue(NET_STATE, d, sizeof(d));
 }
 
 void proto_init(const struct proto_ops *o, const char *dsp_version)

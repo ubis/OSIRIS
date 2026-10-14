@@ -61,6 +61,14 @@ void proto_set_outputs(uint8_t mask);
 int proto_power_done(uint8_t state);
 /* answers the MCU_NETWORK items asked for since the last call */
 void proto_set_network(const struct mcu_network *n);
+void proto_set_usb(uint8_t port, int present);
+
+/* the answers to MCU_UPDATE, in the order the MCU asks for them */
+void proto_update_check(int available);
+int proto_update_waiting(void);
+void proto_update_downloaded(uint32_t size);
+void proto_update_progress(uint8_t percent);
+void proto_update_result(int ok);
 
 const char *proto_cmd_name(uint8_t cmd);
 
