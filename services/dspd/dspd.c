@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -584,8 +585,15 @@ static struct ubus_object dsp_object = {
 	.n_methods = ARRAY_SIZE(dsp_methods),
 };
 
+/* uloop_run() only ends on SIGINT; stopping must mute the outputs too */
+static void on_term(int sig)
+{
+	uloop_end();
+}
+
 int main(int argc, char **argv)
 {
+	struct sigaction sa = { .sa_handler = on_term };
 	const char *image = DEFAULT_IMAGE;
 	int opt, fd, rc;
 
@@ -632,6 +640,7 @@ int main(int argc, char **argv)
 	}
 
 	ubus_add_uloop(ctx);
+	sigaction(SIGTERM, &sa, NULL);
 	rc = ubus_add_object(ctx, &dsp_object);
 	if (rc) {
 		log_msg(LOG_ERR, "ubus: %s", ubus_strerror(rc));
