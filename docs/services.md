@@ -75,6 +75,7 @@ ubus call dsp set '{"bass": 4, "treble": -2}'      # dB, -12..+12
 ubus call dsp set '{"testtone": "fl", "testtone_level": -30}'  # pink noise on one output, dBFS RMS; "off" stops it
 ubus call dsp set '{"distances": {"fl": 300, "c": 250}}'  # cm; nearer speakers are held back, 0 = not known
 ubus call dsp set '{"surround": "movie"}'           # surround from stereo: "movie", "music", "game" or "off"
+ubus call dsp set '{"reverb": "hall"}'              # with surround on: "hall", "theater", "club", "studio", "tv" or "off"
 ubus call dsp set '{"crossover": {"fl": 80, "c": 80}, "subwoofer": true, "sub_lowpass": 120}'  # Hz, 0 = large
 ```
 
@@ -90,10 +91,20 @@ What it does today:
 - names the system after the receiver model the MCU reports (host name and
   `/data/osiris/state`, unless `/data/etc/hostname` exists)
 - makes the receiver show "OSIRIS <build>" as its DSP version
-- picks the speakers from the listening mode: All Ch Stereo plays stereo on
-  every speaker, Full Mono mono on every speaker; the Dolby PLII, DTS Neo:6,
-  THX and sound field modes make surround from stereo with the movie, music
-  or game preset; everything else plays on the front pair
+- picks the speakers from the listening mode (by the name of its ISCP code,
+  tables `MODE_OUTPUTS`, `MODE_SURROUND`, `MODE_REVERB`):
+  - All Ch Stereo plays stereo on every speaker, Full Mono mono on every
+    speaker
+  - Surround, Dolby PLII (also PLIIz Height and the THX and Audyssey DSX
+    versions), DTS Neo:6, THX Cinema, Music and Games and Neural Surround
+    make surround from stereo with the movie, music or game preset
+  - the sound field modes do too and add a room: Orchestra a hall, Unplugged
+    a club, Studio-Mix a studio, Film, Musical and Action a theatre, TV Logic
+    a small room
+  - everything else, Theater-Dimensional, Enhanced, Mono Movie, THX Surround
+    EX and THX U2 among them, plays on the front pair
+  Which code the receiver reports for which mode is checked only for All Ch
+  Stereo so far.
 - plays pink noise on the channel level calibration asks for (front high
   and wide on the surround back pair)
 - passes the receiver's bass and treble to the DSP and keeps them in the

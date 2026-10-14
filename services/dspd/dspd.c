@@ -104,6 +104,32 @@ static const struct surround_preset surround_presets[] = {
 
 static const struct surround_preset *surround;	/* NULL: off */
 
+/*
+ * Reverb for the sound field modes (struct dspaudio_reverb): the room's
+ * size scales the feedback lines, the reverb time sets their decay.
+ */
+struct reverb_preset {
+	const char *name;
+	double size;		/* line length factor */
+	double time_s;		/* reverb time, -60 dB */
+	double damping;		/* high frequencies die sooner, 0..1 */
+	double predelay_ms;
+	double front, surround, back;
+};
+
+static const struct reverb_preset reverb_presets[] = {
+	{ "hall", 2.0, 2.0, 0.35, 30, 0.12, 0.35, 0.30 },
+	{ "theater", 1.5, 1.3, 0.40, 20, 0.08, 0.30, 0.30 },
+	{ "club", 1.0, 0.9, 0.30, 12, 0.10, 0.30, 0.25 },
+	{ "studio", 0.8, 0.6, 0.25, 8, 0.08, 0.25, 0.20 },
+	{ "tv", 0.6, 0.4, 0.50, 5, 0.05, 0.15, 0.10 },
+};
+
+/* mutually prime, 25 to 41 ms */
+static const int reverb_lines[DSPAUDIO_REVERB_LINES] = { 1201, 1423, 1693, 1951 };
+
+static const struct reverb_preset *reverb;	/* NULL: off */
+
 #define CROSSOVER_MIN	20		/* Hz */
 #define CROSSOVER_MAX	250
 static int crossover[DSPAUDIO_OUT];	/* Hz, 0 = large: full range */
@@ -246,6 +272,53 @@ static void apply_bass(void)
 	sh->bass_gen = gen;
 }
 
+/* the words after the on flag, which the DSP does not read while it is off */
+static void put_words(volatile void *dst, const void *src, size_t len)
+{
+	volatile uint32_t *d = (volatile uint32_t *)dst + 1;
+	const uint32_t *w = (const uint32_t *)src + 1;
+	size_t i;
+
+	for (i = 1; i < len / 4; i++) {
+		*d++ = *w++;
+	}
+}
+
+static void apply_reverb(void)
+{
+	volatile struct dspaudio_reverb *s = &sh->reverb;
+	const struct reverb_preset *p = reverb;
+	struct dspaudio_reverb n = { 0 };
+	unsigned int i;
+	long k;
+
+	if (p) {
+		for (i = 0; i < DSPAUDIO_REVERB_LINES; i++) {
+			k = lround(reverb_lines[i] * p->size);
+			k = k > DSPAUDIO_REVERB_LINE_MAX ? DSPAUDIO_REVERB_LINE_MAX : k;
+			n.length[i] = k;
+			n.decay[i] = pow(10.0, -3.0 * k / (p->time_s * SAMPLE_HZ));
+		}
+
+		n.damping = p->damping;
+		k = lround(p->predelay_ms * SAMPLE_HZ / 1000.0);
+		n.predelay = k > DSPAUDIO_PREDELAY_MAX ? DSPAUDIO_PREDELAY_MAX : k;
+		n.front = p->front;
+		n.surround = p->surround;
+		n.back = p->back;
+	}
+
+	s->on = 0;
+	__sync_synchronize();
+	if (!p) {
+		return;
+	}
+
+	put_words(s, &n, sizeof(n));
+	__sync_synchronize();
+	s->on = 1;
+}
+
 static uint32_t ms_samples(double ms)
 {
 	uint32_t n = lround(ms * SAMPLE_HZ / 1000.0);
@@ -381,6 +454,7 @@ static int dsp_start(const char *image)
 	apply_noise();
 	apply_delays();
 	apply_surround();
+	apply_reverb();
 	apply_bass();
 	msync((void *)l2, L2_SIZE, MS_SYNC);
 	syscfg[HOST1CFG / 4] = DSPAUDIO_LOAD;
@@ -437,6 +511,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_u8(&b, "mute", muted);
 	blobmsg_add_string(&b, "outputs", outputs_name[outputs]);
 	blobmsg_add_string(&b, "surround", surround ? surround->name : "off");
+	blobmsg_add_string(&b, "reverb", reverb ? reverb->name : "off");
 	blobmsg_add_u32(&b, "bass", (uint32_t)bass);
 	blobmsg_add_u32(&b, "treble", (uint32_t)treble);
 	blobmsg_add_string(&b, "testtone", noise_out < 0 ? "off" : out_name[noise_out]);
@@ -465,7 +540,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 
 enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
 	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, SET_CROSSOVER, SET_SUBWOOFER,
-	SET_SUB_LOWPASS, __SET_MAX };
+	SET_SUB_LOWPASS, SET_REVERB, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -480,6 +555,7 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_CROSSOVER] = { .name = "crossover", .type = BLOBMSG_TYPE_TABLE },
 	[SET_SUBWOOFER] = { .name = "subwoofer", .type = BLOBMSG_TYPE_BOOL },
 	[SET_SUB_LOWPASS] = { .name = "sub_lowpass", .type = BLOBMSG_TYPE_INT32 },
+	[SET_REVERB] = { .name = "reverb", .type = BLOBMSG_TYPE_STRING },
 };
 
 static int out_index(const char *name)
@@ -646,6 +722,24 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 
 	if (tb[SET_CROSSOVER] || tb[SET_SUBWOOFER] || tb[SET_SUB_LOWPASS]) {
 		apply_bass();
+	}
+
+	if (tb[SET_REVERB]) {
+		const struct reverb_preset *p = NULL;
+
+		o = blobmsg_get_string(tb[SET_REVERB]);
+		for (i = 0; i < ARRAY_SIZE(reverb_presets); i++) {
+			if (!strcmp(o, reverb_presets[i].name)) {
+				p = &reverb_presets[i];
+			}
+		}
+
+		if (!p && strcmp(o, "off")) {
+			return UBUS_STATUS_INVALID_ARGUMENT;
+		}
+
+		reverb = p;
+		apply_reverb();
 	}
 
 	if (tb[SET_SURROUND]) {
