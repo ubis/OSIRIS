@@ -47,7 +47,8 @@ mcud -v                           # (with S10osiris stopped) log every frame
 | `mcu.tone` | front bass and treble changed, in dB |
 | `mcu.network` | the network menu asks for the settings; answer with `ubus call mcu network` |
 | `mcu.power` | the receiver goes to standby (`off`) or resets (`reset`); confirm with `ubus call mcu power` |
-| `mcu.speakers`, `mcu.testtone` | speaker setup, calibration |
+| `mcu.speakers` | speaker setup |
+| `mcu.testtone` | level calibration picked a channel (`fl`, `c`, `fr`, `sr`, `sbr`, `sbl`, `sl`, `sw`, `fhl`, `fhr`, `fwl`, `fwr`) |
 | `mcu.iscp` | ISCP text commands, e.g. `!1MVL21` |
 | `mcu.frame` | anything not decoded yet, as raw bytes |
 
@@ -87,8 +88,8 @@ What it does today:
 - picks the speakers from the listening mode: All Ch Stereo plays stereo on
   every speaker, Full Mono mono on every speaker, everything else the front
   pair (the DSP cannot decode surround yet)
-- mutes the DSP while the receiver runs its test tone, which the DSP cannot
-  play yet
+- plays pink noise on the channel level calibration asks for (front high
+  and wide on the surround back pair)
 - passes the receiver's bass and treble to the DSP and keeps them in the
   state file
 - answers the network menu with the address, link state and MAC of eth0
