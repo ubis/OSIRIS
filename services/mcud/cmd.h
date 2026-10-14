@@ -33,7 +33,7 @@ enum mcu_cmd {
 	MCU_INITIAL		= 0xc0,
 	MCU_INPUT		= 0xc1,	/* [1] decode [2] interface [3] fs [4] MCLK [5] status */
 	MCU_SPEAKERS		= 0xc2,
-	MCU_DISTANCE		= 0xc3,
+	MCU_DISTANCE		= 0xc3,	/* [0] ?, [1..26] 13 x u16 LE cm, DISTANCE_ORDER */
 	MCU_EQUALIZER		= 0xc4,
 	MCU_THX			= 0xc5,
 	MCU_MULTIPLEX_MONO	= 0xc6,

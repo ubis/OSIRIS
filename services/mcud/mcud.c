@@ -29,6 +29,13 @@ static struct blob_buf b;
 static int listening_mode = -1;		/* the last one the MCU sent */
 static int tone_known, bass, treble;	/* front tone, dB */
 
+/* MCU_DISTANCE, in the receiver's order; the 13th value is not a speaker */
+static const char *const distance_ch[] = {
+	"fl", "c", "fr", "sl", "sr", "sbl", "sbr", "fhl", "fhr", "fwl", "fwr", "sw",
+};
+
+static int distance_known, distance_unit, distance[ARRAY_SIZE(distance_ch)];
+
 /* MCU_TESTTONE_CH channel codes, in the receiver's own order */
 static const char *const testtone_ch[] = {
 	"fl", "c", "fr", "sr", "sbr", "sbl", "sl", "sw", "fhl", "fhr", "fwl", "fwr",
@@ -66,6 +73,20 @@ static int parse_hex(const char *s, uint8_t *out, size_t len)
 	}
 
 	return 0;
+}
+
+static void add_distances(void)
+{
+	void *t = blobmsg_open_table(&b, "distances");
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(distance_ch); i++) {
+		blobmsg_add_u32(&b, distance_ch[i], distance[i]);
+	}
+
+	blobmsg_close_table(&b, t);
+	/* [0], not known yet: perhaps the unit the menu shows */
+	blobmsg_add_u32(&b, "unit", distance_unit);
 }
 
 static void add_model(const struct mcu_model *m)
@@ -136,8 +157,23 @@ static void on_frame(const struct link_frame *f, const char *name)
 
 		event("mcu.volume");
 		return;
-	case MCU_SPEAKERS:
 	case MCU_DISTANCE:
+		if (f->len >= 1 + 2 * ARRAY_SIZE(distance_ch)) {
+			size_t i;
+
+			distance_known = 1;
+			distance_unit = d[0];
+			for (i = 0; i < ARRAY_SIZE(distance_ch); i++) {
+				distance[i] = d[1 + 2 * i] | (d[2 + 2 * i] << 8);
+			}
+
+			add_distances();
+			event("mcu.distance");
+			return;
+		}
+
+		break;
+	case MCU_SPEAKERS:
 	case MCU_LFE_LEVEL:
 		blobmsg_add_string(&b, "name", name);
 		add_hex("data", d, f->len);
@@ -245,6 +281,10 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 
 	if (listening_mode >= 0) {
 		blobmsg_add_u32(&b, "listening_mode", listening_mode);
+	}
+
+	if (distance_known) {
+		add_distances();
 	}
 
 	blobmsg_add_u8(&b, "update_check", proto_update_waiting());
