@@ -56,6 +56,7 @@ struct gpio_cmd {
 #define NOISE_RMS	0.58194		/* the pink filter's output for an RMS of 1 */
 #define NOISE_MAX	(-15)		/* dBFS RMS; peaks are 12.8 dB higher */
 #define NOISE_MIN	(-80)
+#define SOUND_CM_S	34300.0
 
 enum outputs { OUTPUTS_FRONT, OUTPUTS_ALL, OUTPUTS_MONO, __OUTPUTS_MAX };
 
@@ -78,6 +79,7 @@ static enum outputs outputs = OUTPUTS_FRONT;
 static int bass, treble;		/* dB */
 static int noise_out = -1;		/* enum dspaudio_out, -1 off */
 static int noise_level = -30;		/* dBFS RMS */
+static int distance[DSPAUDIO_OUT];	/* cm, 0 = not known */
 
 static const char *const out_name[DSPAUDIO_OUT] = {
 	[DSPAUDIO_OUT_FL] = "fl", [DSPAUDIO_OUT_FR] = "fr",
@@ -190,6 +192,24 @@ static void apply_tone(void)
 	sh->tone_sel = next;
 }
 
+/* hold the nearer speakers back until the farthest one's sound arrives */
+static void apply_delays(void)
+{
+	int far = 0, d;
+	unsigned int out;
+
+	for (out = 0; out < DSPAUDIO_OUT; out++) {
+		if (distance[out] > far) {
+			far = distance[out];
+		}
+	}
+
+	for (out = 0; out < DSPAUDIO_OUT; out++) {
+		d = distance[out] ? (int)lround((far - distance[out]) * SAMPLE_HZ / SOUND_CM_S) : 0;
+		sh->delay[out] = d > DSPAUDIO_DELAY_MAX ? DSPAUDIO_DELAY_MAX : d;
+	}
+}
+
 static void apply(void)
 {
 	/* the test noise plays alone */
@@ -249,6 +269,7 @@ static int dsp_start(const char *image)
 	apply();
 	apply_tone();
 	apply_noise();
+	apply_delays();
 	msync((void *)l2, L2_SIZE, MS_SYNC);
 	syscfg[HOST1CFG / 4] = DSPAUDIO_LOAD;
 	psc[PSC_MDCTL_DSP / 4] |= MDCTL_LRST;
@@ -307,12 +328,20 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_u32(&b, "treble", (uint32_t)treble);
 	blobmsg_add_string(&b, "testtone", noise_out < 0 ? "off" : out_name[noise_out]);
 	blobmsg_add_u32(&b, "testtone_level", (uint32_t)noise_level);
+	a = blobmsg_open_table(&b, "distances");
+	for (i = 0; i < DSPAUDIO_OUT; i++) {
+		if (distance[i]) {
+			blobmsg_add_u32(&b, out_name[i], (uint32_t)distance[i]);
+		}
+	}
+
+	blobmsg_close_table(&b, a);
 	ubus_send_reply(c, req, b.head);
 	return 0;
 }
 
 enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
-	SET_TESTTONE_LEVEL, __SET_MAX };
+	SET_TESTTONE_LEVEL, SET_DISTANCES, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -322,7 +351,48 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_TREBLE] = { .name = "treble", .type = BLOBMSG_TYPE_INT32 },
 	[SET_TESTTONE] = { .name = "testtone", .type = BLOBMSG_TYPE_STRING },
 	[SET_TESTTONE_LEVEL] = { .name = "testtone_level", .type = BLOBMSG_TYPE_INT32 },
+	[SET_DISTANCES] = { .name = "distances", .type = BLOBMSG_TYPE_TABLE },
 };
+
+static int out_index(const char *name)
+{
+	int i;
+
+	for (i = 0; i < DSPAUDIO_OUT; i++) {
+		if (!strcmp(name, out_name[i])) {
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+/* { "fl": 300, ... } in cm; outputs not named keep their distance */
+static int set_distances(struct blob_attr *t)
+{
+	int d[DSPAUDIO_OUT], i, v;
+	struct blob_attr *cur;
+	unsigned int rem;
+
+	memcpy(d, distance, sizeof(d));
+	blobmsg_for_each_attr(cur, t, rem) {
+		i = out_index(blobmsg_name(cur));
+		if (i < 0 || blobmsg_type(cur) != BLOBMSG_TYPE_INT32) {
+			return -1;
+		}
+
+		v = (int32_t)blobmsg_get_u32(cur);
+		if (v < 0 || v > 2000) {
+			return -1;
+		}
+
+		d[i] = v;
+	}
+
+	memcpy(distance, d, sizeof(d));
+	apply_delays();
+	return 0;
+}
 
 static int m_set(struct ubus_context *c, struct ubus_object *obj,
 		 struct ubus_request_data *req, const char *method,
@@ -396,6 +466,10 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 
 	if (tb[SET_TESTTONE] || tb[SET_TESTTONE_LEVEL]) {
 		apply_noise();
+	}
+
+	if (tb[SET_DISTANCES] && set_distances(tb[SET_DISTANCES])) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
 	}
 
 	apply();
