@@ -99,7 +99,16 @@ receiver model as host name (for example `TX-NR717`).
 
 ## Updating
 
-Copy the bundle to the receiver and install it:
+From a USB stick: copy `osiris-<version>.tar` to the top directory of a FAT
+stick and plug it into the receiver. When the receiver checks for updates
+(at power-on, and again every few minutes until it gets an answer) it shows
+its update notice, if its update notice setting is on. Confirm, wait for
+"Completed!", then switch the receiver off and on with its power button;
+Zone 2 and Zone 3 must be off too, or the board stays on and keeps running
+the old version until it is restarted. A bundle of the version already
+running is not offered.
+
+Over the network, copy the bundle to the receiver and install it:
 
 ```sh
 scp dist/images/osiris-<version>.tar root@TX-NR717:/tmp/

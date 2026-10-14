@@ -49,6 +49,7 @@ mcud -v                           # (with S10osiris stopped) log every frame
 | `mcu.power` | the receiver goes to standby (`off`) or resets (`reset`); confirm with `ubus call mcu power` |
 | `mcu.speakers` | speaker setup |
 | `mcu.testtone` | level calibration picked a channel (`fl`, `c`, `fr`, `sr`, `sbr`, `sbl`, `sl`, `sw`, `fhl`, `fhr`, `fwl`, `fwr`) |
+| `mcu.update` | the receiver's update screens: `check` for an update, `download` it, `install` it; answer with `ubus call mcu update` |
 | `mcu.iscp` | ISCP text commands, e.g. `!1MVL21` |
 | `mcu.frame` | anything not decoded yet, as raw bytes |
 
@@ -93,6 +94,9 @@ What it does today:
 - passes the receiver's bass and treble to the DSP and keeps them in the
   state file
 - answers the network menu with the address, link state and MAC of eth0
+- offers an update bundle of another version on a USB stick when the
+  receiver asks for updates: the receiver shows its update notice, and its
+  update screens run `osiris-upgrade` with progress
 - syncs before the receiver switches the board off; a factory reset from the
   receiver's menu wipes `/data` and reboots
 

@@ -133,12 +133,14 @@ flowchart LR
   outputs). Everything else the MCU says becomes a ubus event:
   `mcu.volume`, `mcu.input`, `mcu.listening_mode` and so on.
 - **dspd** loads the DSP firmware, starts it, releases the mute lines and
-  offers `dsp status` and `dsp set` (gain, mute, outputs).
+  offers `dsp status` and `dsp set` (gain, mute, outputs, bass and treble,
+  test noise).
 - **osirisd** is the policy, a LuaJIT script: it listens to the events and
   decides what happens. It names the system after the receiver model, sets
   the DSP version the receiver shows, picks the speakers from the
-  listening mode, and mutes the DSP during the test
-  tone.
+  listening mode, passes bass and treble on, plays the test noise for the
+  level setup, answers the network menu and offers updates from a USB
+  stick.
 - **dspaudio** is the DSP firmware itself.
 
 mcud and dspd do what they are told and report what happens, all decisions
@@ -153,7 +155,9 @@ flowchart LR
     IN[Tuner, analog,<br/>digital inputs] --> DIR[PCM9211]
     DIR -->|I2S, AXR1_4| RX[McASP1 receive]
     subgraph dspaudio
-        RX --> MIX[mix: L and R gain<br/>per output]
+        RX --> TONE[bass and treble<br/>shelf filters]
+        TONE --> MIX[mix: L and R gain<br/>per output]
+        NOISE[pink noise] --> MIX
         MIX --> TX[McASP1 transmit]
     end
     TX -->|AXR1_0 front<br/>AXR1_1 centre, sub<br/>AXR1_2 surround<br/>AXR1_3 surround back| DAC[PCM1690]
@@ -161,14 +165,15 @@ flowchart LR
 ```
 
 dspaudio polls McASP1 directly, without interrupts or DMA. For every input
-sample pair it computes the eight outputs, each the left and the right input
-times a gain of its own, and writes them to the four serial lines of the
-DAC. dspd sets these gains in a block of DSP memory both sides share
+sample pair it runs the bass and treble filters, computes the eight outputs,
+each the left and the right input times a gain of its own, adds the test
+noise on the output the level setup asks for, and writes them to the four
+serial lines of the DAC. dspd sets these gains in a block of DSP memory both sides share
 ([dspaudio.h](../services/dspd/dspaudio.h)), and the DSP reports its state,
 counters and input peaks in the same block.
 
-Next on the DSP: per-channel trim and delay, tone, bass management and the
-test noise for the receiver's automatic level setup.
+Next on the DSP: per-channel delay for the speaker distances, bass
+management and the surround modes.
 
 ## Software versions
 
