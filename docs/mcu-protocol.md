@@ -91,7 +91,7 @@ only sends it when a field changes.
 | C9 | lfe_level | |
 | CA | av_sync | |
 | CB | hdmi_audio_tv_out | |
-| CC | bass_treble | |
+| CC | bass_treble | [0] 0 = front, [1] bass, [8] treble: signed dB, -10..+10 in 2 dB steps |
 | CD | re_eq | |
 | CE | music_optimizer | |
 | CF | late_night | |

@@ -44,6 +44,9 @@ mcud -v                           # (with S10osiris stopped) log every frame
 | `mcu.volume` | volume changed, in 0.01 dB (the MCU applies it itself) |
 | `mcu.input` | input or stream format changed |
 | `mcu.listening_mode` | listening mode changed (codes in [mcu-protocol.md](mcu-protocol.md)) |
+| `mcu.tone` | front bass and treble changed, in dB |
+| `mcu.network` | the network menu asks for the settings; answer with `ubus call mcu network` |
+| `mcu.power` | the receiver goes to standby (`off`) or resets (`reset`); confirm with `ubus call mcu power` |
 | `mcu.speakers`, `mcu.testtone` | speaker setup, calibration |
 | `mcu.iscp` | ISCP text commands, e.g. `!1MVL21` |
 | `mcu.frame` | anything not decoded yet, as raw bytes |
@@ -57,13 +60,15 @@ dspd copies the DSP firmware (`/usr/lib/osiris/dspaudio.bin`) into the DSP's
 memory, starts it and releases the mute lines once it runs. The two share a
 block of DSP memory ([dspaudio.h](../services/dspd/dspaudio.h)): the DSP reports its
 state and input levels there, dspd writes a gain and a source for each
-output.
+output and the tone filters: a low shelf for bass (100 Hz) and a high shelf
+for treble (10 kHz) on both inputs, worked out by dspd from the dB values.
 
 ```sh
 ubus call dsp status                              # state, counters, input peaks
 ubus call dsp set '{"mute": true}'
 ubus call dsp set '{"volume": -600}'              # gain in 0.01 dB, 0 = unity
 ubus call dsp set '{"outputs": "all"}'            # "front", "all" (stereo everywhere) or "mono"
+ubus call dsp set '{"bass": 4, "treble": -2}'      # dB, -12..+12
 ```
 
 dspaudio takes the I2S input from the PCM9211 (the tuner and analog inputs
@@ -83,6 +88,11 @@ What it does today:
   pair (the DSP cannot decode surround yet)
 - mutes the DSP while the receiver runs its test tone, which the DSP cannot
   play yet
+- passes the receiver's bass and treble to the DSP and keeps them in the
+  state file
+- answers the network menu with the address, link state and MAC of eth0
+- syncs before the receiver switches the board off; a factory reset from the
+  receiver's menu wipes `/data` and reboots
 
 To try a change, copy the script to `/tmp`, stop the running one and start
 the copy from the terminal:
