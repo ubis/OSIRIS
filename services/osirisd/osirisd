@@ -5,7 +5,8 @@
 -- and tells the other services what to do: the model the MCU reports
 -- becomes the hostname, the display shows "OSIRIS <build>" as the DSP
 -- version, the listening mode picks the speakers the DSP plays on and the
--- tone controls set its bass and treble filters;
+-- tone controls set its bass and treble filters, the speaker distances
+-- the outputs' delays;
 -- level calibration plays pink noise on the channel it asks for. The network
 -- menu gets the address and link state from the system. Before the MCU
 -- switches the board off the data is synced; a factory reset wipes it.
@@ -58,6 +59,10 @@ local MODE_OUTPUTS = {
 }
 
 local IFACE = "eth0"
+
+-- the DSP's outputs; the surround back pair also plays front high or wide
+local OUTPUTS = { "fl", "fr", "c", "sw", "sl", "sr", "sbl", "sbr" }
+local DISTANCE_ALT = { sbl = "fhl", sbr = "fhr" }
 
 local UPGRADE_LOG = "/tmp/osiris-upgrade.log"
 local PROGRESS_MS = 4000	-- the MCU gives up after ~20 s without progress
@@ -222,6 +227,44 @@ local function set_tone(bass, treble)
 
 	save_state({ bass = bass, treble = treble })
 	call("dsp", "set", { bass = bass, treble = treble })
+end
+
+-- speaker distances in cm; the DSP holds the nearer speakers back
+local function set_distances(d)
+	if not d then
+		return
+	end
+
+	local out, save = {}, {}
+
+	for _, o in ipairs(OUTPUTS) do
+		local cm = tonumber(d[o]) or 0
+
+		if cm == 0 and DISTANCE_ALT[o] then
+			cm = tonumber(d[DISTANCE_ALT[o]]) or 0
+		end
+
+		out[o] = cm
+		save["distance_" .. o] = cm
+	end
+
+	save_state(save)
+	call("dsp", "set", { distances = out })
+end
+
+local function saved_distances(saved)
+	local d
+
+	for _, o in ipairs(OUTPUTS) do
+		local cm = tonumber(saved["distance_" .. o] or "")
+
+		if cm then
+			d = d or {}
+			d[o] = cm
+		end
+	end
+
+	return d
 end
 
 -- what the network menu shows; mcud answers the MCU with it
@@ -453,6 +496,9 @@ local handlers = {
 	["mcu.tone"] = function(msg)
 		set_tone(msg.bass, msg.treble)
 	end,
+	["mcu.distance"] = function(msg)
+		set_distances(msg.distances)
+	end,
 	["mcu.network"] = function()
 		set_network()
 	end,
@@ -492,5 +538,7 @@ if st and st.bass then
 else
 	set_tone(tonumber(saved.bass or ""), tonumber(saved.treble or ""))
 end
+
+set_distances(st and st.distances or saved_distances(saved))
 
 uloop.run()
