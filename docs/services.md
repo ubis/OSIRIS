@@ -189,6 +189,7 @@ What it does today:
 - keeps the front panel mode DISPLAY picked in the state file
 - plays AC-3 the DSP decodes as multichannel when it has a centre or
   surrounds, and has the MCU show it as Dolby Digital with its layout
+- tells the MCU the layout of multichannel PCM from HDMI (" 5.1", " 7.1")
 - answers the network menu with the address, link state and MAC of eth0
 - offers an update bundle of another version on a USB stick when the
   receiver asks for updates: the receiver shows its update notice, and its
