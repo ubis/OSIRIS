@@ -73,13 +73,25 @@ Tested on the TX-NR717.
 | HDMI audio, PCM stereo and multichannel, up to 96 kHz | ✅ (5.1 tested) |
 | HDMI ARC | ❌ not yet |
 | Network control (Onkyo Remote app) | ❌ not yet |
-| AirPlay | ✅ |
-| Spotify, DLNA, internet radio, USB playback, NET menu | ❌ not yet |
 | Dolby Digital / DTS decoding | ❌ not yet, the bitstreams are muted; maybe in the far future (open AC-3 / DTS core decoders like liba52 exist) |
 
 ¹ OSIRIS's own processing: it does what these features are for, but it
 is not Dolby's, DTS's, THX's, Audyssey's or Onkyo's algorithm, so it
 does not sound exactly like the stock firmware.
+
+### NET input
+
+| feature | status |
+|---|---|
+| AirPlay from an iPhone, iPad or Mac | ✅ |
+| Pause and skip take effect at once | ✅ |
+| Front panel: "AirPlay" and the album, title and artist, a level meter; DISPLAY switches | ✅ ² |
+| Spotify Connect, internet radio, DLNA | ❌ not yet |
+| USB playback, the NET menu on the TV | ❌ not yet |
+| Switching to NET when a phone starts playing | ❌ not yet |
+
+² 13 characters a line; the meter has 13 cells and moves ten times a
+second.
 
 ## Documentation
 
