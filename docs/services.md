@@ -16,6 +16,7 @@ the receiver's Linux and talk to each other over
 | [dspd](../services/dspd/) | loads and runs the DSP firmware, sets its gains and routing, owns the mute lines |
 | [dspaudio](../services/dspaudio/) | the DSP firmware: moves the audio from the inputs to the DAC outputs |
 | [osirisd](../services/osirisd/) | the policy: decides what happens when the MCU reports something |
+| [pcmd](../services/pcmd/) | plays audio from Linux on the NET input: PCM from a pipe into the DSP's ring |
 
 mcud and dspd only do what they are told and report what happens; every
 decision is in osirisd, a LuaJIT script that is easy to change on the
@@ -105,6 +106,21 @@ stereo first. Dolby and DTS (IEC 61937) it cannot decode: it keeps the
 outputs silent while they play, and `dsp status` names the format in
 `bitstream` (`none`, `ac3`, `dts`, `eac3` or `other`). It is built with dspboot's C6000
 toolchain (`make dspaudio`).
+
+## pcmd
+
+pcmd reads 16-bit stereo PCM from the pipe `/var/run/pcm`, resamples it
+to 48 kHz and writes it into a ring of 4096 frames in the DSP's shared RAM
+(`struct dspaudio_ring` in [dspaudio.h](../services/dspd/dspaudio.h)).
+When dspd's input is `network`, the DSP takes the front pair from the ring
+instead of the McASP, one frame per sample period; the rest of the
+processing is the same as for any other input. Writing waits while the ring
+is full, so the DSP's clock sets the pace.
+
+```sh
+pcmd [-r rate] [path]    # default 44100 Hz, /var/run/pcm
+cat music.raw > /var/run/pcm
+```
 
 ## osirisd
 

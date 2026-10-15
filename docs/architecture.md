@@ -144,6 +144,7 @@ flowchart LR
   level setup, answers the network menu and offers updates from a USB
   stick.
 - **dspaudio** is the DSP firmware itself.
+- **pcmd** feeds audio from Linux to the DSP for the NET input.
 
 mcud and dspd do what they are told and report what happens, all decisions
 are in osirisd, which you can edit on the receiver. The
