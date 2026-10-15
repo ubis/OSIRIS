@@ -106,15 +106,17 @@ static int distance[DSPAUDIO_OUT];	/* cm, 0 = not known */
 struct surround_preset {
 	const char *name;
 	double tau_ms;		/* correlation estimate */
+	double steer;		/* how much the correlation holds the surrounds back */
 	double center, surround, wrap, back, sub;
 	double delay_ms, back_delay_ms;
 	double high_pass_hz, low_pass_hz;	/* band of the surrounds */
 };
 
 static const struct surround_preset surround_presets[] = {
-	{ "movie", 10, 1.0, 1.0, 0.0, 0.7, 0.5, 10, 5, 100, 7000 },
-	{ "music", 40, 0.5, 0.8, 0.25, 0.5, 0.5, 2, 5, 100, 16000 },
-	{ "game", 10, 0.8, 1.0, 0.15, 0.8, 0.5, 0, 3, 80, 18000 },
+	{ "movie", 10, 1.0, 1.0, 1.0, 0.0, 0.7, 0.5, 10, 5, 100, 7000 },
+	/* steady surrounds: steering them makes music pulse */
+	{ "music", 300, 0.25, 0.5, 0.8, 0.25, 0.5, 0.5, 2, 5, 100, 16000 },
+	{ "game", 10, 1.0, 0.8, 1.0, 0.15, 0.8, 0.5, 0, 3, 80, 18000 },
 };
 
 static const struct surround_preset *surround;	/* NULL: off */
@@ -491,6 +493,7 @@ static void apply_surround(void)
 		/* without a centre speaker the voice stays in the front pair */
 		n.center = absent & 1u << DSPAUDIO_OUT_C ? 0 : p->center;
 		n.surround = p->surround;
+		n.steer = p->steer;
 		n.wrap = p->wrap;
 		n.back = p->back;
 		n.sub = p->sub;
