@@ -70,13 +70,13 @@ memory, starts it and releases the mute lines once it runs. The two share a
 block of DSP memory ([dspaudio.h](../services/dspd/dspaudio.h)): the DSP reports its
 state and input levels there, dspd writes a gain and a source for each
 output and the tone filters: a low shelf for bass (100 Hz) and a high shelf
-for treble (10 kHz) on both inputs, worked out by dspd from the dB values.
+for treble (10 kHz) on the front pair, worked out by dspd from the dB values.
 
 ```sh
 ubus call dsp status                              # state, counters, input peaks, all settings
 ubus call dsp set '{"mute": true}'
 ubus call dsp set '{"volume": -600}'              # gain in 0.01 dB, 0 = unity
-ubus call dsp set '{"outputs": "all"}'            # "front", "all" (stereo everywhere) or "mono"
+ubus call dsp set '{"outputs": "all"}'            # "front", "all" (stereo everywhere), "mono" or "multichannel"
 ubus call dsp set '{"bass": 4, "treble": -2}'      # dB, -12..+12
 ubus call dsp set '{"testtone": "fl", "testtone_level": -30}'  # pink noise on one output, dBFS RMS; "off" stops it
 ubus call dsp set '{"distances": {"fl": 300, "c": 250}}'  # cm; nearer speakers are held back, 0 = not known
@@ -84,11 +84,17 @@ ubus call dsp set '{"surround": "movie"}'           # surround from stereo: "mov
 ubus call dsp set '{"reverb": "hall"}'              # with surround on: "hall", "theater", "club", "studio", "tv" or "off"
 ubus call dsp set '{"crossover": {"fl": 80, "c": 80}, "subwoofer": true, "sub_lowpass": 120}'  # Hz, 0 = large / no low pass
 ubus call dsp set '{"double_bass": true, "absent": ["sbl", "sbr"]}'  # large fronts' bass to the sub too; outputs without a speaker
+ubus call dsp set '{"input": "digital"}'           # "analog", "digital" (HDMI's left and right come swapped) or "multichannel" (PCM from HDMI)
 ```
 
 dspaudio takes the I2S input from the PCM9211 (the tuner and analog inputs
 through its ADC, or a digital input) and writes it to the PCM1690 DAC, four
-serial lines of two channels each. It is built with dspboot's C6000
+serial lines of two channels each. With multichannel PCM from HDMI the
+PCM9211 brings the front pair and the HDMI receiver the rest: LFE and centre
+on AXR1_5, the surrounds on AXR1_8, the surround back pair on AXR1_9. In
+"multichannel" each goes to its own output, and the channels of speakers set
+to none are folded onto the ones there are; the other modes mix it down to
+stereo first. It is built with dspboot's C6000
 toolchain (`make dspaudio`).
 
 ## osirisd

@@ -84,6 +84,7 @@ static void add_listening_mode(void)
 	}
 }
 static int tone_known, bass, treble;	/* front tone, dB */
+static int input_interface = -1;	/* MCU_INPUT [2], -1 not known */
 
 /* MCU_DISTANCE, in the receiver's order; the 13th value is not a speaker */
 static const char *const distance_ch[] = {
@@ -299,6 +300,7 @@ static void on_frame(const struct link_frame *f, const char *name)
 		if (f->len >= 6) {
 			blobmsg_add_u32(&b, "decode", d[1]);
 			blobmsg_add_u32(&b, "interface", d[2]);
+			input_interface = d[2];
 			blobmsg_add_u32(&b, "fs", d[3]);
 			blobmsg_add_u32(&b, "mclk", d[4]);
 			blobmsg_add_u32(&b, "status", d[5]);
@@ -493,6 +495,10 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	add_model(proto_model());
 	proto_get_stream(s);
 	add_hex("stream", s, STREAM_LEN);
+	if (input_interface >= 0) {
+		blobmsg_add_u32(&b, "interface", (uint32_t)input_interface);
+	}
+
 	if (tone_known) {
 		blobmsg_add_u32(&b, "bass", (uint32_t)bass);
 		blobmsg_add_u32(&b, "treble", (uint32_t)treble);

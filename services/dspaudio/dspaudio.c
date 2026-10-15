@@ -3,6 +3,7 @@
  * dspaudio: the audio path on the C674x DSP.
  *
  *   PCM9211 main output --I2S--> McASP1 AXR1_4 (receive, external BCK/LRCK)
+ *   HDMI receiver, multichannel PCM --I2S--> AXR1_5, AXR1_8, AXR1_9
  *   McASP1 AXR1_0..3 (transmit, BCK = AHCLKX / 4) --I2S--> PCM1690
  *
  * Every output is the sum of the inputs, each times the gain dspd sets for
@@ -85,7 +86,10 @@
 
 #define SRCTL_TX	1
 #define SRCTL_RX	2
-#define RX_SER		4		/* AXR1_4: PCM9211 */
+#define RX_SERS		4
+/* inputs 2n and 2n + 1 come from rx_ser[n]; AXR1_5 has LFE as left, centre as right */
+static const uint8_t rx_ser[RX_SERS] = { 4, 5, 8, 9 };
+#define RX_FLIP		(1u << 1)
 #define TX_SERS		4		/* AXR1_0..3: PCM1690 */
 
 #define GBL_TIMEOUT	10000000
@@ -182,7 +186,9 @@ static int mcasp_init(void)
 		REG(SRCTL(i)) = SRCTL_TX;
 	}
 
-	REG(SRCTL(RX_SER)) = SRCTL_RX;
+	for (i = 0; i < RX_SERS; i++) {
+		REG(SRCTL(rx_ser[i])) = SRCTL_RX;
+	}
 	REG(PFUNC) = 0;
 	REG(PDIR) = 0x1400000F;		/* ACLKX, AFSX, AXR1_0..3 out; AHCLKX, ACLKR, AFSR in */
 
@@ -227,7 +233,7 @@ static void tx_restart(void)
 }
 
 static int32_t input[DSPAUDIO_IN];
-static float tone_z[DSPAUDIO_IN][DSPAUDIO_TONE][2];
+static float tone_z[2][DSPAUDIO_TONE][2];
 
 /* the biquads in transposed direct form II, on one input sample */
 static int32_t tone(unsigned int in, int32_t smp)
@@ -450,34 +456,37 @@ static void upmix(int32_t li, int32_t ri)
 	}
 }
 
-static int32_t mix(unsigned int out)
+/*
+ * -1..1 at full scale, with 18 dB of headroom: folded channels can add up
+ * past it. The gains are read as plain memory; a torn update is one sample.
+ */
+static float mix(unsigned int out)
 {
+	const int32_t *g = (const int32_t *)SH->gain[out];
 	int64_t v = 0;
 	unsigned int i;
 
 	if (out == SH->noise_out) {
-		return noise();
+		return noise() / FULL_SCALE;
 	}
 
 	if (SH->surround.on) {
-		float y = upmixed[out] * (SH->gain[out][0] / (float)DSPAUDIO_GAIN_ONE);
-
-		y = clampf(y, -1.0f, 0.99999994f);
-		return (int32_t)(y * FULL_SCALE);
+		return upmixed[out] * (g[0] / (float)DSPAUDIO_GAIN_ONE);
 	}
 
+	/* unused inputs are 0 */
 	for (i = 0; i < DSPAUDIO_IN; i++) {
-		v += (int64_t)input[i] * SH->gain[out][i];
+		v += (int64_t)input[i] * g[i];
 	}
 
-	v >>= 24;
+	v >>= 27;
 	if (v > INT32_MAX) {
 		v = INT32_MAX;
 	} else if (v < INT32_MIN) {
 		v = INT32_MIN;
 	}
 
-	return (int32_t)v;
+	return (int32_t)v * (8.0f / FULL_SCALE);
 }
 
 static int32_t delayed(unsigned int out, int32_t v)
@@ -569,22 +578,28 @@ static void bass_follow(void)
 	bass_gen = gen;
 }
 
-static void bass_manage(float *y)
+static float bass_sub;
+
+/* outputs from .. to - 1 */
+static void bass_split(float *y, unsigned int from, unsigned int to)
 {
-	float sub = 0.0f;
 	unsigned int out;
 
-	bass_follow();
-	for (out = 0; out < DSPAUDIO_OUT; out++) {
+	for (out = from; out < to; out++) {
 		if (out == DSPAUDIO_OUT_SW || !((bm->small | bm->copy) & (1u << out))) {
 			continue;
 		}
 
-		sub += cascade(bm->low[out], bass_z[out][1], y[out]);
+		bass_sub += cascade(bm->low[out], bass_z[out][1], y[out]);
 		if (bm->small & (1u << out)) {
 			y[out] = cascade(bm->high[out], bass_z[out][0], y[out]);
 		}
 	}
+}
+
+static void bass_finish(float *y)
+{
+	float sub = bass_sub;
 
 	if (bm->subwoofer) {
 		y[DSPAUDIO_OUT_SW] = cascade(bm->sub, sub_z, y[DSPAUDIO_OUT_SW] + sub);
@@ -612,16 +627,33 @@ static float limit(unsigned int out, float x)
 	return peak_env[out] > LIMIT ? x * (LIMIT / peak_env[out]) : x;
 }
 
-static void make_frame(void)
+/*
+ * A frame takes longer than one slot: it is made in two halves, the mix
+ * and half the bass management after the first slot, the rest after the
+ * second, while the samples going out are the previous frame's.
+ */
+static float frame_y[DSPAUDIO_OUT];
+
+static void frame_first(void)
 {
-	float y[DSPAUDIO_OUT];
 	unsigned int out;
 
+	bass_follow();
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
-		y[out] = mix(out) / FULL_SCALE;
+		frame_y[out] = mix(out);
 	}
 
-	bass_manage(y);
+	bass_sub = 0.0f;
+	bass_split(frame_y, 0, DSPAUDIO_OUT / 2);
+}
+
+static void frame_second(void)
+{
+	float *y = frame_y;
+	unsigned int out;
+
+	bass_split(y, DSPAUDIO_OUT / 2, DSPAUDIO_OUT);
+	bass_finish(y);
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
 		y[out] = limit(out, y[out]);
 		frame[out] = delayed(out, (int32_t)(clampf(y[out], -1.0f, 0.99999994f) * FULL_SCALE));
@@ -648,9 +680,9 @@ static void report_start(void)
 
 void dspaudio_main(void)
 {
-	uint32_t xs, rs, idle = 0, mag;
+	uint32_t xs, rs, idle = 0, mag, used;
 	int32_t smp;
-	unsigned int slot, i;
+	unsigned int slot, odd, in, i;
 
 	report_start();
 	reverb_clear();
@@ -672,16 +704,22 @@ void dspaudio_main(void)
 	for (;;) {
 		rs = REG(RSTAT);
 		if (rs & STAT_DATA) {
-			slot = (rs & STAT_ODD_SLOT) ? 1 : 0;
-			smp = (int32_t)REG(RBUF(RX_SER));
-			input[slot] = tone(slot, smp);
-			if (slot == 1 && SH->surround.on) {
-				upmix(input[0], input[1]);
+			odd = (rs & STAT_ODD_SLOT) ? 1 : 0;
+			slot = odd ^ (SH->swap & 1);
+			used = SH->inputs;
+			for (i = 0; i < RX_SERS; i++) {
+				in = 2 * i + (slot ^ (RX_FLIP >> i & 1));
+				smp = (int32_t)REG(RBUF(rx_ser[i]));
+				/* the receiver's tone controls are for the front pair */
+				input[in] = !(used & (1u << in)) ? 0 : in < 2 ? tone(in, smp) : smp;
+				mag = smp < 0 ? -(uint32_t)smp : (uint32_t)smp;
+				if (mag > SH->peak[in]) {
+					SH->peak[in] = mag;
+				}
 			}
 
-			mag = smp < 0 ? -(uint32_t)smp : (uint32_t)smp;
-			if (mag > SH->peak[slot]) {
-				SH->peak[slot] = mag;
+			if (odd && SH->surround.on) {
+				upmix(input[0], input[1]);
 			}
 
 			SH->samples++;
@@ -695,12 +733,14 @@ void dspaudio_main(void)
 		if (xs & STAT_DATA) {
 			/* XTDMSLOT is the slot going out now; XBUF is for the next one */
 			slot = (xs & STAT_ODD_SLOT) ? 0 : 1;
-			if (slot == 0) {
-				make_frame();
-			}
-
 			for (i = 0; i < TX_SERS; i++) {
 				REG(XBUF(i)) = (uint32_t)frame[2 * i + slot];
+			}
+
+			if (slot == 0) {
+				frame_first();
+			} else {
+				frame_second();
 			}
 
 			idle = 0;
