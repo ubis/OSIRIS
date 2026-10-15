@@ -65,9 +65,11 @@ mcud -v                           # (with S10osiris stopped) log every frame
 | `mcu.frame` | anything not decoded yet, as raw bytes |
 
 dspd sends `dsp.ready` when it has started the DSP; osirisd then sets it up
-again. The hotplug helper sends `osiris.media` (`dir`, `present`) when USB
-storage is mounted or goes, and `osiris.update` (`version`, `path`) for an
-update bundle on it.
+again. `dsp.bitstream` comes when the bitstream the DSP detects changes:
+`bitstream` (`none`, `ac3`, `dts`, ...) and, while the DSP decodes it,
+`decoded` ("3/2.1"), `acmod` and `lfe`. The hotplug helper sends
+`osiris.media` (`dir`, `present`) when USB storage is mounted or goes, and
+`osiris.update` (`version`, `path`) for an update bundle on it.
 
 [mcu-protocol.md](mcu-protocol.md) has everything known about the
 protocol: framing, timing, the start-up sequence and every command.

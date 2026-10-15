@@ -63,6 +63,7 @@ struct gpio_cmd {
 #define SAMPLE_HZ	48000.0		/* until told otherwise */
 #define NOISE_RMS	0.58194		/* the pink filter's output for an RMS of 1 */
 #define METER_MS	100		/* dsp.meter events, 10 a second */
+#define BITSTREAM_MS	250		/* how often dsp.bitstream looks for a change */
 #define NOISE_MAX	(-15)		/* dBFS RMS; peaks are 12.8 dB higher */
 #define NOISE_MIN	(-80)
 #define SOUND_CM_S	34300.0
@@ -173,6 +174,8 @@ static int back_fill;			/* multichannel without surround back: fill it */
 static int meter;			/* send dsp.meter events */
 static void meter_tick(struct uloop_timeout *t);
 static struct uloop_timeout meter_timer = { .cb = meter_tick };
+static void bitstream_tick(struct uloop_timeout *t);
+static struct uloop_timeout bitstream_timer = { .cb = bitstream_tick };
 
 /* Dynamic Volume: how hard each level pulls towards the target */
 static const struct {
@@ -836,6 +839,31 @@ static int peak_db(uint32_t peak)
 	return peak ? (int)lround(20.0 * log10(peak / 2147483648.0)) : -999;
 }
 
+/*
+ * dsp.bitstream when what the DSP detects changes: the type ("none", "ac3",
+ * ...) and, while it decodes AC-3, the layout ("3/2.1", acmod and lfe).
+ */
+static void bitstream_tick(struct uloop_timeout *t)
+{
+	static uint32_t last;
+	uint32_t now = sh->bitstream;
+	struct blob_buf eb = { 0 };
+
+	if (now != last) {
+		last = now;
+		blob_buf_init(&eb, 0);
+		blobmsg_add_string(&eb, "bitstream", bitstream_name(now & 0x1f));
+		if (now >> 8) {
+			blobmsg_add_string(&eb, "decoded", ac3_layout(now >> 8));
+			blobmsg_add_u32(&eb, "acmod", (now >> 8) & 7);
+			blobmsg_add_u8(&eb, "lfe", (now >> 12) & 1);
+		}
+		ubus_send_event(ctx, "dsp.bitstream", eb.head);
+		blob_buf_free(&eb);
+	}
+	uloop_timeout_set(t, BITSTREAM_MS);
+}
+
 /* dBFS of a mean square, -999 for silence */
 static int rms_db(float sq, uint32_t n)
 {
@@ -1438,6 +1466,7 @@ int main(int argc, char **argv)
 	/* a new DSP knows nothing: the policy sets it up again */
 	blob_buf_init(&b, 0);
 	ubus_send_event(ctx, "dsp.ready", b.head);
+	uloop_timeout_set(&bitstream_timer, BITSTREAM_MS);
 
 	uloop_run();
 	mute_lines(1);
