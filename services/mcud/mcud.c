@@ -691,7 +691,7 @@ static int m_identity(struct ubus_context *c, struct ubus_object *obj,
 	return 0;
 }
 
-enum { ST_HEX, ST_TYPE, ST_FS, ST_CHANNELS, ST_MASK, __ST_MAX };
+enum { ST_HEX, ST_TYPE, ST_FS, ST_CHANNELS, ST_MASK, ST_IN_MASK, ST_LFE, ST_FORMAT, __ST_MAX };
 
 static const struct blobmsg_policy stream_policy[__ST_MAX] = {
 	[ST_HEX] = { .name = "hex", .type = BLOBMSG_TYPE_STRING },
@@ -699,6 +699,9 @@ static const struct blobmsg_policy stream_policy[__ST_MAX] = {
 	[ST_FS] = { .name = "fs", .type = BLOBMSG_TYPE_INT32 },
 	[ST_CHANNELS] = { .name = "channels", .type = BLOBMSG_TYPE_STRING },
 	[ST_MASK] = { .name = "mask", .type = BLOBMSG_TYPE_INT32 },
+	[ST_IN_MASK] = { .name = "input_mask", .type = BLOBMSG_TYPE_INT32 },
+	[ST_LFE] = { .name = "lfe", .type = BLOBMSG_TYPE_BOOL },
+	[ST_FORMAT] = { .name = "format", .type = BLOBMSG_TYPE_INT32 },
 };
 
 static int m_stream(struct ubus_context *c, struct ubus_object *obj,
@@ -736,6 +739,20 @@ static int m_stream(struct ubus_context *c, struct ubus_object *obj,
 		v = blobmsg_get_u32(tb[ST_MASK]);
 		s[STREAM_MASK] = v & 0xff;
 		s[STREAM_MASK + 1] = v >> 8;
+	}
+
+	if (tb[ST_IN_MASK]) {
+		v = blobmsg_get_u32(tb[ST_IN_MASK]);
+		s[STREAM_IN_MASK] = v & 0xff;
+		s[STREAM_IN_MASK + 1] = v >> 8;
+	}
+
+	if (tb[ST_LFE]) {
+		memset(s + STREAM_LFE, blobmsg_get_bool(tb[ST_LFE]) ? 1 : 0, 2);
+	}
+
+	if (tb[ST_FORMAT]) {
+		memset(s + STREAM_FORMAT, blobmsg_get_u32(tb[ST_FORMAT]), 2);
 	}
 
 	proto_set_stream(s);

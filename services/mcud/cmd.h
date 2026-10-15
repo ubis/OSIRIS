@@ -119,11 +119,12 @@ enum mcu_cmd {
 enum stream_field {
 	STREAM_TYPE		= 0,	/* 0 unlocked, 1 analog, 2 PCM, ... */
 	STREAM_FS		= 1,	/* 3 bytes, sample rate codes */
-	STREAM_FLAGS		= 6,	/* 2 bytes */
+	STREAM_IN_MASK		= 4,	/* u16 LE, the source's channels, as STREAM_MASK */
+	STREAM_LFE		= 6,	/* 2 bytes, 01 01 when the source has LFE */
 	STREAM_CHANNELS		= 8,	/* 4 ASCII, front panel */
 	STREAM_MASK		= 12,	/* u16 LE, speaker indicators and relays */
 	STREAM_DETECT		= 14,	/* bit 0: DSP detected */
-	STREAM_LAYOUT		= 15,	/* 2 bytes */
+	STREAM_FORMAT		= 15,	/* 2 bytes: format code, input and shown (20 Dolby D) */
 	STREAM_LEN		= 20,
 };
 
