@@ -355,6 +355,36 @@ function set_back_fill()
 	end
 end
 
+-- multichannel PCM from HDMI as AudioApp tells the MCU (type 0E, format 70):
+-- from the CEA-861 allocation below 0x14 (bit 0 LFE, 1 centre, 2-3 the rear:
+-- one, a pair or both; 0x10 and up the surround and back pairs) the source's
+-- channel mask (FL FR 0005, C 0002, SL SR 0088, SB 0020, SBL SBR 0050) and
+-- " 5.1"
+local STREAM_PCM = { type = 2, input_mask = 0x0005, lfe = false, channels = " 2.0", format = 0x20 }
+local REAR_MASK = { [0] = 0, 0x0020, 0x0088, 0x00A8 }
+local REAR_COUNT = { [0] = 0, 1, 2, 3 }
+local stream_now		-- the stream status last sent for PCM
+local pcm_streams = {}		-- one per allocation, so equal ones compare equal
+
+local function pcm_stream(ca)
+	if not ca or ca >= 0x14 then
+		return STREAM_PCM
+	end
+	if pcm_streams[ca] then
+		return pcm_streams[ca]
+	end
+
+	local lfe, fc = bit.band(ca, 1) ~= 0, bit.band(ca, 2) ~= 0
+	local back = bit.band(ca, 0x10) ~= 0
+	local rear = back and 2 or bit.band(bit.rshift(ca, 2), 3)
+	local mask = 0x0005 + (fc and 0x0002 or 0) + REAR_MASK[rear] + (back and 0x0050 or 0)
+	local n = 2 + (fc and 1 or 0) + REAR_COUNT[rear] + (back and 2 or 0)
+
+	pcm_streams[ca] = { type = 0x0E, input_mask = mask, lfe = lfe,
+			    channels = string.format(" %d.%d", n, lfe and 1 or 0), format = 0x70 }
+	return pcm_streams[ca]
+end
+
 -- AC-3 the DSP decodes (dsp.bitstream): with a centre or surrounds it plays
 -- as multichannel from a digital input; ac3_ca is its layout as a CEA-861
 -- allocation, nil otherwise. ac3_now: the 0x42 the MCU got for it. c1_*:
@@ -380,7 +410,16 @@ local function set_input(interface, fs, channels)
 	end
 
 	input_now = input
-	channels_now = decoded and ac3_ca or channels or channels_now
+	channels_now = decoded and ac3_ca or c1_channels
+
+	-- what the MCU shows for PCM: stereo, or multichannel from HDMI
+	if not ac3_now then
+		local st = interface == 2 and pcm_stream(channels_now) or STREAM_PCM
+		if st ~= stream_now then
+			stream_now = st
+			call("mcu", "stream", st)
+		end
+	end
 	set_back_fill()
 	if input == was then
 		return
@@ -884,7 +923,6 @@ end
 local AC3_MASK = { [0] = 0x2000, 0x0002, 0x0005, 0x0007, 0x0025, 0x0027, 0x008D, 0x008F }
 local AC3_FRONT = { [0] = 2, 1, 2, 3, 2, 3, 2, 3 }
 local AC3_REAR = { [0] = 0, 0, 0, 0, 1, 1, 2, 2 }
-local STREAM_PCM = { type = 2, input_mask = 0x0005, lfe = false, channels = " 2.0", format = 0x20 }
 
 -- liba52's layout names (dsp status "decoded") back to acmod
 local AC3_NAMES = { ["1+1"] = 0, ["1/0"] = 1, ["2/0"] = 2, ["3/0"] = 3, ["2/1"] = 4,
@@ -901,6 +939,17 @@ local handlers = {
 	["dsp.ready"] = function()
 		-- a restarted dspd has none of it: send it all again
 		back_fill_now = nil
+
+		-- nor does it decode anything yet: no Dolby left over
+		if ac3_now then
+			ac3_ca, ac3_now, stream_now = nil, nil, nil
+			if c1_interface then
+				set_input(c1_interface, nil, c1_channels)
+			else
+				stream_now = STREAM_PCM
+				call("mcu", "stream", STREAM_PCM)
+			end
+		end
 		local saved = load_state()
 
 		log("DSP started again, setting it up")
@@ -930,20 +979,24 @@ local handlers = {
 		else
 			ac3_ca = nil
 			if ac3_now then
-				ac3_now = nil
-				call("mcu", "stream", STREAM_PCM)
+				-- back to what the last input report says
+				ac3_now, stream_now = nil, nil
+				if not c1_interface then
+					stream_now = STREAM_PCM
+					call("mcu", "stream", STREAM_PCM)
+				end
 			end
 		end
 
-		if (ac3_ca ~= nil) ~= (was ~= nil) and c1_interface then
+		if c1_interface and (not stream_now or (ac3_ca ~= nil) ~= (was ~= nil)) then
 			set_input(c1_interface, nil, c1_channels)
 		end
 	end,
 	["mcu.ready"] = function(msg)
 		set_model(msg)
 		-- a restarted mcud starts from PCM
-		if ac3_now then
-			call("mcu", "stream", ac3_now)
+		if ac3_now or stream_now then
+			call("mcu", "stream", ac3_now or stream_now)
 		end
 		set_display(load_state().display)
 		show_track()
