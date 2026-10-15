@@ -929,7 +929,25 @@ if not conn then
 	os.exit(1)
 end
 
-conn:listen(handlers)
+-- The binding delivers events inside a running conn:call; a handler that
+-- calls out would then run inside another one's call and crash LuaJIT.
+-- Queue the events and handle them from the main loop.
+local events, events_timer = {}
+events_timer = uloop.timer(function()
+	while #events > 0 do
+		local ev = table.remove(events, 1)
+		handlers[ev[1]](ev[2])
+	end
+end)
+
+local queued = {}
+for name in pairs(handlers) do
+	queued[name] = function(msg)
+		events[#events + 1] = { name, msg }
+		events_timer:set(0)
+	end
+end
+conn:listen(queued)
 set_identity()
 scan_media()
 
