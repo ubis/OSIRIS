@@ -120,7 +120,7 @@ enum stream_field {
 	STREAM_FS		= 1,	/* 3 bytes, sample rate codes */
 	STREAM_FLAGS		= 6,	/* 2 bytes */
 	STREAM_CHANNELS		= 8,	/* 4 ASCII, front panel */
-	STREAM_MASK		= 12,	/* u16 LE, outputs with relays closed */
+	STREAM_MASK		= 12,	/* u16 LE, speaker indicators and relays */
 	STREAM_DETECT		= 14,	/* bit 0: DSP detected */
 	STREAM_LAYOUT		= 15,	/* 2 bytes */
 	STREAM_LEN		= 20,

@@ -68,11 +68,28 @@ E3 -> 63, EA -> 6A).
 | 4-5 | 05 00 | unknown |
 | 6-7 | 00 00 | flags |
 | 8-11 | " 2.0" | channel string for the front panel |
-| 12-13 | FF 07 | output channel mask: the MCU closes the speaker relays only for channels set here |
+| 12-13 | FF 07 | output channel mask: the MCU lights the speaker indicators and closes the speaker relays only for channels set here; mcud sets it from the speaker setup |
 | 14 | 01 | bit 0: DSP detected OK |
 | 15-16 | 20 20 | channel layout codes (2/0, guessed) |
 | 17-18 | 00 00 | unknown |
 | 19 | 01 | always 1 |
+
+Mask bits on the TX-NR717 (u16; a pair lights from either of its bits):
+
+| bit | indicator |
+|---|---|
+| 0, 2 | FL FR |
+| 1, 13 | C |
+| 3, 7 | SL SR |
+| 4, 6 | SBL SBR |
+| 5 | SB |
+| 8 | FL |
+| 9, 10 | LH RH |
+| 11, 12 | LW RW |
+| 14, 15 | SW |
+
+The surround back relay closes for bits 4, 5, 6, 9 and 10. With the FW layout,
+LW RW light from bit 11 only while that relay is closed, from bit 12 without it.
 
 Sending 0x42 for every C1 makes the MCU restart its input sequence: AudioApp
 only sends it when a field changes.
@@ -223,7 +240,7 @@ ubus object `mcu`:
 |---|---|---|
 | `status` | | handshake stage, model, stream status, and once known: bass and treble, the listening mode (`listening_mode`, `listening_mode_name`), the distances, the speaker setup, `update_check` (the MCU waits for an answer to its update check) |
 | `identity` | `dsp_version`, `dsp_id` | strings for 41 and 46 |
-| `stream` | 0x42 fields by name | updates the stream status, sent if changed |
+| `stream` | 0x42 fields by name | updates the stream status, sent if changed; the next speaker setup frame sets the mask again |
 | `outputs` | `mask` | 4A |
 | `levels` | 13 values | 45 |
 | `update` | one of `available` (bool), `progress` (%), `downloaded` (bytes), `result` (`ok`/`error`) | the 68 answers; a failed download is told as a failed 68 01 |

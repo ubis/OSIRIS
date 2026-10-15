@@ -97,6 +97,15 @@ static const char *const speaker_name[] = {
 	"front", "center", "surround", "surround_back", "front_high", "front_wide",
 };
 
+/*
+ * Their DSP_STREAM mask bits, which light the indicators and close the relays.
+ * No front wide bit closes the surround back relay; 0x0020 does, and lights
+ * the single surround back indicator too.
+ */
+static const uint16_t speaker_bit[] = { 0x0001, 0x0002, 0x0008, 0x0010, 0x0200, 0x1020 };
+#define SB_SINGLE_BIT	0x0020
+#define SUBWOOFER_BIT	0x4000
+
 static const uint8_t crossover_hz[16] = {
 	0, 0, 40, 45, 50, 55, 60, 70, 80, 90, 100, 110, 120, 130, 150, 200,
 };
@@ -216,6 +225,33 @@ static void add_speakers(void)
 	}
 }
 
+/* the speakers the DSP plays on; the surround back amplifiers drive the first in the layout */
+static void set_stream_speakers(void)
+{
+	const uint8_t *s = speakers.setup;
+	const char *l = speakers.layout >= 0 && speakers.layout < (int)ARRAY_SIZE(layout_name) ?
+			layout_name[speakers.layout] : "sb";
+	uint8_t st[STREAM_LEN];
+	uint16_t mask = s[0] ? SUBWOOFER_BIT : 0;
+	size_t i;
+
+	for (i = 0; i < 3; i++) {
+		if (s[1 + i]) {
+			mask |= speaker_bit[i];
+		}
+	}
+
+	i = !strncmp(l, "sb", 2) ? 3 : !strncmp(l, "fh", 2) ? 4 : !strncmp(l, "fw", 2) ? 5 : 0;
+	if (i && s[1 + i]) {
+		mask |= i == 3 && !s[7] ? SB_SINGLE_BIT : speaker_bit[i];
+	}
+
+	proto_get_stream(st);
+	st[STREAM_MASK] = mask & 0xff;
+	st[STREAM_MASK + 1] = mask >> 8;
+	proto_set_stream(st);
+}
+
 static void add_model(const struct mcu_model *m)
 {
 	blobmsg_add_string(&b, "make", m->make);
@@ -299,6 +335,7 @@ static void on_frame(const struct link_frame *f, const char *name)
 			memcpy(speakers.setup, d + 1, sizeof(speakers.setup));
 			speakers.known = 1;
 			speakers.layout = d[0xc6];
+			set_stream_speakers();
 			add_speakers();
 			event("mcu.speakers");
 			blob_buf_init(&b, 0);
@@ -313,6 +350,7 @@ static void on_frame(const struct link_frame *f, const char *name)
 		if (f->len >= 1 + sizeof(speakers.setup)) {
 			memcpy(speakers.setup, d + 1, sizeof(speakers.setup));
 			speakers.known = 1;
+			set_stream_speakers();
 			add_speakers();
 			event("mcu.speakers");
 			return;
@@ -323,6 +361,7 @@ static void on_frame(const struct link_frame *f, const char *name)
 		if (f->len >= 2) {
 			speakers.layout = d[1];
 			if (speakers.known) {
+				set_stream_speakers();
 				add_speakers();
 				event("mcu.speakers");
 				return;
