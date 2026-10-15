@@ -14,7 +14,7 @@
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		12
+#define DSPAUDIO_ABI		13
 
 #define DSPAUDIO_IN		8	/* 4 serializers x 2 slots, as the outputs */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
@@ -24,6 +24,7 @@
 #define DSPAUDIO_DELAY_MAX	2047	/* samples at 48 kHz: 42 ms, 14.6 m */
 #define DSPAUDIO_SURROUND_DELAY_MAX	2047	/* surround and back delay, samples */
 #define DSPAUDIO_XO		2	/* biquads per crossover side: Linkwitz-Riley */
+#define DSPAUDIO_EQ		6	/* equalizer biquads per output at most */
 #define DSPAUDIO_REVERB_LINES	4
 #define DSPAUDIO_REVERB_LINE_MAX	4095	/* samples per feedback line */
 #define DSPAUDIO_PREDELAY_MAX	4095	/* samples before the reverb starts */
@@ -111,6 +112,7 @@ struct dspaudio_reverb {
  * its bass, through the matching low pass, to the subwoofer, or to the
  * front pair when there is none. The subwoofer has a low pass of its own.
  * Double bass also sends the bass of large speakers to the subwoofer.
+ * After it, each output's equalizer: a peaking filter per band in use.
  */
 struct dspaudio_bass {
 	uint32_t small;			/* one bit per output: bass managed */
@@ -119,6 +121,8 @@ struct dspaudio_bass {
 	struct dspaudio_biquad high[DSPAUDIO_OUT][DSPAUDIO_XO];
 	struct dspaudio_biquad low[DSPAUDIO_OUT][DSPAUDIO_XO];
 	struct dspaudio_biquad sub[DSPAUDIO_XO];
+	uint32_t eq_n[DSPAUDIO_OUT];	/* equalizer biquads in use */
+	struct dspaudio_biquad eq[DSPAUDIO_OUT][DSPAUDIO_EQ];
 };
 
 struct dspaudio_shared {
@@ -153,5 +157,7 @@ struct dspaudio_shared {
 	/* written by the DSP */
 	uint32_t bitstream;		/* IEC 61937 data type while one plays, else 0 */
 };
+
+_Static_assert(sizeof(struct dspaudio_shared) <= 0x1000, "the shared block is 4 KiB");
 
 #endif

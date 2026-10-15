@@ -151,6 +151,15 @@ static const struct reverb_preset *reverb;	/* NULL: off */
 static int crossover[DSPAUDIO_OUT];	/* Hz, 0 = large: full range */
 static int subwoofer, double_bass;
 static int lfe_level;			/* dB, the receiver's LFE level; -100 off */
+
+/* the receiver's equalizer bands; the subwoofer has the first five */
+#define EQ_BANDS	15
+#define EQ_DB_MAX	12
+#define EQ_Q		2.0		/* about the 2/3 octave between bands */
+static const double eq_hz[EQ_BANDS] = {
+	25, 40, 63, 100, 160, 250, 400, 630, 1000, 1600, 2500, 4000, 6300, 10000, 16000,
+};
+static int eq[DSPAUDIO_OUT][EQ_BANDS];	/* dB */
 static int sub_lowpass = 120;		/* Hz, 0 = none */
 static uint32_t absent;			/* outputs without a speaker */
 
@@ -271,6 +280,45 @@ static void pass(volatile struct dspaudio_biquad *q, double hz, int high)
 	q->a2 = (1.0 - alpha) / a0;
 }
 
+/* RBJ cookbook peaking filter */
+static void peak(volatile struct dspaudio_biquad *q, double hz, int db)
+{
+	double a = pow(10.0, db / 40.0), w = 2.0 * M_PI * hz / SAMPLE_HZ;
+	double alpha = sin(w) / (2.0 * EQ_Q), a0 = 1.0 + alpha / a;
+
+	q->b0 = (1.0 + alpha * a) / a0;
+	q->b1 = -2.0 * cos(w) / a0;
+	q->b2 = (1.0 - alpha * a) / a0;
+	q->a1 = q->b1;
+	q->a2 = (1.0 - alpha / a) / a0;
+}
+
+/* the bands that are not flat, the largest first when there are too many */
+static unsigned int apply_eq(volatile struct dspaudio_bass *bm, unsigned int out)
+{
+	int used[EQ_BANDS] = { 0 };
+	unsigned int n, k, best;
+
+	for (n = 0; n < DSPAUDIO_EQ; n++) {
+		best = EQ_BANDS;
+		for (k = 0; k < EQ_BANDS; k++) {
+			if (eq[out][k] && !used[k] &&
+			    (best == EQ_BANDS || abs(eq[out][k]) > abs(eq[out][best]))) {
+				best = k;
+			}
+		}
+
+		if (best == EQ_BANDS) {
+			break;
+		}
+
+		used[best] = 1;
+		peak(&bm->eq[out][n], eq_hz[best], eq[out][best]);
+	}
+
+	return n;
+}
+
 /* Linkwitz-Riley: two Butterworth sections each side, the sides add up flat */
 static void apply_bass(void)
 {
@@ -281,6 +329,7 @@ static void apply_bass(void)
 	int hz;
 
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
+		bm->eq_n[out] = absent & (1u << out) ? 0 : apply_eq(bm, out);
 		if (out == DSPAUDIO_OUT_SW || absent & (1u << out)) {
 			continue;
 		}
@@ -656,6 +705,28 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	}
 
 	blobmsg_close_table(&b, a);
+	a = blobmsg_open_table(&b, "eq");
+	for (i = 0; i < DSPAUDIO_OUT; i++) {
+		void *e;
+		int k, any = 0;
+
+		for (k = 0; k < EQ_BANDS; k++) {
+			any |= eq[i][k];
+		}
+
+		if (!any) {
+			continue;
+		}
+
+		e = blobmsg_open_array(&b, out_name[i]);
+		for (k = 0; k < EQ_BANDS; k++) {
+			blobmsg_add_u32(&b, NULL, (uint32_t)eq[i][k]);
+		}
+
+		blobmsg_close_array(&b, e);
+	}
+
+	blobmsg_close_table(&b, a);
 	a = blobmsg_open_table(&b, "crossover");
 	for (i = 0; i < DSPAUDIO_OUT; i++) {
 		if (crossover[i]) {
@@ -685,7 +756,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
 	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, SET_CROSSOVER, SET_SUBWOOFER,
 	SET_SUB_LOWPASS, SET_REVERB, SET_DOUBLE_BASS, SET_ABSENT, SET_INPUT,
-	SET_LFE_LEVEL, __SET_MAX };
+	SET_LFE_LEVEL, SET_EQ, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -705,6 +776,7 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_ABSENT] = { .name = "absent", .type = BLOBMSG_TYPE_ARRAY },
 	[SET_INPUT] = { .name = "input", .type = BLOBMSG_TYPE_STRING },
 	[SET_LFE_LEVEL] = { .name = "lfe_level", .type = BLOBMSG_TYPE_INT32 },
+	[SET_EQ] = { .name = "eq", .type = BLOBMSG_TYPE_TABLE },
 };
 
 static int out_index(const char *name)
@@ -770,6 +842,39 @@ static int parse_crossover(struct blob_attr *t, int *x)
 	return 0;
 }
 
+/* {"fl": [dB, ...], ...}: the bands from 25 Hz up, missing ones flat */
+static int parse_eq(struct blob_attr *t, int (*e)[EQ_BANDS])
+{
+	struct blob_attr *cur, *v;
+	unsigned int rem, rem2, k;
+	int i, db;
+
+	memcpy(e, eq, sizeof(eq));
+	blobmsg_for_each_attr(cur, t, rem) {
+		i = out_index(blobmsg_name(cur));
+		if (i < 0 || blobmsg_type(cur) != BLOBMSG_TYPE_ARRAY) {
+			return -1;
+		}
+
+		k = 0;
+		memset(e[i], 0, sizeof(e[i]));
+		blobmsg_for_each_attr(v, cur, rem2) {
+			if (k == EQ_BANDS || blobmsg_type(v) != BLOBMSG_TYPE_INT32) {
+				return -1;
+			}
+
+			db = (int32_t)blobmsg_get_u32(v);
+			if (db < -EQ_DB_MAX || db > EQ_DB_MAX) {
+				return -1;
+			}
+
+			e[i][k++] = db;
+		}
+	}
+
+	return 0;
+}
+
 static int name_index(const char *name, const char *const *names, size_t n)
 {
 	size_t i;
@@ -793,7 +898,7 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 	const struct reverb_preset *new_reverb = reverb;
 	int new_outputs = outputs, new_input = input, nb = bass, nt = treble, level = noise_level;
 	int nout = noise_out, lowpass = sub_lowpass, i;
-	int dist[DSPAUDIO_OUT], xover[DSPAUDIO_OUT];
+	int dist[DSPAUDIO_OUT], xover[DSPAUDIO_OUT], new_eq[DSPAUDIO_OUT][EQ_BANDS];
 	uint32_t new_absent = absent;
 	unsigned int rem;
 	const char *o;
@@ -843,6 +948,11 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 
 	memcpy(dist, distance, sizeof(dist));
 	if (tb[SET_DISTANCES] && parse_distances(tb[SET_DISTANCES], dist)) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	memcpy(new_eq, eq, sizeof(eq));
+	if (tb[SET_EQ] && parse_eq(tb[SET_EQ], new_eq)) {
 		return UBUS_STATUS_INVALID_ARGUMENT;
 	}
 
@@ -933,11 +1043,12 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 	}
 
 	if (tb[SET_CROSSOVER] || tb[SET_SUBWOOFER] || tb[SET_SUB_LOWPASS] ||
-	    tb[SET_DOUBLE_BASS] || tb[SET_ABSENT]) {
+	    tb[SET_DOUBLE_BASS] || tb[SET_ABSENT] || tb[SET_EQ]) {
 		/* the decoder only cares whether there is a centre speaker */
 		int centre = (absent ^ new_absent) & 1u << DSPAUDIO_OUT_C;
 
 		memcpy(crossover, xover, sizeof(crossover));
+		memcpy(eq, new_eq, sizeof(eq));
 		absent = new_absent;
 		sub_lowpass = lowpass;
 		if (tb[SET_SUBWOOFER]) {

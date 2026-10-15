@@ -125,6 +125,15 @@ static const char *const lfe_format[] = {
 
 static const int lfe_level_db[] = { -100, -20, -10, 0 };	/* -100: off */
 
+/* MCU_EQUALIZER: 15 bands for each speaker, 25 Hz to 16 kHz, 5 for the subwoofer */
+#define EQ_BANDS	15
+#define EQ_SUB_BANDS	5
+
+static struct {
+	int on, on_known, known;
+	int8_t db[6 * EQ_BANDS + EQ_SUB_BANDS];
+} eq;
+
 static struct {
 	int known;
 	uint8_t setup[10];		/* MCU_SPEAKERS [1..10] */
@@ -253,6 +262,27 @@ static void set_stream_speakers(void)
 	proto_set_stream(st);
 }
 
+/* manual EQ on or off, and each speaker's bands in dB, as far as known */
+static void add_equalizer(void)
+{
+	void *a;
+	size_t i, k;
+
+	if (eq.on_known) {
+		blobmsg_add_u8(&b, "eq_on", eq.on);
+	}
+
+	for (i = 0; eq.known && i <= ARRAY_SIZE(speaker_name); i++) {
+		a = blobmsg_open_array(&b, i < ARRAY_SIZE(speaker_name) ?
+				       speaker_name[i] : "subwoofer");
+		for (k = 0; k < (i < ARRAY_SIZE(speaker_name) ? EQ_BANDS : EQ_SUB_BANDS); k++) {
+			blobmsg_add_u32(&b, NULL, (uint32_t)eq.db[i * EQ_BANDS + k]);
+		}
+
+		blobmsg_close_array(&b, a);
+	}
+}
+
 static void add_model(const struct mcu_model *m)
 {
 	blobmsg_add_string(&b, "make", m->make);
@@ -371,6 +401,27 @@ static void on_frame(const struct link_frame *f, const char *name)
 		}
 
 		break;
+	case MCU_EQUALIZER:
+		/* the MCU sends either only when it changes, not at start-up */
+		if (f->len == 2 && d[0] == 0) {
+			eq.on = d[1] != 0;
+			eq.on_known = 1;
+		} else if (f->len >= 1 + sizeof(eq.db) && d[0] == 1) {
+			memcpy(eq.db, d + 1, sizeof(eq.db));
+			eq.known = 1;
+		} else {
+			break;
+		}
+
+		{
+			void *t = blobmsg_open_table(&b, "equalizer");
+
+			add_equalizer();
+			blobmsg_close_table(&b, t);
+			event("mcu.equalizer");
+		}
+
+		return;
 	case MCU_LFE_LEVEL:
 		if (f->len < 2 || d[0] >= ARRAY_SIZE(lfe_format) || d[1] >= ARRAY_SIZE(lfe_level_db)) {
 			break;
@@ -495,6 +546,13 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	add_model(proto_model());
 	proto_get_stream(s);
 	add_hex("stream", s, STREAM_LEN);
+	if (eq.known || eq.on_known) {
+		void *t = blobmsg_open_table(&b, "equalizer");
+
+		add_equalizer();
+		blobmsg_close_table(&b, t);
+	}
+
 	if (input_interface >= 0) {
 		blobmsg_add_u32(&b, "interface", (uint32_t)input_interface);
 	}
