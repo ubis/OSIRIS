@@ -37,7 +37,7 @@ enum mcu_cmd {
 	MCU_EQUALIZER		= 0xc4,	/* [2] 00, then on; [96] 01, then dB per band */
 	MCU_THX			= 0xc5,
 	MCU_MULTIPLEX_MONO	= 0xc6,
-	MCU_DD_DTS		= 0xc7,
+	MCU_DD_DTS		= 0xc7,	/* [0] which setting, [1..] its value */
 	MCU_DSD_DIRECT		= 0xc8,
 	MCU_LFE_LEVEL		= 0xc9,	/* [0] format, [1] 0 off, 1 -20 dB, 2 -10 dB, 3 0 dB */
 	MCU_AV_SYNC		= 0xca,	/* [1..2] u16 LE: ms, the menu less 22 */

@@ -86,6 +86,28 @@ static void add_listening_mode(void)
 static int tone_known, bass, treble;	/* front tone, dB */
 static int input_interface = -1;	/* MCU_INPUT [2], -1 not known */
 static int av_sync = -1;		/* MCU_AV_SYNC, ms, -1 not known */
+static int volume_known, volume;	/* MCU_VOLUME, 0.01 dB */
+
+/* MCU_DD_DTS: one setting per subcommand, each -1 until the MCU sends it */
+enum { ADSY_DEQ = 0x07, ADSY_DEQ_OFFSET = 0x08, ADSY_DVOL = 0x0a };
+static struct {
+	int deq, deq_offset, dvol;
+} adsy = { -1, -1, -1 };
+
+static void add_audyssey(void)
+{
+	if (adsy.deq >= 0) {
+		blobmsg_add_u8(&b, "dynamic_eq", adsy.deq);
+	}
+
+	if (adsy.deq_offset >= 0) {
+		blobmsg_add_u32(&b, "dynamic_eq_offset", (uint32_t)adsy.deq_offset);
+	}
+
+	if (adsy.dvol >= 0) {
+		blobmsg_add_u32(&b, "dynamic_volume", (uint32_t)adsy.dvol);
+	}
+}
 
 /* MCU_DISTANCE, in the receiver's order; the 13th value is not a speaker */
 static const char *const distance_ch[] = {
@@ -347,8 +369,9 @@ static void on_frame(const struct link_frame *f, const char *name)
 	case MCU_VOLUME:
 		/* s16 LE in 0.01 dB */
 		if (f->len >= 3) {
-			blobmsg_add_u32(&b, "volume",
-					(uint32_t)(int16_t)(d[1] | (d[2] << 8)));
+			volume = (int16_t)(d[1] | (d[2] << 8));
+			volume_known = 1;
+			blobmsg_add_u32(&b, "volume", (uint32_t)volume);
 		}
 
 		event("mcu.volume");
@@ -422,6 +445,25 @@ static void on_frame(const struct link_frame *f, const char *name)
 			event("mcu.equalizer");
 		}
 
+		return;
+	case MCU_DD_DTS:
+		/* the others are reported as mcu.frame */
+		if (f->len < 2 || (d[0] != ADSY_DEQ && d[0] != ADSY_DEQ_OFFSET && d[0] != ADSY_DVOL)) {
+			break;
+		}
+
+		if (d[0] == ADSY_DEQ) {
+			adsy.deq = d[1] != 0;
+		} else if (d[0] == ADSY_DEQ_OFFSET) {
+			/* reference level offset in 5 dB steps */
+			adsy.deq_offset = 5 * d[1];
+		} else {
+			/* 0 off, then light, medium, heavy */
+			adsy.dvol = d[1];
+		}
+
+		add_audyssey();
+		event("mcu.audyssey");
 		return;
 	case MCU_AV_SYNC:
 		/* the menu's value less 22 ms, what the stock DSP delayed anyway */
@@ -567,6 +609,12 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	if (av_sync >= 0) {
 		blobmsg_add_u32(&b, "av_sync", (uint32_t)av_sync);
 	}
+
+	if (volume_known) {
+		blobmsg_add_u32(&b, "volume", (uint32_t)volume);
+	}
+
+	add_audyssey();
 
 	if (input_interface >= 0) {
 		blobmsg_add_u32(&b, "interface", (uint32_t)input_interface);
