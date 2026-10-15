@@ -55,6 +55,7 @@ struct gpio_cmd {
 #define TREBLE_HZ	10000.0
 #define SAMPLE_HZ	48000.0		/* until told otherwise */
 #define NOISE_RMS	0.58194		/* the pink filter's output for an RMS of 1 */
+#define METER_MS	100		/* dsp.meter events, 10 a second */
 #define NOISE_MAX	(-15)		/* dBFS RMS; peaks are 12.8 dB higher */
 #define NOISE_MIN	(-80)
 #define SOUND_CM_S	34300.0
@@ -161,6 +162,9 @@ static double proc_hz = SAMPLE_HZ;	/* the DSP's: above 48 kHz it processes every
 static int loudness = -1;		/* dB of bass boost, -1 off */
 static int dynamic_volume;		/* 0 off, 1 light, 2 medium, 3 heavy */
 static int back_fill;			/* multichannel without surround back: fill it */
+static int meter;			/* send dsp.meter events */
+static void meter_tick(struct uloop_timeout *t);
+static struct uloop_timeout meter_timer = { .cb = meter_tick };
 
 /* Dynamic Volume: how hard each level pulls towards the target */
 static const struct {
@@ -744,6 +748,31 @@ static int peak_db(uint32_t peak)
 	return peak ? (int)lround(20.0 * log10(peak / 2147483648.0)) : -999;
 }
 
+/* dBFS of a mean square, -999 for silence */
+static int rms_db(float sq, uint32_t n)
+{
+	return n && sq > 0 ? (int)lround(10.0 * log10(sq / n)) : -999;
+}
+
+/* the front pair as played, as dsp.meter events: RMS and peak, dBFS */
+static void meter_tick(struct uloop_timeout *t)
+{
+	struct blob_buf mb = { 0 };
+	uint32_t n = sh->meter_n;
+
+	blob_buf_init(&mb, 0);
+	blobmsg_add_u32(&mb, "left", (uint32_t)rms_db(sh->meter_sq[0], n));
+	blobmsg_add_u32(&mb, "right", (uint32_t)rms_db(sh->meter_sq[1], n));
+	blobmsg_add_u32(&mb, "left_peak", (uint32_t)peak_db(sh->meter[0]));
+	blobmsg_add_u32(&mb, "right_peak", (uint32_t)peak_db(sh->meter[1]));
+	sh->meter[0] = sh->meter[1] = 0;
+	sh->meter_sq[0] = sh->meter_sq[1] = 0;
+	sh->meter_n = 0;
+	ubus_send_event(ctx, "dsp.meter", mb.head);
+	blob_buf_free(&mb);
+	uloop_timeout_set(t, METER_MS);
+}
+
 static int m_status(struct ubus_context *c, struct ubus_object *obj,
 		    struct ubus_request_data *req, const char *method,
 		    struct blob_attr *msg)
@@ -824,6 +853,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_u32(&b, "loudness", (uint32_t)loudness);
 	blobmsg_add_u32(&b, "fs", (uint32_t)sample_hz);
 	blobmsg_add_u8(&b, "back_fill", back_fill);
+	blobmsg_add_u8(&b, "meter", meter);
 	blobmsg_add_u32(&b, "dynamic_volume", (uint32_t)dynamic_volume);
 	blobmsg_add_u32(&b, "dynamic_volume_db", (uint32_t)lround(sh->dvol_gain));
 	a = blobmsg_open_array(&b, "absent");
@@ -843,7 +873,7 @@ enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
 	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, SET_CROSSOVER, SET_SUBWOOFER,
 	SET_SUB_LOWPASS, SET_REVERB, SET_DOUBLE_BASS, SET_ABSENT, SET_INPUT,
 	SET_LFE_LEVEL, SET_EQ, SET_AV_SYNC, SET_LOUDNESS,
-	SET_DYNAMIC_VOLUME, SET_FS, SET_BACK_FILL, __SET_MAX };
+	SET_DYNAMIC_VOLUME, SET_FS, SET_BACK_FILL, SET_METER, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -869,6 +899,7 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_DYNAMIC_VOLUME] = { .name = "dynamic_volume", .type = BLOBMSG_TYPE_INT32 },
 	[SET_FS] = { .name = "fs", .type = BLOBMSG_TYPE_INT32 },
 	[SET_BACK_FILL] = { .name = "back_fill", .type = BLOBMSG_TYPE_BOOL },
+	[SET_METER] = { .name = "meter", .type = BLOBMSG_TYPE_BOOL },
 };
 
 static int out_index(const char *name)
@@ -1132,6 +1163,19 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 		apply_surround();
 		apply_reverb();
 		apply_bass();
+	}
+
+	if (tb[SET_METER]) {
+		meter = blobmsg_get_bool(tb[SET_METER]);
+		if (meter) {
+			/* not what built up while it was off */
+			sh->meter[0] = sh->meter[1] = 0;
+			sh->meter_sq[0] = sh->meter_sq[1] = 0;
+			sh->meter_n = 0;
+			uloop_timeout_set(&meter_timer, METER_MS);
+		} else {
+			uloop_timeout_cancel(&meter_timer);
+		}
 	}
 
 	if (tb[SET_BACK_FILL]) {
