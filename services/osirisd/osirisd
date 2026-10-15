@@ -121,7 +121,7 @@ local eq_now = {}		-- the receiver's equalizer: eq_on and bands by speaker
 local fs_now			-- Hz, the source's sample rate
 local channels_now, back_fill_now	-- the source's channel allocation; SB filled
 local set_back_fill
-local input_now			-- "analog", "digital", "multichannel"; nil: not known yet
+local input_now			-- "analog", "digital", "multichannel", "network"; nil: not known yet
 local lfe_pcm = 0		-- dB, the LFE level for multichannel PCM; -100 off
 local media = {}		-- mounted USB storage, by directory
 local bundle			-- { path, version } of an update on it
@@ -350,9 +350,10 @@ function set_back_fill()
 end
 
 -- the source by the MCU's C1 interface: 1 analog, 2 multichannel PCM from
--- HDMI, else digital
+-- HDMI, 5 the NET input (audio from Linux), else digital
 local function set_input(interface, fs, channels)
-	local input = interface == 1 and "analog" or interface == 2 and "multichannel" or "digital"
+	local input = interface == 1 and "analog" or interface == 2 and "multichannel" or
+		      interface == 5 and "network" or "digital"
 	local was = input_now
 
 	-- the DSP works out its filters and delays for the rate the MCU reports

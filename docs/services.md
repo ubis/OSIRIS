@@ -156,6 +156,7 @@ What it does today:
   crossover and distance of what the receiver's layout puts there (surround
   back, front high or front wide)
 - passes the speaker distances to the DSP and keeps them in the state file
+- plays the ring (pcmd, AirPlay) on the NET input
 - answers the network menu with the address, link state and MAC of eth0
 - offers an update bundle of another version on a USB stick when the
   receiver asks for updates: the receiver shows its update notice, and its

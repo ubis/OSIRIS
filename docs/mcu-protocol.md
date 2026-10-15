@@ -107,7 +107,7 @@ the MCU's input sequence, and the NET input stays muted.
 | cmd | name (AudioApp) | known payload |
 |---|---|---|
 | C0 | initial_settings | everything at start-up: [1..10] as C2, [11] and [13..38] as C3 [0] and [1..26], [0xC6] as D5 [1] |
-| C1 | input_settings | [1] decode mode [2] interface (1 analog, 0 digital, 2 multichannel PCM) [3] fs code (08 44.1, 09 48, 0C 96 kHz) [4] MCLK [5] status (0 while no source) [6] the source's channels as CEA-861 allocation (0B 5.1, 13 7.1) |
+| C1 | input_settings | [1] decode mode [2] interface (1 analog, 0 digital, 2 multichannel PCM, 5 NET) [3] fs code (08 44.1, 09 48, 0C 96 kHz) [4] MCLK [5] status (0 while no source) [6] the source's channels as CEA-861 allocation (0B 5.1, 13 7.1) |
 | C2 | speaker_config | [1] subwoofers (0, 1, 2), [2..7] front, center, surround, surround back, front high, front wide: 0 none, 1 large, 2..15 small with the crossover 40, 45, 50, 55, 60, 70, 80, 90, 100, 110, 120, 130, 150, 200 Hz; [8] surround back 0 one, 1 two channels; [9] LFE low pass 80, 90, 100, 110, 120 Hz, 5 bypass; [10] double bass; [11..17] wireless; stock answers with 45 |
 | C3 | distance | [0] not known (perhaps the unit the menu shows), [1..26] 13 x u16 LE in cm: fl, c, fr, sl, sr, sbl, sbr, fhl, fhr, fwl, fwr, sw, (0); 5 cm steps; sent when changed |
 | C4 | equalizer | [2] 00, then 0 manual EQ off, 1 on; [96] 01, then dB per band (signed): 15 bands from 25 Hz to 16 kHz for front, center, surround, surround back, front high, front wide, then 5 from 25 to 160 Hz for the subwoofer. Not in C0: comes when the menu changes it |
