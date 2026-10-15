@@ -64,14 +64,14 @@ E3 -> 63, EA -> 6A).
 
 | byte | value (stock capture: PCM 48 kHz 2.0) | meaning |
 |---|---|---|
-| 0 | 02 | stream type (0 unlocked, 1 analog, 2 PCM, ...) |
+| 0 | 02 | stream type: 0 unlocked, 1 analog, 2 PCM, 3 Dolby D, 4 DTS, 0E multichannel PCM, 13 DD+, 10 TrueHD, 11 DTS-HD MA |
 | 1-3 | 09 09 09 | sample rate codes (9 = 48 kHz) |
-| 4-5 | 05 00 | unknown |
-| 6-7 | 00 00 | flags |
+| 4-5 | 05 00 | the source's channel mask, bits as in 12-13 (AC-3 3/2: 8F 00) |
+| 6-7 | 00 00 | 01 01 when the source has LFE |
 | 8-11 | " 2.0" | channel string for the front panel |
 | 12-13 | FF 07 | output channel mask: the MCU lights the speaker indicators and closes the speaker relays only for channels set here; mcud sets it from the speaker setup |
 | 14 | 01 | bit 0: DSP detected OK |
-| 15-16 | 20 20 | channel layout codes (2/0, guessed) |
+| 15-16 | 20 20 | format code the front panel shows: 20 Dolby D, 30 DTS, 70 multichannel PCM; PCM 2.0 is 20 in the stock capture, 10 in AudioApp's table |
 | 17-18 | 00 00 | unknown |
 | 19 | 01 | always 1 |
 
@@ -270,7 +270,7 @@ ubus object `mcu`:
 |---|---|---|
 | `status` | | handshake stage, model, stream status, `update_check` (the MCU waits for an answer to its update check), the front panel's `display` mode, and once the MCU has sent them the input's interface, fs and channels and the settings marked "also in `mcu status`" below |
 | `identity` | `dsp_version`, `dsp_id` | strings for 41 and 46 |
-| `stream` | 0x42 fields by name | updates the stream status, sent if changed; the next speaker setup frame sets the mask again |
+| `stream` | 0x42 fields by name: `type`, `fs`, `channels` (" 5.1"), `mask`, `input_mask`, `lfe`, `format`; or all of it as `hex` | updates the stream status, sent if changed; the next speaker setup frame sets the mask again |
 | `outputs` | `mask` | 4A |
 | `levels` | 13 values | 45 |
 | `update` | one of `available` (bool), `progress` (%), `downloaded` (bytes), `result` (`ok`/`error`) | the 68 answers; a failed download is told as a failed 68 01 |

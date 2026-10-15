@@ -40,11 +40,12 @@ static int update_waiting;	/* asked for an update, not answered yet */
 /* PCM, 48 kHz, " 2.0", DSP detected: a capture from the stock firmware */
 static uint8_t stream[STREAM_LEN] = {
 	[STREAM_TYPE] = STREAM_PCM,
-	[STREAM_FS] = FS_48K, FS_48K, FS_48K, 0x05, 0x00,
+	[STREAM_FS] = FS_48K, FS_48K, FS_48K,
+	[STREAM_IN_MASK] = 0x05, 0x00,
 	[STREAM_CHANNELS] = ' ', '2', '.', '0',
 	[STREAM_MASK] = 0xff, 0x07,
 	[STREAM_DETECT] = 0x01,
-	[STREAM_LAYOUT] = 0x20, 0x20,
+	[STREAM_FORMAT] = 0x20, 0x20,
 	[STREAM_LEN - 1] = 0x01,
 };
 
