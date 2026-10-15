@@ -476,8 +476,8 @@ static void upmix(int32_t li, int32_t ri)
 	upmixed[DSPAUDIO_OUT_C] = 1.41421356f * c;
 	upmixed[DSPAUDIO_OUT_SW] = s->sub * m;
 
-	/* the difference, less of it the more the sound is in phase */
-	diff = 0.5f * (l - r) * s->surround * (1.0f - rho);
+	/* the difference, less of it the more the sound is in phase, by steer */
+	diff = 0.5f * (l - r) * s->surround * (1.0f - s->steer * rho);
 	diff = biquad(&s->band[0], sur_z[0], diff);
 	diff = biquad(&s->band[1], sur_z[1], diff);
 	sur_buf[sur_pos] = diff;

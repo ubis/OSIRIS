@@ -14,7 +14,7 @@
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		16
+#define DSPAUDIO_ABI		17
 
 #define DSPAUDIO_IN		8	/* 4 serializers x 2 slots, as the outputs */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
@@ -87,6 +87,7 @@ struct dspaudio_surround {
 	float smooth;		/* one-pole coefficient of the correlation estimate */
 	float center;		/* share of the in-phase sound moved to the centre */
 	float surround;		/* gain of the difference on the surrounds */
+	float steer;		/* 1: the difference only as far as the sound is not in phase */
 	float wrap;		/* share of the front pair added to the surrounds */
 	float back;		/* gain of the surrounds on the surround back pair */
 	float sub;		/* gain of (L + R) / 2 on the subwoofer */
