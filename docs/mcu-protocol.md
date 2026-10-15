@@ -42,7 +42,7 @@ E3 -> 63, EA -> 6A).
 
 | cmd | payload | meaning |
 |---|---|---|
-| 40 | none | sent once after 41 at start-up (meaning unknown) |
+| 40 | none | after 41 at start-up, and after an E5 that selects a network source; the MCU resends C0, C1 and E5 |
 | 41 | 14 ASCII | DSP version, shown by the receiver (stock "1.02/12609AHA ", ours "OSIRIS <build>") |
 | 42 | 20 bytes | stream status, see below; send **only when it changes** |
 | 45 | 26 bytes | channel levels: 13 x u16 LE (stock values F0 0A x3, 74 0E x10; encoding unknown) |
@@ -97,6 +97,10 @@ source comes back on the same input (C1 [5] from 0 to non-zero), the MCU keeps
 a digital input such as HDMI muted until a 0x42 arrives; AudioApp's 0x42
 changes as the receiver locks, so mcud sends it once then, on the first C1
 within a second of E5 or on the return, at most every 3 s.
+
+On a switch to a network source (E5 [0] 01, 02, 03, 05 or 06) AudioApp also
+sends a bare 0x40. Without it C1 [5] keeps dropping to 0, each 0x42 restarts
+the MCU's input sequence, and the NET input stays muted.
 
 ## MCU -> DSP
 
