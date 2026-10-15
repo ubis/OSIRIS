@@ -172,14 +172,17 @@ STATIC inline int INIT unlzo(u8 *input, int in_len,
 			goto exit_2;
 		}
 
-		/* decompress */
+		/* decompress, unless lzop stored the block as it was */
 		tmp = dst_len;
-		r = lzo1x_decompress_safe((u8 *) in_buf, src_len,
+		if (src_len < dst_len) {
+			r = lzo1x_decompress_safe((u8 *) in_buf, src_len,
 						out_buf, &tmp);
-
-		if (r != LZO_E_OK || dst_len != tmp) {
-			error("Compressed data violation");
-			goto exit_2;
+			if (r != LZO_E_OK || dst_len != tmp) {
+				error("Compressed data violation");
+				goto exit_2;
+			}
+		} else {
+			memcpy(out_buf, in_buf, src_len);
 		}
 
 		obytes_processed += dst_len;
