@@ -24,11 +24,24 @@
 #include "dspaudio.h"
 
 #define DSP_HZ		48000
-#define TAPS		16		/* per phase */
+#define TAPS		32		/* per phase */
+#define KAISER_BETA	8.0
 #define CHUNK		1024		/* input frames per read */
 #define FULL_WAIT_US	2000
 
 static volatile struct dspaudio_ring *ring;
+
+static double bessel_i0(double x)
+{
+	double s = 1.0, t = 1.0;
+	int i;
+
+	for (i = 1; i < 30; i++) {
+		t *= (x / (2.0 * i)) * (x / (2.0 * i));
+		s += t;
+	}
+	return s;
+}
 
 /* polyphase windowed sinc from rate to DSP_HZ: L phases, M input steps */
 static unsigned int up, down;
@@ -52,7 +65,7 @@ static int resampler_init(unsigned int rate)
 {
 	unsigned int g = gcd(rate, DSP_HZ), p, k;
 	/* below the lower Nyquist frequency of the two, with some margin */
-	double fc = 0.45 * (rate < DSP_HZ ? 1.0 : (double)DSP_HZ / rate);
+	double fc = 0.47 * (rate < DSP_HZ ? 1.0 : (double)DSP_HZ / rate);
 
 	up = DSP_HZ / g;
 	down = rate / g;
@@ -67,9 +80,10 @@ static int resampler_init(unsigned int rate)
 		for (k = 0; k < TAPS; k++) {
 			/* distance of input tap k from this output, in input samples */
 			double t = (double)k - (TAPS / 2 - 1) - (double)p / up;
-			/* Blackman window over the taps, 0..1 */
-			double u = (t + TAPS / 2) / TAPS, x = 2.0 * fc * t;
-			double w = 0.42 - 0.5 * cos(2.0 * M_PI * u) + 0.08 * cos(4.0 * M_PI * u);
+			/* Kaiser window over the taps, -1..1 */
+			double a = 2.0 * (t + TAPS / 2) / TAPS - 1.0, x = 2.0 * fc * t;
+			double w = bessel_i0(KAISER_BETA * sqrt(fmax(0.0, 1.0 - a * a))) /
+				   bessel_i0(KAISER_BETA);
 
 			h[k] = (x == 0 ? 1.0 : sin(M_PI * x) / (M_PI * x)) * w;
 			sum += h[k];
