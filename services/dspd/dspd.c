@@ -592,6 +592,23 @@ static int dsp_start(const char *image)
 	return -ETIMEDOUT;
 }
 
+/* IEC 61937 data types, as Pc names them */
+static const char *bitstream_name(uint32_t type)
+{
+	switch (type) {
+	case 0:
+		return "none";
+	case 1:
+		return "ac3";
+	case 11: case 12: case 13: case 17:
+		return "dts";
+	case 21:
+		return "eac3";
+	default:
+		return "other";
+	}
+}
+
 /* dBFS of a peak, -999 for silence */
 static int peak_db(uint32_t peak)
 {
@@ -650,6 +667,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_u8(&b, "subwoofer", subwoofer);
 	blobmsg_add_u8(&b, "double_bass", double_bass);
 	blobmsg_add_string(&b, "input", input_name[input]);
+	blobmsg_add_string(&b, "bitstream", bitstream_name(sh->bitstream));
 	blobmsg_add_u32(&b, "lfe_level", (uint32_t)lfe_level);
 	a = blobmsg_open_array(&b, "absent");
 	for (i = 0; i < DSPAUDIO_OUT; i++) {
