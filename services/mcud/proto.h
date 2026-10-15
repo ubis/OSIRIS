@@ -57,6 +57,9 @@ void proto_set_stream(const uint8_t *stream);
 void proto_get_stream(uint8_t *stream);
 void proto_set_levels(const uint8_t *levels);
 void proto_set_outputs(uint8_t mask);
+/* an ISCP command for the MCU, e.g. "SLI2B" (input NET); -1 when too long
+ * or during the handshake */
+int proto_iscp(const char *command);
 /* answers a pending MCU_POWER off / reset; -1 when that one is not pending */
 int proto_power_done(uint8_t state);
 /* answers the MCU_NETWORK items asked for since the last call */

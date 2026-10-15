@@ -228,6 +228,21 @@ void proto_ask_listening_mode(void)
 	queue(NET_ISCP, iscp_lmd_query, sizeof(iscp_lmd_query) - 1);
 }
 
+int proto_iscp(const char *command)
+{
+	char f[64];
+	int n = snprintf(f + 1, sizeof(f) - 1, "!1%s\r", command);
+
+	/* the handshake drops anything else */
+	if (stage != STAGE_READY || n < 0 || (size_t)n >= sizeof(f) - 1) {
+		return -1;
+	}
+
+	f[0] = 0;
+	queue(NET_ISCP, f, (uint16_t)(n + 1));
+	return 0;
+}
+
 static void handshake(uint8_t cmd, const uint8_t *d, uint16_t len)
 {
 	static const uint8_t done[][2] = {
