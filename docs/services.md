@@ -4,10 +4,14 @@ The programs that make the board work as the receiver's DSP. They run on
 the receiver's Linux and talk to each other over
 [ubus](https://openwrt.org/docs/techref/ubus):
 
-```
-  receiver MCU ── SPI ── mcud ──┐
-                                ├── ubus ── osirisd (what to do)
-  DSP (dspaudio) ── L2 ── dspd ─┘
+```mermaid
+flowchart LR
+    MCU[receiver MCU] <-->|SPI| mcud
+    mcud <--> ubus((ubus))
+    ubus <--> osirisd[osirisd<br/>what to do]
+    dspd <--> ubus
+    dspaudio[DSP: dspaudio] <-->|L2| dspd
+    AirPlay[Linux audio<br/>AirPlay] --> pcmd -->|ring| dspaudio
 ```
 
 | service | what it does |
@@ -18,9 +22,9 @@ the receiver's Linux and talk to each other over
 | [osirisd](../services/osirisd/) | the policy: decides what happens when the MCU reports something |
 | [pcmd](../services/pcmd/) | plays audio from Linux on the NET input: PCM from a pipe into the DSP's ring |
 
-mcud and dspd only do what they are told and report what happens; every
-decision is in osirisd, a LuaJIT script that is easy to change on the
-receiver itself.
+All decisions are in osirisd, a LuaJIT script you can edit on the receiver
+itself; mcud and dspd carry out its calls and report events, and pcmd plays
+what comes down its pipe.
 
 `/etc/init.d/S10osiris` starts them at boot, before the network. They log to syslog (`logread`);
 started by hand from a terminal, they log there instead.
@@ -47,6 +51,9 @@ mcud -v                           # (with S10osiris stopped) log every frame
 | `mcu.input` | input or stream format changed |
 | `mcu.listening_mode` | listening mode changed: `mode` (the MCU's byte, codes in [mcu-protocol.md](mcu-protocol.md)) and `name` (`plii_movie`, `all_ch_stereo`, ...) |
 | `mcu.tone` | front bass and treble changed, in dB |
+| `mcu.equalizer` | manual equalizer on or off, and the band levels |
+| `mcu.audyssey` | Dynamic EQ, its reference offset, Dynamic Volume |
+| `mcu.av_sync` | A/V sync, in ms |
 | `mcu.distance` | speaker distances changed, in cm per speaker (also in `mcu status`) |
 | `mcu.network` | the network menu asks for the settings; answer with `ubus call mcu network` |
 | `mcu.power` | the receiver goes to standby (`off`) or resets (`reset`); confirm with `ubus call mcu power` |
@@ -70,9 +77,8 @@ protocol: framing, timing, the start-up sequence and every command.
 dspd copies the DSP firmware (`/usr/lib/osiris/dspaudio.bin`) into the DSP's
 memory, starts it and releases the mute lines once it runs. The two share a
 block of DSP memory ([dspaudio.h](../services/dspd/dspaudio.h)): the DSP reports its
-state and input levels there, dspd writes a gain and a source for each
-output and the tone filters: a low shelf for bass (100 Hz) and a high shelf
-for treble (10 kHz) on the front pair, worked out by dspd from the dB values.
+state and input levels there, dspd writes the gains, filters and delays it
+works out from the `dsp set` values below.
 
 ```sh
 ubus call dsp status                              # state, counters, input peaks, all settings
@@ -86,7 +92,7 @@ ubus call dsp set '{"surround": "movie"}'           # surround from stereo: "mov
 ubus call dsp set '{"reverb": "hall"}'              # with surround on: "hall", "theater", "club", "studio", "tv" or "off"
 ubus call dsp set '{"crossover": {"fl": 80, "c": 80}, "subwoofer": true, "sub_lowpass": 120}'  # Hz, 0 = large / no low pass
 ubus call dsp set '{"double_bass": true, "absent": ["sbl", "sbr"]}'  # large fronts' bass to the sub too; outputs without a speaker
-ubus call dsp set '{"input": "digital"}'           # "analog", "digital" (HDMI's left and right come swapped) or "multichannel" (PCM from HDMI)
+ubus call dsp set '{"input": "digital"}'           # "analog", "digital" (HDMI's left and right come swapped), "multichannel" (PCM from HDMI) or "network" (pcmd's ring)
 ubus call dsp set '{"lfe_level": -10}'            # dB on top of the LFE channel's +10, -100 = off
 ubus call dsp set '{"eq": {"fl": [0, 0, 3], "sw": [5]}}'  # dB per band from 25 Hz up (25, 40, 63 ... 16k), at most 6 bands per output
 ubus call dsp set '{"av_sync": 200}'              # ms every output is held back, in SDRAM above Linux (mem=56M)
@@ -148,6 +154,8 @@ What it does today:
     a small room
   - everything else, Theater-Dimensional, Enhanced, Mono Movie, THX Surround
     EX and THX U2 among them, plays on the front pair
+  - with multichannel PCM from HDMI the source plays as it is in every mode
+    but Stereo, All Ch Stereo and Full Mono, which fold it down
 - plays pink noise on the channel level calibration asks for (front high
   and wide on the surround back pair)
 - passes the receiver's bass and treble to the DSP and keeps them in the
@@ -159,6 +167,12 @@ What it does today:
   crossover and distance of what the receiver's layout puts there (surround
   back, front high or front wide)
 - passes the speaker distances to the DSP and keeps them in the state file
+- passes the equalizer, A/V sync, Dynamic EQ (from the volume) and Dynamic
+  Volume to the DSP
+- tells the DSP the input and the source's sample rate, and the LFE level
+  for multichannel PCM
+- with 5.1 and surround back speakers, has them repeat the surrounds (not
+  in Direct and Pure Audio)
 - plays the ring (pcmd, AirPlay) on the NET input, with the level meter on
 - reads shairport-sync's metadata pipe: the track and the play state go to
   the front panel, and a pause or skip makes pcmd drop its queued audio
@@ -180,6 +194,6 @@ start-stop-daemon -K -p /var/run/osirisd.pid
 
 ## Building
 
-`make buildroot` builds all four into the root file system and the update
+`make buildroot` builds all five into the root file system and the update
 bundle, and always rebuilds them, so a change here only needs that.
 `make dspaudio` builds the DSP firmware alone.

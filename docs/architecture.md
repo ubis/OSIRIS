@@ -40,7 +40,7 @@ Some things that are not obvious:
 
 - The MCU configures the PCM9211 and the PCM1690 itself, and it applies the
   master volume in the analog stage after the DAC. The volume it sends to
-  the DSP is for information only.
+  the DSP only sets how much Dynamic EQ adds.
 - The DSP drives the bit and word clocks of the outputs, but the master
   clock comes from the PCM9211.
 - The MCU expects a DSP on the other end of the link. It refuses to play
@@ -116,7 +116,7 @@ board if user space hangs.
 
 ## The services
 
-On Linux, four small programs do the receiver's work. They talk over
+On Linux, five small programs do the receiver's work. They talk over
 [ubus](https://openwrt.org/docs/techref/ubus), the message bus from OpenWrt.
 
 ```mermaid
@@ -126,6 +126,7 @@ flowchart LR
     dspd <--> ubus
     osirisd <--> ubus
     dspd <-->|L2 shared block| dspaudio[dspaudio<br/>on the DSP]
+    pcmd -->|ring| dspaudio
 ```
 
 - **mcud** owns the SPI link to the MCU. It does the start-up handshake and
@@ -133,22 +134,15 @@ flowchart LR
   outputs). Everything else the MCU says becomes a ubus event:
   `mcu.volume`, `mcu.input`, `mcu.listening_mode` and so on.
 - **dspd** loads the DSP firmware, starts it, releases the mute lines and
-  offers `dsp status` and `dsp set` (gain, mute, outputs, bass and treble,
-  test noise, distances, surround decoder, reverb, crossovers, subwoofer,
-  missing speakers).
+  offers `dsp status` and `dsp set` ([services.md](services.md#dspd-and-dspaudio)
+  lists the settings).
 - **osirisd** is the policy, a LuaJIT script: it listens to the events and
-  decides what happens. It names the system after the receiver model, sets
-  the DSP version the receiver shows, picks the speakers, the surround
-  decoder and the reverb from the listening mode, passes bass and treble,
-  the speaker setup and the distances on, plays the test noise for the
-  level setup, answers the network menu and offers updates from a USB
-  stick.
+  decides what happens ([services.md](services.md#osirisd) lists what it
+  does today).
 - **dspaudio** is the DSP firmware itself.
 - **pcmd** feeds audio from Linux to the DSP for the NET input.
 
-mcud and dspd do what they are told and report what happens, all decisions
-are in osirisd, which you can edit on the receiver. The
-[services README](services.md) has the commands, and
+[services.md](services.md) has the commands and how the work is split, and
 [mcu-protocol.md](mcu-protocol.md) the MCU protocol.
 
 ## The audio path
@@ -157,35 +151,36 @@ are in osirisd, which you can edit on the receiver. The
 flowchart LR
     IN[Tuner, analog,<br/>digital inputs] --> DIR[PCM9211]
     DIR -->|I2S, AXR1_4| RX[McASP1 receive]
+    HDMI[HDMI multichannel] -->|AXR1_5, 8, 9| RX
     subgraph dspaudio
-        RX --> TONE[bass and treble<br/>shelf filters]
-        TONE --> MIX[mix: L and R gain<br/>per output, or the<br/>surround decoder<br/>and reverb]
+        RX --> TONE[bass and treble<br/>on the front pair]
+        RING[pcmd's ring<br/>on NET] --> TONE
+        TONE --> MIX[mix: a gain per<br/>input and output, or<br/>the surround decoder<br/>and reverb]
+        RX -->|other channels| MIX
         NOISE[pink noise] --> MIX
-        MIX --> BASS[bass management:<br/>small speakers' bass<br/>to the subwoofer<br/>or the front pair]
-        BASS --> DELAY[delay per output<br/>speaker distance]
+        MIX --> DVOL[Dynamic Volume]
+        DVOL --> BASS[bass management:<br/>small speakers' bass<br/>to the subwoofer<br/>or the front pair]
+        BASS --> EQ[equalizer,<br/>Dynamic EQ]
+        EQ --> DELAY[delay per output<br/>speaker distance,<br/>A/V sync]
         DELAY --> TX[McASP1 transmit]
     end
     TX -->|AXR1_0 front<br/>AXR1_1 centre, sub<br/>AXR1_2 surround<br/>AXR1_3 surround back| DAC[PCM1690]
     DAC --> VOL[MCU analog volume] --> AMP[Amplifiers]
 ```
 
-dspaudio polls McASP1 directly, without interrupts or DMA. For every input
-sample pair it runs the bass and treble filters and computes the eight
-outputs: each the left and the right input times a gain of its own, or, in
-the surround modes, from a matrix decoder that moves correlated, in-phase
-sound to the centre and the difference of left and right to the surrounds;
-the sound field modes add a reverb (a feedback delay network whose delay
-lines are in the on-chip shared RAM).
-It plays the test noise on the output the level setup asks for, moves the
-bass of small speakers to the subwoofer, or to the front pair when there is
-none (Linkwitz-Riley crossovers), limits each output below full scale, holds
-each output back by its speaker's distance and writes them to the four
-serial lines of the DAC. dspd sets these gains in a block of DSP memory both sides share
-([dspaudio.h](../services/dspd/dspaudio.h)), and the DSP reports its state,
-counters and input peaks in the same block.
-
-Next on the DSP: A/V sync, Late Night, Re-EQ, Music Optimizer and the
-headphone downmix.
+dspaudio polls McASP1, without interrupts or DMA. Each frame it takes the
+front pair from the PCM9211, or from pcmd's ring on NET, and the other
+channels of multichannel PCM, applies bass and treble to the front pair,
+and makes the eight
+outputs: a gain per input channel, or in the surround modes a matrix
+decoder (in-phase sound to the centre, the difference of left and right to
+the surrounds), with a reverb in the sound field modes. Then come Dynamic
+Volume, bass management (Linkwitz-Riley crossovers), the equalizer and
+Dynamic EQ, a limiter, and the delays for the speaker distances and A/V
+sync.
+Above 48 kHz it processes every other frame. dspd sets all of it in a block
+of DSP memory both sides share ([dspaudio.h](../services/dspd/dspaudio.h)),
+where the DSP reports its state, counters and levels.
 
 ## Software versions
 

@@ -36,9 +36,9 @@ The first `make buildroot` downloads the sources Buildroot needs (kept in
 | `dist/images/osiris-<version>.tar` | the bundle: kernel, root file system and U-Boot, for installing and updating |
 | `dist/images/uImage-installer` | the installer: Linux with the system and the bundle built in, runs from RAM |
 
-Without building, take the same files from the
-[releases](https://github.com/ubis/osiris/releases): `dspboot-<version>.zip`,
-`osiris-<version>.tar` and `uImage-installer`.
+Without building, take `osiris-<version>.tar` and `uImage-installer` from
+an OSIRIS release and `dspboot-<version>.zip` from a dspboot release on the
+[releases](https://github.com/ubis/osiris/releases) page.
 
 ## Trying it from RAM
 
