@@ -154,7 +154,8 @@ static int crossover[DSPAUDIO_OUT];	/* Hz, 0 = large: full range */
 static int subwoofer, double_bass;
 static int lfe_level;			/* dB, the receiver's LFE level; -100 off */
 static int av_sync;			/* ms */
-static double sample_hz = SAMPLE_HZ;	/* the source's: everything is worked out for it */
+static double sample_hz = SAMPLE_HZ;	/* the source's */
+static double proc_hz = SAMPLE_HZ;	/* the DSP's: above 48 kHz it processes every other frame */
 static int loudness = -1;		/* dB of bass boost, -1 off */
 static int dynamic_volume;		/* 0 off, 1 light, 2 medium, 3 heavy */
 
@@ -277,7 +278,7 @@ static const double downmix[2][DSPAUDIO_IN] = {
 /* RBJ cookbook shelving filter, slope 1: low shelf for bass, high for treble */
 static void shelf(volatile struct dspaudio_biquad *q, double hz, int db, int high)
 {
-	double a = pow(10.0, db / 40.0), w = 2.0 * M_PI * hz / sample_hz;
+	double a = pow(10.0, db / 40.0), w = 2.0 * M_PI * hz / proc_hz;
 	double c = cos(w), alpha = sin(w) / 2.0 * sqrt(2.0), r = 2.0 * sqrt(a) * alpha;
 	double s = high ? -1.0 : 1.0, a0;
 
@@ -292,7 +293,7 @@ static void shelf(volatile struct dspaudio_biquad *q, double hz, int db, int hig
 /* RBJ cookbook high or low pass, Q 0.707 */
 static void pass(volatile struct dspaudio_biquad *q, double hz, int high)
 {
-	double w = 2.0 * M_PI * hz / sample_hz, c = cos(w), alpha = sin(w) / (2.0 * M_SQRT1_2);
+	double w = 2.0 * M_PI * hz / proc_hz, c = cos(w), alpha = sin(w) / (2.0 * M_SQRT1_2);
 	double a0 = 1.0 + alpha, k = high ? (1.0 + c) / 2.0 : (1.0 - c) / 2.0;
 
 	q->b0 = k / a0;
@@ -305,7 +306,7 @@ static void pass(volatile struct dspaudio_biquad *q, double hz, int high)
 /* RBJ cookbook peaking filter */
 static void peak(volatile struct dspaudio_biquad *q, double hz, int db)
 {
-	double a = pow(10.0, db / 40.0), w = 2.0 * M_PI * hz / sample_hz;
+	double a = pow(10.0, db / 40.0), w = 2.0 * M_PI * hz / proc_hz;
 	double alpha = sin(w) / (2.0 * EQ_Q), a0 = 1.0 + alpha / a;
 
 	q->b0 = (1.0 + alpha * a) / a0;
@@ -417,14 +418,14 @@ static void apply_reverb(void)
 
 	if (p) {
 		for (i = 0; i < DSPAUDIO_REVERB_LINES; i++) {
-			k = lround(reverb_lines[i] * p->size * sample_hz / SAMPLE_HZ);
+			k = lround(reverb_lines[i] * p->size * proc_hz / SAMPLE_HZ);
 			k = k > DSPAUDIO_REVERB_LINE_MAX ? DSPAUDIO_REVERB_LINE_MAX : k;
 			n.length[i] = k;
-			n.decay[i] = pow(10.0, -3.0 * k / (p->time_s * sample_hz));
+			n.decay[i] = pow(10.0, -3.0 * k / (p->time_s * proc_hz));
 		}
 
 		n.damping = p->damping;
-		k = lround(p->predelay_ms * sample_hz / 1000.0);
+		k = lround(p->predelay_ms * proc_hz / 1000.0);
 		n.predelay = k > DSPAUDIO_PREDELAY_MAX ? DSPAUDIO_PREDELAY_MAX : k;
 		n.front = p->front;
 		n.surround = p->surround;
@@ -444,7 +445,7 @@ static void apply_reverb(void)
 
 static float per_frame(double ms)
 {
-	return 1.0 - exp(-1000.0 / (ms * sample_hz));
+	return 1.0 - exp(-1000.0 / (ms * proc_hz));
 }
 
 static void apply_dvol(void)
@@ -473,7 +474,7 @@ static void apply_dvol(void)
 
 static uint32_t ms_samples(double ms)
 {
-	uint32_t n = lround(ms * sample_hz / 1000.0);
+	uint32_t n = lround(ms * proc_hz / 1000.0);
 
 	return n > DSPAUDIO_SURROUND_DELAY_MAX ? DSPAUDIO_SURROUND_DELAY_MAX : n;
 }
@@ -490,7 +491,7 @@ static void apply_surround(void)
 	struct dspaudio_surround n = { 0 };
 
 	if (p) {
-		n.smooth = 1.0 - exp(-1000.0 / (p->tau_ms * sample_hz));
+		n.smooth = 1.0 - exp(-1000.0 / (p->tau_ms * proc_hz));
 		/* without a centre speaker the voice stays in the front pair */
 		n.center = absent & 1u << DSPAUDIO_OUT_C ? 0 : p->center;
 		n.surround = p->surround;
@@ -536,7 +537,7 @@ static void apply_tone(void)
 /* every output held back by as much, the delay line takes 2.7 s at 48 kHz */
 static void apply_av_sync(void)
 {
-	long n = av_sync > 0 ? lround(av_sync * sample_hz / 1000.0) : 0;
+	long n = av_sync > 0 ? lround(av_sync * proc_hz / 1000.0) : 0;
 
 	sh->av_delay = n < DSPAUDIO_AV_LEN ? n : DSPAUDIO_AV_LEN - 1;
 }
@@ -554,7 +555,7 @@ static void apply_delays(void)
 	}
 
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
-		d = distance[out] ? (int)lround((far - distance[out]) * sample_hz / SOUND_CM_S) : 0;
+		d = distance[out] ? (int)lround((far - distance[out]) * proc_hz / SOUND_CM_S) : 0;
 		sh->delay[out] = d > DSPAUDIO_DELAY_MAX ? DSPAUDIO_DELAY_MAX : d;
 	}
 }
@@ -619,6 +620,7 @@ static void apply(void)
 	}
 
 	sh->inputs = multi ? 0xff : 0x03;
+	sh->decim = sample_hz > SAMPLE_HZ ? 2 : 1;
 	sh->swap = input != INPUT_ANALOG;
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
 		for (in = 0; in < DSPAUDIO_IN; in++) {
@@ -975,6 +977,7 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 	const struct surround_preset *new_surround = surround;
 	const struct reverb_preset *new_reverb = reverb;
 	int new_outputs = outputs, new_input = input, nb = bass, nt = treble, level = noise_level;
+	uint32_t new_hz = 0;
 	int nout = noise_out, lowpass = sub_lowpass, i;
 	int dist[DSPAUDIO_OUT], xover[DSPAUDIO_OUT], new_eq[DSPAUDIO_OUT][EQ_BANDS];
 	uint32_t new_absent = absent;
@@ -993,6 +996,14 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 	if (tb[SET_INPUT]) {
 		new_input = name_index(blobmsg_get_string(tb[SET_INPUT]), input_name, __INPUT_MAX);
 		if (new_input < 0) {
+			return UBUS_STATUS_INVALID_ARGUMENT;
+		}
+	}
+
+	/* above 96 kHz even every other frame is too much for the DSP */
+	if (tb[SET_FS]) {
+		new_hz = blobmsg_get_u32(tb[SET_FS]);
+		if (new_hz < 32000 || new_hz > 96000) {
 			return UBUS_STATUS_INVALID_ARGUMENT;
 		}
 	}
@@ -1099,23 +1110,16 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 	input = new_input;
 
 	/* a new sample rate: every filter, delay and time constant again */
-	if (tb[SET_FS]) {
-		uint32_t hz = blobmsg_get_u32(tb[SET_FS]);
-
-		if (hz < 32000 || hz > 192000) {
-			return UBUS_STATUS_INVALID_ARGUMENT;
-		}
-
-		if (hz != sample_hz) {
-			sample_hz = hz;
-			apply_tone();
-			apply_delays();
-			apply_av_sync();
-			apply_dvol();
-			apply_surround();
-			apply_reverb();
-			apply_bass();
-		}
+	if (tb[SET_FS] && new_hz != sample_hz) {
+		sample_hz = new_hz;
+		proc_hz = new_hz > SAMPLE_HZ ? new_hz / 2.0 : new_hz;
+		apply_tone();
+		apply_delays();
+		apply_av_sync();
+		apply_dvol();
+		apply_surround();
+		apply_reverb();
+		apply_bass();
 	}
 
 	/* only on a change: it starts the leveller over */
