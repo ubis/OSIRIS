@@ -1023,7 +1023,8 @@ void dspaudio_main(void)
 				/* the receiver's tone controls are for the front pair */
 				if (decim == 2) {
 					rx_acc[in] += smp >> 1;
-				} else {
+				} else if (in >= 2 || !SH->ring_on) {
+					/* the ring's frame goes in as a whole, below */
 					input[in] = !(used & (1u << in)) ? 0 : in < 2 ? tone(in, smp) : smp;
 				}
 
@@ -1036,8 +1037,10 @@ void dspaudio_main(void)
 			/* a frame in: every frame, or every other one, the mean of two */
 			ready = odd && (decim == 1 || (rx_odd ^= 1) == 0);
 			for (in = 0; ready && decim == 2 && in < DSPAUDIO_IN; in++) {
-				input[in] = !(used & (1u << in)) ? 0 :
-					    in < 2 ? tone(in, rx_acc[in]) : rx_acc[in];
+				if (in >= 2 || !SH->ring_on) {
+					input[in] = !(used & (1u << in)) ? 0 :
+						    in < 2 ? tone(in, rx_acc[in]) : rx_acc[in];
+				}
 				rx_acc[in] = 0;
 			}
 
