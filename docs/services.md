@@ -176,6 +176,8 @@ What it does today:
 - plays the ring (pcmd, AirPlay) on the NET input, with the level meter on
 - reads shairport-sync's metadata pipe: the track and the play state go to
   the front panel, and a pause or skip makes pcmd drop its queued audio
+- switches the receiver to NET when an AirPlay sender starts or resumes
+  playing
 - keeps the front panel mode DISPLAY picked in the state file
 - answers the network menu with the address, link state and MAC of eth0
 - offers an update bundle of another version on a USB stick when the
