@@ -724,11 +724,14 @@ static void bass_finish(float *y)
 static int32_t frame[DSPAUDIO_OUT];
 
 /*
- * The A/V sync delay line, in SDRAM. L1D caches it (MAR195 covers
- * 0xC3000000-0xC3FFFFFF), so reading back a frame is one line fill for
- * several frames.
+ * The A/V sync delay line, in SDRAM, cached (MAR195 covers 0xC3000000 to
+ * 0xC3FFFFFF). L1D does not keep writes: the top 64 KiB of L2, which the
+ * image and the shared block below 0x11820000 leave alone, become cache,
+ * so writes land there and go out to SDRAM a line at a time.
  */
 #define MAR(n)		(0x01848000u + 4 * (n))
+#define L2CFG		0x01840000u
+#define L2CFG_64K	2		/* L2MODE: 64 KiB cache at the top of L2 */
 #define AV_MASK		(DSPAUDIO_AV_LEN - 1)
 
 static int32_t (*const av_buf)[DSPAUDIO_OUT] = (int32_t (*)[DSPAUDIO_OUT])DSPAUDIO_AV_BUF;
@@ -738,6 +741,8 @@ static void av_clear(void)
 {
 	unsigned int i, out;
 
+	REG(L2CFG) = (REG(L2CFG) & ~7u) | L2CFG_64K;
+	(void)REG(L2CFG);
 	REG(MAR(DSPAUDIO_AV_BUF >> 24)) = 1;
 	for (i = 0; i < DSPAUDIO_AV_LEN; i++) {
 		for (out = 0; out < DSPAUDIO_OUT; out++) {
@@ -759,11 +764,7 @@ static float limit(unsigned int out, float x)
 	return peak_env[out] > LIMIT ? x * (LIMIT / peak_env[out]) : x;
 }
 
-/*
- * A frame takes longer than one slot: it is made in two halves, the mix
- * and half the bass management after the first slot, the rest after the
- * second, while the samples going out are the previous frame's.
- */
+/* a frame takes longer than one slot: the samples going out are the last one's */
 static float frame_y[DSPAUDIO_OUT];
 
 static int frame_noise;		/* level calibration: the noise alone, no bass split */
@@ -852,7 +853,12 @@ apply:
 	}
 }
 
-static void frame_first(void)
+/*
+ * A processed frame is made in four steps. At 48 kHz two run after each
+ * slot; above it each slot gets one, every other frame is processed and
+ * played twice, and the inputs are the mean of two frames.
+ */
+static void frame_step1(void)
 {
 	unsigned int out;
 
@@ -874,24 +880,39 @@ static void frame_first(void)
 	bass_sub = 0.0f;
 	if (!frame_noise) {
 		bass_split(frame_y, 0, DSPAUDIO_OUT / 2);
-		/* the subwoofer's is only final after the second half */
+	}
+}
+
+static void frame_step2(void)
+{
+	/* the subwoofer's is only final after step 3 */
+	if (!frame_noise) {
 		eq_split(frame_y, 0, DSPAUDIO_OUT_SW);
 	}
 }
 
-static void frame_second(void)
+static void frame_step3(void)
+{
+	float *y = frame_y;
+
+	if (!frame_noise) {
+		bass_split(y, DSPAUDIO_OUT / 2, DSPAUDIO_OUT);
+		bass_finish(y);
+	} else if (bm->subwoofer) {
+		/* the subwoofer is measured as it plays: through its low pass */
+		y[DSPAUDIO_OUT_SW] = cascade(bm->sub, sub_z, y[DSPAUDIO_OUT_SW]);
+	}
+}
+
+/* the processed frame goes out from the next slot 0 on */
+static void frame_step4(void)
 {
 	uint32_t d, r;
 	float *y = frame_y;
 	unsigned int out;
 
 	if (!frame_noise) {
-		bass_split(y, DSPAUDIO_OUT / 2, DSPAUDIO_OUT);
-		bass_finish(y);
 		eq_split(y, DSPAUDIO_OUT_SW, DSPAUDIO_OUT);
-	} else if (bm->subwoofer) {
-		/* the subwoofer is measured as it plays: through its low pass */
-		y[DSPAUDIO_OUT_SW] = cascade(bm->sub, sub_z, y[DSPAUDIO_OUT_SW]);
 	}
 
 	d = SH->av_delay;
@@ -925,7 +946,9 @@ static void report_start(void)
 
 void dspaudio_main(void)
 {
-	uint32_t xs, rs, idle = 0, mag, used = 0, was, front[2] = { 0, 0 };
+	uint32_t xs, rs, idle = 0, mag, used = 0, was, front[2] = { 0, 0 }, decim, last_decim = 1;
+	int32_t rx_acc[DSPAUDIO_IN] = { 0 };
+	unsigned int rx_odd = 0, tx_odd = 0, ready;
 	int32_t smp;
 	unsigned int slot, odd, in, i, j;
 
@@ -948,6 +971,16 @@ void dspaudio_main(void)
 	 * domains, so never block on one side: serve whichever is ready.
 	 */
 	for (;;) {
+		/* a new rate: no half-sum or half-made frame carries over */
+		decim = SH->decim == 2 ? 2 : 1;
+		if (decim != last_decim) {
+			last_decim = decim;
+			rx_odd = tx_odd = 0;
+			for (in = 0; in < DSPAUDIO_IN; in++) {
+				rx_acc[in] = 0;
+			}
+		}
+
 		rs = REG(RSTAT);
 		if (rs & STAT_DATA) {
 			odd = (rs & STAT_ODD_SLOT) ? 1 : 0;
@@ -970,14 +1003,27 @@ void dspaudio_main(void)
 				}
 
 				/* the receiver's tone controls are for the front pair */
-				input[in] = !(used & (1u << in)) ? 0 : in < 2 ? tone(in, smp) : smp;
+				if (decim == 2) {
+					rx_acc[in] += smp >> 1;
+				} else {
+					input[in] = !(used & (1u << in)) ? 0 : in < 2 ? tone(in, smp) : smp;
+				}
+
 				mag = smp < 0 ? -(uint32_t)smp : (uint32_t)smp;
 				if (mag > SH->peak[in]) {
 					SH->peak[in] = mag;
 				}
 			}
 
-			if (odd && SH->surround.on) {
+			/* a frame in: every frame, or every other one, the mean of two */
+			ready = odd && (decim == 1 || (rx_odd ^= 1) == 0);
+			for (in = 0; ready && decim == 2 && in < DSPAUDIO_IN; in++) {
+				input[in] = !(used & (1u << in)) ? 0 :
+					    in < 2 ? tone(in, rx_acc[in]) : rx_acc[in];
+				rx_acc[in] = 0;
+			}
+
+			if (ready && SH->surround.on) {
 				upmix(input[0], input[1]);
 			}
 
@@ -996,10 +1042,19 @@ void dspaudio_main(void)
 				REG(XBUF(i)) = (uint32_t)frame[2 * i + slot];
 			}
 
-			if (slot == 0) {
-				frame_first();
+			if (decim != 2) {
+				if (slot == 0) {
+					frame_step1();
+					frame_step2();
+				} else {
+					frame_step3();
+					frame_step4();
+				}
+			} else if (slot == 0) {
+				tx_odd ? frame_step3() : frame_step1();
 			} else {
-				frame_second();
+				tx_odd ? frame_step4() : frame_step2();
+				tx_odd ^= 1;
 			}
 
 			idle = 0;
