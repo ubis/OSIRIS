@@ -11,9 +11,11 @@ SHAIRPORT_SYNC_LICENSE_FILES = LICENSES
 SHAIRPORT_SYNC_DEPENDENCIES = openssl popt libconfig host-pkgconf
 SHAIRPORT_SYNC_AUTORECONF = YES
 
-# classic AirPlay only, into a pipe; tinysvcmdns instead of avahi
+# classic AirPlay only, into a pipe; tinysvcmdns instead of avahi; track
+# info and play state on the metadata pipe
 SHAIRPORT_SYNC_CONF_OPT = \
 	--with-pipe \
+	--with-metadata \
 	--with-tinysvcmdns \
 	--with-ssl=openssl \
 	--without-alsa
