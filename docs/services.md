@@ -85,6 +85,7 @@ ubus call dsp set '{"reverb": "hall"}'              # with surround on: "hall", 
 ubus call dsp set '{"crossover": {"fl": 80, "c": 80}, "subwoofer": true, "sub_lowpass": 120}'  # Hz, 0 = large / no low pass
 ubus call dsp set '{"double_bass": true, "absent": ["sbl", "sbr"]}'  # large fronts' bass to the sub too; outputs without a speaker
 ubus call dsp set '{"input": "digital"}'           # "analog", "digital" (HDMI's left and right come swapped) or "multichannel" (PCM from HDMI)
+ubus call dsp set '{"lfe_level": -10}'            # dB on top of the LFE channel's +10, -100 = off
 ```
 
 dspaudio takes the I2S input from the PCM9211 (the tuner and analog inputs

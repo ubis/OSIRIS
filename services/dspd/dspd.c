@@ -150,6 +150,7 @@ static const struct reverb_preset *reverb;	/* NULL: off */
 #define DOUBLE_BASS_HZ	80
 static int crossover[DSPAUDIO_OUT];	/* Hz, 0 = large: full range */
 static int subwoofer, double_bass;
+static int lfe_level;			/* dB, the receiver's LFE level; -100 off */
 static int sub_lowpass = 120;		/* Hz, 0 = none */
 static uint32_t absent;			/* outputs without a speaker */
 
@@ -470,7 +471,7 @@ static void discrete(double (*m)[DSPAUDIO_IN])
 	}
 
 	/* the LFE channel is recorded 10 dB down */
-	m[DSPAUDIO_OUT_SW][DSPAUDIO_IN_LFE] = LFE_GAIN;
+	m[DSPAUDIO_OUT_SW][DSPAUDIO_IN_LFE] = lfe_level <= -100 ? 0 : LFE_GAIN * pow(10.0, lfe_level / 20.0);
 
 	fold(m, DSPAUDIO_OUT_SBL, DSPAUDIO_OUT_SL, DSPAUDIO_OUT_SL, 1);
 	fold(m, DSPAUDIO_OUT_SBR, DSPAUDIO_OUT_SR, DSPAUDIO_OUT_SR, 1);
@@ -649,6 +650,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_u8(&b, "subwoofer", subwoofer);
 	blobmsg_add_u8(&b, "double_bass", double_bass);
 	blobmsg_add_string(&b, "input", input_name[input]);
+	blobmsg_add_u32(&b, "lfe_level", (uint32_t)lfe_level);
 	a = blobmsg_open_array(&b, "absent");
 	for (i = 0; i < DSPAUDIO_OUT; i++) {
 		if (absent & (1u << i)) {
@@ -665,7 +667,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
 	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, SET_CROSSOVER, SET_SUBWOOFER,
 	SET_SUB_LOWPASS, SET_REVERB, SET_DOUBLE_BASS, SET_ABSENT, SET_INPUT,
-	__SET_MAX };
+	SET_LFE_LEVEL, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -684,6 +686,7 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_DOUBLE_BASS] = { .name = "double_bass", .type = BLOBMSG_TYPE_BOOL },
 	[SET_ABSENT] = { .name = "absent", .type = BLOBMSG_TYPE_ARRAY },
 	[SET_INPUT] = { .name = "input", .type = BLOBMSG_TYPE_STRING },
+	[SET_LFE_LEVEL] = { .name = "lfe_level", .type = BLOBMSG_TYPE_INT32 },
 };
 
 static int out_index(const char *name)
@@ -888,6 +891,11 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 	}
 
 	input = new_input;
+
+	if (tb[SET_LFE_LEVEL]) {
+		lfe_level = (int32_t)blobmsg_get_u32(tb[SET_LFE_LEVEL]);
+		lfe_level = lfe_level > 0 ? 0 : lfe_level;
+	}
 
 	if (tb[SET_BASS] || tb[SET_TREBLE]) {
 		bass = nb;
