@@ -57,6 +57,7 @@ Tested on the TX-NR717.
 | Manual equalizer | ✅ |
 | Surround from stereo in the Surround, PLII, Neo:6, Neural and THX Cinema/Music/Games modes | ✅ ¹ |
 | Sound field modes (Orchestra, Unplugged, Studio-Mix, TV Logic, ...) | ✅ ¹ |
+| Surround back speakers from 5.1 sources | ✅ ¹ |
 | Factory reset | ❓ not tested |
 | Zone line outputs, headphones | ❓ not tested |
 | Subwoofer pre-out | ✅ |
@@ -65,18 +66,20 @@ Tested on the TX-NR717.
 | 12 V trigger, IR input | ❓ not tested |
 | HDMI video switching, on-screen menu | ❓ not tested |
 | Digital inputs (optical, coax), PCM | ❓ not tested, no sources yet |
-| A/V sync, Late Night, Re-EQ, Music Optimizer, headphone downmix | ❌ not yet |
-| Audyssey 2EQ, Dynamic EQ, Dynamic Volume | ❌ not yet |
-| HDMI audio, PCM stereo and multichannel | ✅ (5.1 tested) |
+| A/V sync | ✅ |
+| Dynamic EQ, Dynamic Volume | ✅ ¹ |
+| Late Night, Re-EQ, Music Optimizer, headphone downmix | ❌ not yet |
+| Audyssey 2EQ | ❌ not yet |
+| HDMI audio, PCM stereo and multichannel, up to 96 kHz | ✅ (5.1 tested) |
 | HDMI ARC | ❌ not yet |
 | Network control (Onkyo Remote app) | ❌ not yet |
-| Network audio, USB playback, NET menu | ❌ not yet |
+| AirPlay | 🚧 in progress: plays through the DSP, the NET input not yet |
+| Spotify, DLNA, internet radio, USB playback, NET menu | ❌ not yet |
 | Dolby Digital / DTS decoding | ❌ not yet, the bitstreams are muted; maybe in the far future (open AC-3 / DTS core decoders like liba52 exist) |
 
-¹ OSIRIS's own processing: it does what these modes are for, surround
-from stereo and a room around the music, but it is not Dolby's, DTS's,
-THX's or Onkyo's algorithm, so it does not sound exactly like the stock
-firmware.
+¹ OSIRIS's own processing: it does what these features are for, but it
+is not Dolby's, DTS's, THX's, Audyssey's or Onkyo's algorithm, so it
+does not sound exactly like the stock firmware.
 
 ## Documentation
 
