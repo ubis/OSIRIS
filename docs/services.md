@@ -91,6 +91,7 @@ ubus call dsp set '{"av_sync": 200}'              # ms every output is held back
 ubus call dsp set '{"loudness": 6}'               # dB of bass boost on every output (Dynamic EQ), -1 = off
 ubus call dsp set '{"dynamic_volume": 2}'         # Dynamic Volume: 0 off, 1 light, 2 medium, 3 heavy
 ubus call dsp set '{"fs": 44100}'                 # the source's sample rate, Hz: filters, delays and times are worked out for it
+ubus call dsp set '{"back_fill": true}'           # multichannel without surround back: the surround back speakers repeat the surrounds
 ```
 
 dspaudio takes the I2S input from the PCM9211 (the tuner and analog inputs

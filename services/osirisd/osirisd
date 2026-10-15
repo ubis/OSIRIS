@@ -119,6 +119,8 @@ local distances_now		-- the MCU's distances by speaker
 local testtone_ch = "fl"
 local eq_now = {}		-- the receiver's equalizer: eq_on and bands by speaker
 local fs_now			-- Hz, the source's sample rate
+local channels_now, back_fill_now	-- the source's channel allocation; SB filled
+local set_back_fill
 local input_now			-- "analog", "digital", "multichannel"; nil: not known yet
 local lfe_pcm = 0		-- dB, the LFE level for multichannel PCM; -100 off
 local media = {}		-- mounted USB storage, by directory
@@ -328,11 +330,28 @@ local function set_mode(mode, name)
 		reverb = surround ~= "off" and MODE_REVERB[name] or "off",
 	})
 	set_testtone()
+	set_back_fill()
+end
+
+-- multichannel without surround back or rear centre (CEA-861 allocation
+-- below 0x10 without bit 2) on surround back speakers: they repeat the
+-- surrounds, except in the modes that play the source as it is
+local UNPROCESSED = { direct = true, pure_audio = true }
+
+function set_back_fill()
+	local ca = channels_now or 0
+	local fill = input_now == "multichannel" and ca < 0x10 and bit.band(ca, 0x04) == 0 and
+		     back == BACK.sb and not UNPROCESSED[mode_name] and true or false
+
+	if fill ~= back_fill_now then
+		back_fill_now = fill
+		call("dsp", "set", { back_fill = fill })
+	end
 end
 
 -- the source by the MCU's C1 interface: 1 analog, 2 multichannel PCM from
 -- HDMI, else digital
-local function set_input(interface, fs)
+local function set_input(interface, fs, channels)
 	local input = interface == 1 and "analog" or interface == 2 and "multichannel" or "digital"
 	local was = input_now
 
@@ -345,11 +364,13 @@ local function set_input(interface, fs)
 		call("dsp", "set", { fs = hz })
 	end
 
+	input_now = input
+	channels_now = channels or channels_now
+	set_back_fill()
 	if input == was then
 		return
 	end
 
-	input_now = input
 	call("dsp", "set", { input = input })
 	if (input == "multichannel") ~= (was == "multichannel") then
 		set_mode(mode_now, mode_name)
@@ -473,6 +494,7 @@ local function set_speakers(m)
 		absent = absent,
 	})
 	set_distances(distances_now)
+	set_back_fill()
 	-- not before the saved equalizer is loaded, it would be saved flat
 	if next(eq_now) then
 		set_eq()
@@ -699,6 +721,8 @@ end
 
 local handlers = {
 	["dsp.ready"] = function()
+		-- a restarted dspd has none of it: send it all again
+		back_fill_now = nil
 		local saved = load_state()
 
 		log("DSP started again, setting it up")
@@ -731,7 +755,7 @@ local handlers = {
 	end,
 	["mcu.input"] = function(msg)
 		if msg.interface then
-			set_input(msg.interface, msg.fs)
+			set_input(msg.interface, msg.fs, msg.channels)
 		end
 	end,
 	["mcu.equalizer"] = function(msg)
@@ -829,7 +853,7 @@ end
 set_eq(saved_eq(saved))
 set_eq(st and st.equalizer)
 if st and st.interface then
-	set_input(st.interface, st.fs)
+	set_input(st.interface, st.fs, st.channels)
 end
 
 uloop.run()

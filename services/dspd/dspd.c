@@ -158,6 +158,7 @@ static double sample_hz = SAMPLE_HZ;	/* the source's */
 static double proc_hz = SAMPLE_HZ;	/* the DSP's: above 48 kHz it processes every other frame */
 static int loudness = -1;		/* dB of bass boost, -1 off */
 static int dynamic_volume;		/* 0 off, 1 light, 2 medium, 3 heavy */
+static int back_fill;			/* multichannel without surround back: fill it */
 
 /* Dynamic Volume: how hard each level pulls towards the target */
 static const struct {
@@ -586,6 +587,12 @@ static void discrete(double (*m)[DSPAUDIO_IN])
 		m[out][out] = 1;
 	}
 
+	/* a 5.1 source on surround back speakers: they repeat the surrounds */
+	if (back_fill && !(absent & 1u << DSPAUDIO_OUT_SBL) && !(absent & 1u << DSPAUDIO_OUT_SBR)) {
+		m[DSPAUDIO_OUT_SBL][DSPAUDIO_IN_SL] = M_SQRT1_2;
+		m[DSPAUDIO_OUT_SBR][DSPAUDIO_IN_SR] = M_SQRT1_2;
+	}
+
 	/* the LFE channel is recorded 10 dB down */
 	m[DSPAUDIO_OUT_SW][DSPAUDIO_IN_LFE] = lfe_level <= -100 ? 0 : LFE_GAIN * pow(10.0, lfe_level / 20.0);
 
@@ -813,6 +820,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_u32(&b, "av_sync", (uint32_t)av_sync);
 	blobmsg_add_u32(&b, "loudness", (uint32_t)loudness);
 	blobmsg_add_u32(&b, "fs", (uint32_t)sample_hz);
+	blobmsg_add_u8(&b, "back_fill", back_fill);
 	blobmsg_add_u32(&b, "dynamic_volume", (uint32_t)dynamic_volume);
 	blobmsg_add_u32(&b, "dynamic_volume_db", (uint32_t)lround(sh->dvol_gain));
 	a = blobmsg_open_array(&b, "absent");
@@ -832,7 +840,7 @@ enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
 	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, SET_CROSSOVER, SET_SUBWOOFER,
 	SET_SUB_LOWPASS, SET_REVERB, SET_DOUBLE_BASS, SET_ABSENT, SET_INPUT,
 	SET_LFE_LEVEL, SET_EQ, SET_AV_SYNC, SET_LOUDNESS,
-	SET_DYNAMIC_VOLUME, SET_FS, __SET_MAX };
+	SET_DYNAMIC_VOLUME, SET_FS, SET_BACK_FILL, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -857,6 +865,7 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_LOUDNESS] = { .name = "loudness", .type = BLOBMSG_TYPE_INT32 },
 	[SET_DYNAMIC_VOLUME] = { .name = "dynamic_volume", .type = BLOBMSG_TYPE_INT32 },
 	[SET_FS] = { .name = "fs", .type = BLOBMSG_TYPE_INT32 },
+	[SET_BACK_FILL] = { .name = "back_fill", .type = BLOBMSG_TYPE_BOOL },
 };
 
 static int out_index(const char *name)
@@ -1120,6 +1129,10 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 		apply_surround();
 		apply_reverb();
 		apply_bass();
+	}
+
+	if (tb[SET_BACK_FILL]) {
+		back_fill = blobmsg_get_bool(tb[SET_BACK_FILL]);
 	}
 
 	/* only on a change: it starts the leveller over */
