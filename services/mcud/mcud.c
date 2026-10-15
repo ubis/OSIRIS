@@ -85,6 +85,7 @@ static void add_listening_mode(void)
 }
 static int tone_known, bass, treble;	/* front tone, dB */
 static int input_interface = -1;	/* MCU_INPUT [2], -1 not known */
+static int input_fs;			/* MCU_INPUT [3], sample rate code */
 static int av_sync = -1;		/* MCU_AV_SYNC, ms, -1 not known */
 static int volume_known, volume;	/* MCU_VOLUME, 0.01 dB */
 
@@ -354,6 +355,7 @@ static void on_frame(const struct link_frame *f, const char *name)
 			blobmsg_add_u32(&b, "decode", d[1]);
 			blobmsg_add_u32(&b, "interface", d[2]);
 			input_interface = d[2];
+			input_fs = d[3];
 			blobmsg_add_u32(&b, "fs", d[3]);
 			blobmsg_add_u32(&b, "mclk", d[4]);
 			blobmsg_add_u32(&b, "status", d[5]);
@@ -618,6 +620,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 
 	if (input_interface >= 0) {
 		blobmsg_add_u32(&b, "interface", (uint32_t)input_interface);
+		blobmsg_add_u32(&b, "fs", (uint32_t)input_fs);
 	}
 
 	if (tone_known) {

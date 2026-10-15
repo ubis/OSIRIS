@@ -96,6 +96,8 @@ local BACK = {
 	fh = { speaker = "front_high", l = "fhl", r = "fhr" },
 	fw = { speaker = "front_wide", l = "fwl", r = "fwr" },
 }
+-- C1 sample rate codes
+local FS_HZ = { [8] = 44100, [9] = 48000, [12] = 96000 }
 local EQ_SPEAKERS = {
 	"front", "center", "surround", "surround_back", "front_high", "front_wide", "subwoofer",
 }
@@ -116,6 +118,7 @@ local back = BACK.sb		-- what the surround back outputs play
 local distances_now		-- the MCU's distances by speaker
 local testtone_ch = "fl"
 local eq_now = {}		-- the receiver's equalizer: eq_on and bands by speaker
+local fs_now			-- Hz, the source's sample rate
 local input_now			-- "analog", "digital", "multichannel"; nil: not known yet
 local lfe_pcm = 0		-- dB, the LFE level for multichannel PCM; -100 off
 local media = {}		-- mounted USB storage, by directory
@@ -329,9 +332,18 @@ end
 
 -- the source by the MCU's C1 interface: 1 analog, 2 multichannel PCM from
 -- HDMI, else digital
-local function set_input(interface)
+local function set_input(interface, fs)
 	local input = interface == 1 and "analog" or interface == 2 and "multichannel" or "digital"
 	local was = input_now
+
+	-- the DSP works out its filters and delays for the rate the MCU reports
+	-- a code not known yet above 48 kHz: at least process every other frame
+	local hz = FS_HZ[fs] or fs and fs > 9 and 96000
+
+	if hz and hz ~= fs_now then
+		fs_now = hz
+		call("dsp", "set", { fs = hz })
+	end
 
 	if input == was then
 		return
@@ -694,7 +706,7 @@ local handlers = {
 		set_tone(tonumber(saved.bass or ""), tonumber(saved.treble or ""))
 		set_speakers(call("mcu", "status"))
 		set_distances(distances_now or saved_distances(saved))
-		call("dsp", "set", { input = input_now, lfe_level = lfe_pcm, av_sync = av_now,
+		call("dsp", "set", { input = input_now, fs = fs_now, lfe_level = lfe_pcm, av_sync = av_now,
 				     loudness = loudness_now, dynamic_volume = adsy_now.dynamic_volume or 0 })
 		set_eq()
 	end,
@@ -719,7 +731,7 @@ local handlers = {
 	end,
 	["mcu.input"] = function(msg)
 		if msg.interface then
-			set_input(msg.interface)
+			set_input(msg.interface, msg.fs)
 		end
 	end,
 	["mcu.equalizer"] = function(msg)
@@ -817,7 +829,7 @@ end
 set_eq(saved_eq(saved))
 set_eq(st and st.equalizer)
 if st and st.interface then
-	set_input(st.interface)
+	set_input(st.interface, st.fs)
 end
 
 uloop.run()
