@@ -815,7 +815,8 @@ local function meta_item(kind, code, data)
 	elseif kind == "ssnc" and code == "mden" then
 		show_track()
 	elseif kind == "ssnc" and META_STATES[code] then
-		if code == "pfls" then
+		-- a pause, skip or stop: what is queued is not wanted any more
+		if code == "pfls" or code == "pend" then
 			pcmd_flush()
 		end
 		-- a phone starts or resumes playing: the receiver goes to NET
