@@ -133,7 +133,7 @@ cat music.raw > /var/run/pcm
 
 AirPlay: shairport-sync (`/etc/init.d/S50airplay`, `/etc/shairport-sync.conf`)
 announces the receiver under its host name and writes into the same pipe.
-The AirPlay volume is a digital cut of up to 30 dB.
+The AirPlay volume slider sets the receiver's volume (osirisd).
 
 ## osirisd
 
@@ -178,6 +178,9 @@ What it does today:
   the front panel, and a pause or skip makes pcmd drop its queued audio
 - switches the receiver to NET when an AirPlay sender starts or resumes
   playing
+- sets the receiver's volume from the AirPlay slider: the lowest step at
+  the bottom, `airplay_max_db` at the top (-40 dB unless a line such as
+  `airplay_max_db=-30` in `/data/osiris/state` says otherwise, at most 0)
 - keeps the front panel mode DISPLAY picked in the state file
 - answers the network menu with the address, link state and MAC of eth0
 - offers an update bundle of another version on a USB stick when the

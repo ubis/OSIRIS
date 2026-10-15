@@ -14,8 +14,9 @@
 -- MCU asks for updates; it then shows its update notice, and the receiver's
 -- own update screens run osiris-upgrade with its progress.
 --
--- The master volume is not ours: the MCU sets it in the analog stage after
--- the DAC. OSIRIS reads it (mcu.volume) only for Dynamic EQ.
+-- The MCU applies the master volume in the analog stage after the DAC.
+-- OSIRIS reads it (mcu.volume) for Dynamic EQ and sets it only from the
+-- AirPlay slider.
 
 local bit = require "bit"
 local ffi = require "ffi"
@@ -213,7 +214,7 @@ local function call(object, method, args)
 	local res = conn:call(object, method, args or {})
 	if not res and method ~= "set" and method ~= "identity" and method ~= "network" and
 	   method ~= "power" and method ~= "update" and method ~= "usb" and
-	   method ~= "display" and method ~= "meter" and method ~= "input" then
+	   method ~= "display" and method ~= "meter" and method ~= "input" and method ~= "volume" then
 		err("%s %s: no answer", object, method)
 	end
 	return res
@@ -769,6 +770,39 @@ end
 
 local META_STATES = { pbeg = "play", prsm = "play", pfls = "pause", pend = "stop" }
 
+-- The AirPlay slider sets the master volume: from the lowest step at the
+-- bottom to airplay_max_db (state file, -40 dB unless set) at the top, so
+-- a slider pushed up never blasts. At most one change every 100 ms.
+local AIRPLAY_MAX_DB, AIRPLAY_RANGE_DB, VOLUME_MIN_DB, VOLUME_MS = -40, 30, -82, 100
+local volume_want, volume_sent, volume_timer, volume_armed
+
+local function volume_tick()
+	volume_armed = false
+	if volume_want and volume_want ~= volume_sent then
+		volume_sent = volume_want
+		call("mcu", "volume", { db = volume_want })
+	end
+end
+
+local function airplay_volume(data)
+	-- "airplay,volume,lowest,highest": the slider -30..0 dB, -144 muted
+	local slider = tonumber(data:match("^([^,]+)"))
+	if not slider then
+		return
+	end
+
+	local top = tonumber(load_state().airplay_max_db or "") or AIRPLAY_MAX_DB
+	top = top ~= top and AIRPLAY_MAX_DB or top > 0 and 0 or top < VOLUME_MIN_DB and VOLUME_MIN_DB or top
+	slider = slider < -AIRPLAY_RANGE_DB and -AIRPLAY_RANGE_DB or slider > 0 and 0 or slider
+	volume_want = math.floor(VOLUME_MIN_DB + (top - VOLUME_MIN_DB) *
+				 (slider + AIRPLAY_RANGE_DB) / AIRPLAY_RANGE_DB + 0.5)
+	volume_timer = volume_timer or uloop.timer(volume_tick)
+	if not volume_armed then
+		volume_armed = true
+		volume_timer:set(VOLUME_MS)
+	end
+end
+
 local function meta_item(kind, code, data)
 	if kind == "core" and code == "minm" then
 		track.title = data
@@ -776,6 +810,8 @@ local function meta_item(kind, code, data)
 		track.artist = data
 	elseif kind == "core" and code == "asal" then
 		track.album = data
+	elseif kind == "ssnc" and code == "pvol" then
+		airplay_volume(data)
 	elseif kind == "ssnc" and code == "mden" then
 		show_track()
 	elseif kind == "ssnc" and META_STATES[code] then
@@ -887,6 +923,10 @@ local handlers = {
 		if msg.volume then
 			volume_now = msg.volume
 			set_loudness()
+			-- the knob moved it: the next slider position counts again
+			if volume_sent and msg.volume ~= volume_sent * 100 then
+				volume_sent = nil
+			end
 		end
 	end,
 	["mcu.audyssey"] = function(msg)
