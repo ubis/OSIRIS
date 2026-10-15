@@ -35,6 +35,7 @@
 /* the AC-3 decoder (an AC3=1 image): its code and data in the next 1 MiB */
 #define DSPAUDIO_DDR		0xC3C00000u
 #define DSPAUDIO_DDR_LEN	0x00100000u
+#define DSPAUDIO_DDR_MAGIC	0x33434144u	/* "DAC3": the first word of the .ddr part */
 
 /*
  * Audio from Linux (the NET input): a ring of stereo frames at 48 kHz in the

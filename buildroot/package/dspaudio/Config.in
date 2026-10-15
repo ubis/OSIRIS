@@ -4,4 +4,4 @@ config BR2_PACKAGE_DSPAUDIO
 	  The DSP firmware that dspd runs (services/dspaudio). It needs
 	  the C6000 toolchain, so "make dspaudio" at the top of the
 	  repository builds it before Buildroot runs; this package
-	  installs the image.
+	  installs the image, and the decoder's dspaudio.ddr with it.

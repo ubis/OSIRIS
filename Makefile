@@ -6,7 +6,7 @@
 #
 #   make dspboot [BOARD=<name>]   first-stage loader -> dist/dspboot/
 #   make dspboot-test             its host-side unit tests
-#   make dspaudio [DMA=1]         DSP firmware -> build/dspaudio/
+#   make dspaudio [AC3=0] [DMA=0] DSP firmware -> build/dspaudio/
 #   make buildroot                toolchain, U-Boot, kernel, root fs, bundle -> dist/images/
 #   make clean                    remove build output (not the Docker images)
 
@@ -49,7 +49,8 @@ dspboot-test:
 dspaudio:
 	@$(call ensure_image,$(DSPBOOT_IMAGE),dspboot/docker)
 	$(call docker_run,$(DSPBOOT_IMAGE),$(TOP)/services/dspaudio,\
-		make O=$(BUILD)/dspaudio VERSION=$(shell sh tools/version.sh) DMA=$(or $(DMA),0))
+		make O=$(BUILD)/dspaudio VERSION=$(shell sh tools/version.sh) \
+		$(if $(DMA),DMA=$(DMA)) $(if $(AC3),AC3=$(AC3)))
 
 # Buildroot: its own target toolchain, U-Boot, the kernel and the root file
 # system in one build; the sources it downloads are kept in buildroot/dl.

@@ -168,19 +168,19 @@ flowchart LR
     DAC --> VOL[MCU analog volume] --> AMP[Amplifiers]
 ```
 
-dspaudio polls McASP1, without interrupts or DMA. Each frame it takes the
-front pair from the PCM9211, or from pcmd's ring on NET, and the other
+EDMA moves the audio between McASP1 and dspaudio in blocks of 128 frames,
+and liba52 in SDRAM decodes Dolby Digital between them. Each frame it takes
+the front pair from the PCM9211, or from pcmd's ring on NET, and the other
 channels of multichannel PCM, applies bass and treble to the front pair,
-and makes the eight
-outputs: a gain per input channel, or in the surround modes a matrix
-decoder (in-phase sound to the centre, the difference of left and right to
-the surrounds), with a reverb in the sound field modes. Then come Dynamic
-Volume, bass management (Linkwitz-Riley crossovers), the equalizer and
-Dynamic EQ, a limiter, and the delays for the speaker distances and A/V
-sync.
-Above 48 kHz it processes every other frame. dspd sets all of it in a block
-of DSP memory both sides share ([dspaudio.h](../services/dspd/dspaudio.h)),
-where the DSP reports its state, counters and levels.
+and makes the eight outputs: a gain per input channel, or in the surround
+modes a matrix decoder (in-phase sound to the centre, the difference of
+left and right to the surrounds), with a reverb in the sound field modes.
+Then come Dynamic Volume, bass management (Linkwitz-Riley crossovers), the
+equalizer and Dynamic EQ, a limiter, and the delays for the speaker
+distances and A/V sync. Above 48 kHz it processes every other frame. dspd
+sets all of it in a block of DSP memory both sides share
+([dspaudio.h](../services/dspd/dspaudio.h)), where the DSP reports its
+state, counters and levels.
 
 ## Software versions
 

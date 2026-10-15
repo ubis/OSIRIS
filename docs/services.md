@@ -110,10 +110,13 @@ PCM9211 brings the front pair and the HDMI receiver the rest: LFE and centre
 on AXR1_5, the surrounds on AXR1_8, the surround back pair on AXR1_9. In
 "multichannel" each goes to its own output, and the channels of speakers set
 to none are folded onto the ones there are; the other modes mix it down to
-stereo first. Dolby and DTS (IEC 61937) it cannot decode: it keeps the
-outputs silent while they play, and `dsp status` names the format in
-`bitstream` (`none`, `ac3`, `dts`, `eac3` or `other`). It is built with dspboot's C6000
-toolchain (`make dspaudio`).
+stereo first. Dolby and DTS come as IEC 61937 bursts, and `dsp status`
+names the format in `bitstream` (`none`, `ac3`, `dts`, `eac3` or `other`).
+AC-3 it decodes (liba52, in SDRAM) and reports the layout in `decoded`;
+everything else plays silent. It is built with dspboot's C6000 toolchain
+(`make dspaudio`), which writes the decoder's part as `dspaudio.ddr` for
+dspd to load from beside the image; `AC3=0` leaves the decoder out and
+`DMA=0` builds the polled loop without EDMA.
 
 ## pcmd
 

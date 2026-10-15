@@ -26,7 +26,8 @@ What works with OSIRIS, tested on the TX-NR717.
 | Analog inputs (RCA) | ✅ |
 | FM and AM radio, RDS | ✅ |
 | HDMI audio, PCM stereo and multichannel, up to 96 kHz | ✅ (7.1 tested at 48 kHz) |
-| Dolby Digital, DTS | ❌ the bitstreams are muted; open decoders (liba52, a DTS core) exist |
+| Dolby Digital | ✅ |
+| DTS, Dolby Digital Plus, TrueHD | ❌ muted |
 | Digital inputs (optical, coax) and HDMI ARC, PCM | ❓ not tested |
 | Phono input | ❓ not tested |
 | HDMI video switching, on-screen menu | ❓ not tested |

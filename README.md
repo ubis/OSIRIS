@@ -44,7 +44,8 @@ Tested on the TX-NR717; the full list is in [Features](docs/features.md).
 - Surround and sound field modes (OSIRIS's own processing)
 - AirPlay on the NET input, with the title and a level meter on the front
   panel
-- Not yet: Dolby and DTS decoding, Spotify, internet radio, DLNA
+- Dolby Digital
+- Not yet: DTS, Spotify, internet radio, DLNA
 
 ## Documentation
 

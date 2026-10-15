@@ -10,13 +10,19 @@
  * that output and input (struct dspaudio_shared), clipped, or comes from the
  * surround decoder; the bass of small speakers moves to the subwoofer, and
  * each output is held back by its speaker's distance. The eight outputs are
- * made together, one frame per sample period. No DMA, FIFO or interrupts: the DSP
- * polls the McASP and moves one sample per slot through XBUF/RBUF. Clock
- * and format settings are the ones the stock DSP image uses.
+ * made together, one frame per sample period. EDMA moves them in blocks of
+ * frames, and the Dolby Digital decoder runs between blocks; AC3=0 leaves
+ * the decoder out, and DMA=0 has the DSP poll the McASP instead, one sample
+ * per slot through XBUF/RBUF. Clock and format settings are the ones the
+ * stock DSP image uses.
  */
 #include <stdint.h>
 
 #include "dspaudio.h"
+#ifdef DSPAUDIO_AC3
+#include "iec61937.h"
+#include "libs/liba52/a52.h"
+#endif
 
 #define REG(a)		(*(volatile uint32_t *)(a))
 #define ETIMEDOUT	110
@@ -173,7 +179,11 @@ static int gbl_set(uint32_t bits, uint32_t step)
 #define OPT_ABSYNC	(1u << 2)
 #define OPT_TCINTEN	(1u << 20)
 #define OPT_TCC(c)	((uint32_t)(c) << 12)
+#ifdef DSPAUDIO_AC3
+#define DMA_FRAMES	128			/* half an AC-3 block */
+#else
 #define DMA_FRAMES	64			/* 1.3 ms at 48 kHz */
+#endif
 
 static int32_t dma_rx[2][DMA_FRAMES][2][RX_SERS] __attribute__((aligned(8)));
 static int32_t dma_tx[2][DMA_FRAMES][2][TX_SERS] __attribute__((aligned(8)));
@@ -368,12 +378,22 @@ static void ring_take(int32_t *l, int32_t *r)
 
 static uint32_t burst_hold, burst_word[3];	/* the last words of the front pair */
 
+#ifdef DSPAUDIO_AC3
+static void ac3_reset(void);
+#else
+static void ac3_reset(void)
+{
+}
+#endif
+
 /* the data type, but not NULL and pause bursts, which come around a stream */
 static void burst_type(uint32_t pc)
 {
 	pc &= 0x1f;
-	if (pc != 0 && pc != 3) {
+	/* a new type: the decoder starts clean and sets the layout again */
+	if (pc != 0 && pc != 3 && pc != (SH->bitstream & 0x1f)) {
 		SH->bitstream = pc;
+		ac3_reset();
 	}
 }
 
@@ -397,6 +417,7 @@ static void burst_find(uint32_t first, uint32_t second)
 
 	if (burst_hold && !--burst_hold) {
 		SH->bitstream = 0;
+		ac3_reset();
 	}
 }
 static float tone_z[2][DSPAUDIO_TONE][2];
@@ -853,6 +874,9 @@ static int32_t frame[DSPAUDIO_OUT];
  */
 #define MAR(n)		(0x01848000u + 4 * (n))
 #define L2CFG		0x01840000u
+#define L2INV		0x01845008u	/* write 1: invalidate the L2 cache */
+#define L1DWB		0x01845040u
+#define L1PINV		0x01845028u
 #define L2CFG_64K	2		/* L2MODE: 64 KiB cache at the top of L2 */
 #define AV_MASK		(DSPAUDIO_AV_LEN - 1)
 
@@ -1066,6 +1090,223 @@ static void report_start(void)
 	SH->state = DSPAUDIO_POWER;
 }
 
+#ifdef DSPAUDIO_AC3
+/*
+ * Dolby Digital: the bursts in the front pair (iec61937.c) are AC-3 frames
+ * of 1536 samples, six blocks of 256. Between DMA blocks liba52 decodes one
+ * block into a buffer that plays, in place of the muted inputs, once the
+ * one before is used up: a block lasts two DMA blocks, a frame twelve, as
+ * long as it lasts. liba52 reads a frame as it decodes it: the next one is
+ * collected into the other buffer. The buffers are in SDRAM with liba52.
+ */
+#define AC3_FRAME_MAX	3840		/* bytes: 640 kbit/s at 32 kHz */
+#define A52_LFE_FLAG	0x10
+#define AC3_BAD_MAX	3		/* frames in a row before the layout goes */
+
+extern char __ddr_bss_start[], __ddr_bss_end[];
+
+static struct iec61937 iec;
+#define DDR_BSS		__attribute__((section(".ddr_bss.ac3"), aligned(8)))
+
+static uint8_t ac3_frame[2][AC3_FRAME_MAX] DDR_BSS;
+static unsigned int ac3_len[2];		/* bytes the burst brought */
+static unsigned int ac3_next = 2;	/* collected and waiting, 2: none */
+static unsigned int ac3_cur;		/* being decoded */
+static int ac3_blk = -1;		/* its next block, -1: no frame */
+static int ac3_flags;
+static unsigned int ac3_bad;		/* frames in a row the decoder could not take */
+static a52_state_t *a52;
+static sample_t *a52_out;
+static float ac3_pcm[2][256][DSPAUDIO_IN] DDR_BSS;	/* decoded: played, being made */
+static unsigned int ac3_play, ac3_pos, ac3_have[2], ac3_made;
+
+/*
+ * liba52's channels for each layout, LFE first when there is one, and the
+ * input each goes to; mono feeds the front pair, a single rear channel both
+ * surrounds.
+ */
+static const int8_t ac3_map[8][5] = {
+	[A52_CHANNEL] = { DSPAUDIO_IN_L, DSPAUDIO_IN_R, -1 },
+	[A52_MONO] = { DSPAUDIO_IN_L, -1 },
+	[A52_STEREO] = { DSPAUDIO_IN_L, DSPAUDIO_IN_R, -1 },
+	[A52_3F] = { DSPAUDIO_IN_L, DSPAUDIO_IN_C, DSPAUDIO_IN_R, -1 },
+	[A52_2F1R] = { DSPAUDIO_IN_L, DSPAUDIO_IN_R, DSPAUDIO_IN_SL, -1 },
+	[A52_3F1R] = { DSPAUDIO_IN_L, DSPAUDIO_IN_C, DSPAUDIO_IN_R, DSPAUDIO_IN_SL, -1 },
+	[A52_2F2R] = { DSPAUDIO_IN_L, DSPAUDIO_IN_R, DSPAUDIO_IN_SL, DSPAUDIO_IN_SR, -1 },
+	[A52_3F2R] = { DSPAUDIO_IN_L, DSPAUDIO_IN_C, DSPAUDIO_IN_R, DSPAUDIO_IN_SL, DSPAUDIO_IN_SR },
+};
+
+static void ac3_init(void)
+{
+	char *p;
+
+	/* no decoder without its own .ddr part beside the image */
+	if (*(volatile uint32_t *)DSPAUDIO_DDR != DSPAUDIO_DDR_MAGIC) {
+		return;
+	}
+
+	for (p = __ddr_bss_start; p < __ddr_bss_end; p++) {
+		*p = 0;
+	}
+
+	iec61937_init(&iec);
+	a52 = a52_init();
+	a52_out = a52 ? a52_samples(a52) : 0;
+}
+
+/* a bad frame now and then keeps the layout: the policy must not flap */
+static void ac3_fail(void)
+{
+	if (++ac3_bad >= AC3_BAD_MAX) {
+		SH->bitstream &= 0xff;
+	}
+}
+
+/* no frame half decoded or waiting: a stream that comes back starts clean */
+static void ac3_reset(void)
+{
+	ac3_next = 2;
+	ac3_blk = -1;
+	ac3_made = 0;
+	ac3_pos = 0;
+	ac3_have[0] = ac3_have[1] = 0;
+	ac3_bad = 0;
+	iec61937_init(&iec);
+}
+
+/* a burst word of the front pair, in the order they came */
+static void ac3_word(uint32_t smp)
+{
+	unsigned int i, to;
+
+	if (iec61937_word(&iec, smp >> 16) != IEC_AC3 || iec.have > AC3_FRAME_MAX) {
+		return;
+	}
+
+	/* while the decoder is on a frame the next waits in the other buffer */
+	to = ac3_blk >= 0 ? ac3_cur ^ 1 : 0;
+
+	for (i = 0; i < iec.have; i++) {
+		ac3_frame[to][i] = iec.frame[i];
+	}
+	ac3_len[to] = iec.have;
+	ac3_next = to;
+}
+
+/* between DMA blocks: the next block decoded, swapped in when one ends */
+static void ac3_work(void)
+{
+	unsigned int make = ac3_play ^ 1, i, ch, n, mode;
+
+	if (ac3_pos >= ac3_have[ac3_play] && ac3_made) {
+		ac3_play = make;
+		make ^= 1;
+		ac3_pos = 0;
+		ac3_made = 0;
+	}
+
+	if (ac3_made) {
+		return;
+	}
+	ac3_made = 1;
+	ac3_have[make] = 0;
+	int rate, bitrate, len;
+	level_t level = 1;
+	const int8_t *map;
+
+	if (!a52) {
+		return;
+	}
+
+	if (ac3_blk < 0 && ac3_next != 2) {
+		ac3_cur = ac3_next;
+		ac3_next = 2;
+		len = a52_syncinfo(ac3_frame[ac3_cur], &ac3_flags, &rate, &bitrate);
+		/* a frame longer than its burst would be read past what came */
+		if (!len || (unsigned int)len > ac3_len[ac3_cur] ||
+		    (ac3_flags = A52_3F2R | A52_LFE | A52_ADJUST_LEVEL,
+		     a52_frame(a52, ac3_frame[ac3_cur], &ac3_flags, &level, 0))) {
+			ac3_fail();
+			return;
+		}
+
+		ac3_bad = 0;
+
+		a52_dynrng(a52, 0, 0);
+		ac3_blk = 0;
+		SH->bitstream = (SH->bitstream & 0xff) |
+				(uint32_t)(ac3_flags & (A52_CHANNEL_MASK | A52_LFE_FLAG)) << 8;
+	}
+
+	if (ac3_blk < 0) {
+		return;
+	}
+
+	if (a52_block(a52)) {
+		ac3_fail();
+		ac3_blk = -1;
+		return;
+	}
+
+	mode = ac3_flags & A52_CHANNEL_MASK;
+	map = ac3_map[mode & 7];
+	for (i = 0; i < 256; i++) {
+		float *o = ac3_pcm[make][i];
+		const sample_t *x = a52_out + i;
+
+		for (ch = 0; ch < DSPAUDIO_IN; ch++) {
+			o[ch] = 0.0f;
+		}
+
+		if (ac3_flags & A52_LFE) {
+			o[DSPAUDIO_IN_LFE] = *x;
+			x += 256;
+		}
+
+		for (n = 0; n < 5 && map[n] >= 0; n++, x += 256) {
+			o[map[n]] = *x;
+		}
+
+		/* mono: both fronts, 3 dB down */
+		if (mode == A52_MONO) {
+			o[DSPAUDIO_IN_L] *= 0.70710678f;
+			o[DSPAUDIO_IN_R] = o[DSPAUDIO_IN_L];
+		}
+
+		/* one rear channel: both surrounds, 3 dB down */
+		if (mode == A52_2F1R || mode == A52_3F1R) {
+			o[DSPAUDIO_IN_SL] *= 0.70710678f;
+			o[DSPAUDIO_IN_SR] = o[DSPAUDIO_IN_SL];
+		}
+	}
+
+	if (++ac3_blk == 6) {
+		ac3_blk = -1;
+	}
+	ac3_have[make] = 256;
+}
+
+/* a decoded frame into the inputs, in place of the muted bitstream */
+static void ac3_take(void)
+{
+	const float *x;
+	unsigned int in;
+
+	if (ac3_pos >= ac3_have[ac3_play]) {
+		return;
+	}
+
+	x = ac3_pcm[ac3_play][ac3_pos++];
+	for (in = 0; in < DSPAUDIO_IN; in++) {
+		float v = x[in] * FULL_SCALE;
+
+		input[in] = v >= 2147483520.0f ? INT32_MAX : v <= -2147483648.0f ? INT32_MIN : (int32_t)v;
+	}
+	input[0] = tone(0, input[0]);
+	input[1] = tone(1, input[1]);
+}
+#endif
+
 /*
  * One receive slot: rx holds the RX_SERS serializers' samples of the slot,
  * odd says it is the second of the frame. Returns whether a frame is in:
@@ -1132,6 +1373,12 @@ static unsigned int rx_slot(unsigned int odd, const int32_t *rx)
 		input[1] = tone(1, r);
 	}
 
+#ifdef DSPAUDIO_AC3
+	if (ready && burst_hold && !SH->ring_on && (SH->bitstream & 0x1f) == IEC_AC3) {
+		ac3_take();
+	}
+#endif
+
 	for (in = 0; ready && in < 2; in++) {
 		float x = input[in] / FULL_SCALE;
 
@@ -1158,6 +1405,10 @@ static void dma_block(unsigned int half, unsigned int to)
 	unsigned int f, i;
 
 	for (f = 0; f < DMA_FRAMES; f++) {
+#ifdef DSPAUDIO_AC3
+		ac3_word((uint32_t)dma_rx[half][f][0][0]);
+		ac3_word((uint32_t)dma_rx[half][f][1][0]);
+#endif
 		rx_slot(0, dma_rx[half][f][0]);
 		if (rx_slot(1, dma_rx[half][f][1])) {
 			frame_step1();
@@ -1246,6 +1497,9 @@ static void dma_loop(void)
 		REG(EDMA_ICR) = done | 3u << TCC_TX;
 		dma_block(half, tx_free());
 		half ^= 1;
+#ifdef DSPAUDIO_AC3
+		ac3_work();
+#endif
 	}
 }
 #endif
@@ -1256,8 +1510,23 @@ void dspaudio_main(void)
 	unsigned int tx_odd = 0, slot, in, i;
 
 	report_start();
+#ifdef DSPAUDIO_AC3
+	/* a decoder loaded anew into SDRAM: nothing of the old one cached */
+	REG(L1DWB) = 1;
+	while (REG(L1DWB)) {
+	}
+	REG(L2INV) = 1;
+	while (REG(L2INV)) {
+	}
+	REG(L1PINV) = 1;
+	while (REG(L1PINV)) {
+	}
+#endif
 	reverb_clear();
 	av_clear();
+#ifdef DSPAUDIO_AC3
+	ac3_init();
+#endif
 	RING->read = RING->write = 0;
 	psc1_enable(LPSC_MCASP1);
 	if (mcasp_init()) {
