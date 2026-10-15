@@ -86,6 +86,7 @@ static void add_listening_mode(void)
 static int tone_known, bass, treble;	/* front tone, dB */
 static int input_interface = -1;	/* MCU_INPUT [2], -1 not known */
 static int input_fs;			/* MCU_INPUT [3], sample rate code */
+static int input_channels;		/* MCU_INPUT [6], channel allocation */
 static int av_sync = -1;		/* MCU_AV_SYNC, ms, -1 not known */
 static int volume_known, volume;	/* MCU_VOLUME, 0.01 dB */
 
@@ -361,6 +362,12 @@ static void on_frame(const struct link_frame *f, const char *name)
 			blobmsg_add_u32(&b, "status", d[5]);
 		}
 
+		/* the source's channels, as HDMI codes them (CEA-861 allocation) */
+		if (f->len >= 7) {
+			input_channels = d[6];
+			blobmsg_add_u32(&b, "channels", d[6]);
+		}
+
 		add_hex("data", d, f->len);
 		event("mcu.input");
 		return;
@@ -621,6 +628,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	if (input_interface >= 0) {
 		blobmsg_add_u32(&b, "interface", (uint32_t)input_interface);
 		blobmsg_add_u32(&b, "fs", (uint32_t)input_fs);
+		blobmsg_add_u32(&b, "channels", (uint32_t)input_channels);
 	}
 
 	if (tone_known) {
