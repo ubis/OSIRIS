@@ -4,10 +4,10 @@ CFLAGS	?= -Os
 override CFLAGS += -Wall -Wextra -Wno-unused-parameter -std=gnu99
 LDLIBS	+= -lubus -lubox -lrt
 
-mcud: mcud.o link.o proto.o
+mcud: mcud.o link.o proto.o display.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-%.o: %.c cmd.h link.h log.h proto.h
+%.o: %.c cmd.h display.h link.h log.h proto.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 install: mcud

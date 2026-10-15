@@ -14,6 +14,7 @@
 
 #include "log.h"
 #include "cmd.h"
+#include "display.h"
 #include "proto.h"
 
 #define RETRY_MS	1000
@@ -104,7 +105,7 @@ static const struct {
 	{ MCU_NETWORK, "network" },
 	{ MCU_UPDATE, "update" },
 	{ MCU_POWER, "power" },
-	{ MCU_UPDATE_SOURCE, "update_source" },
+	{ MCU_FL_REQUEST, "fl_request" },
 	{ MCU_UPDATE_MODE, "update_mode" },
 	{ MCU_ISCP, "iscp" },
 };
@@ -307,6 +308,10 @@ void proto_rx(const struct link_frame *f)
 
 	switch (f->cmd) {
 	case MCU_INPUT:
+		if (f->len >= 3) {
+			display_input(d[2]);
+		}
+
 		/* follow the input's sample rate in the stream status */
 		if (f->len >= 4 && d[3]) {
 			memset(stream + STREAM_FS, d[3], 3);
@@ -348,6 +353,11 @@ void proto_rx(const struct link_frame *f)
 		break;
 	case MCU_SPEAKERS:
 		queue(DSP_LEVELS, levels, LEVELS_LEN);
+		break;
+	case MCU_FL_REQUEST:
+		if (f->len >= 1 && d[0] == 0) {
+			display_request();
+		}
 		break;
 	case MCU_NET_VERSION:
 		queue(NET_VERSION, version, VERSION_LEN - 1);
@@ -427,6 +437,7 @@ static void start(void)
 	static const uint8_t state_start[2] = { NET_STATE_START };
 
 	/* a question in the middle of the handshake would be dropped */
+	display_reset();
 	uloop_timeout_cancel(&lmd_timer);
 	uloop_timeout_cancel(&select_timer);
 	uloop_timeout_cancel(&relock_timer);

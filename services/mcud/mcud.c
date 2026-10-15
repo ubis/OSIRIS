@@ -22,6 +22,7 @@
 
 #include "log.h"
 #include "cmd.h"
+#include "display.h"
 #include "link.h"
 #include "proto.h"
 
@@ -320,6 +321,13 @@ static void add_model(const struct mcu_model *m)
 static void event(const char *id)
 {
 	ubus_send_event(ctx, id, b.head);
+}
+
+static void on_display_mode(const char *mode)
+{
+	blob_buf_init(&b, 0);
+	blobmsg_add_string(&b, "mode", mode);
+	event("mcu.display");
 }
 
 static void on_ready(const struct mcu_model *m)
@@ -631,6 +639,8 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 		blobmsg_add_u32(&b, "channels", (uint32_t)input_channels);
 	}
 
+	blobmsg_add_string(&b, "display", display_mode_name());
+
 	if (tone_known) {
 		blobmsg_add_u32(&b, "bass", (uint32_t)bass);
 		blobmsg_add_u32(&b, "treble", (uint32_t)treble);
@@ -750,6 +760,81 @@ static int m_outputs(struct ubus_context *c, struct ubus_object *obj,
 	}
 
 	proto_set_outputs(blobmsg_get_u32(tb[OUT_MASK]));
+	return 0;
+}
+
+enum { DSP_TITLE, DSP_ARTIST, DSP_ALBUM, DSP_STATE, DSP_MODE, __DSP_MAX };
+
+static const struct blobmsg_policy display_policy[__DSP_MAX] = {
+	[DSP_TITLE] = { .name = "title", .type = BLOBMSG_TYPE_STRING },
+	[DSP_ARTIST] = { .name = "artist", .type = BLOBMSG_TYPE_STRING },
+	[DSP_ALBUM] = { .name = "album", .type = BLOBMSG_TYPE_STRING },
+	[DSP_STATE] = { .name = "state", .type = BLOBMSG_TYPE_STRING },
+	[DSP_MODE] = { .name = "mode", .type = BLOBMSG_TYPE_STRING },
+};
+
+/* what plays on NET (state "play", "pause" or "stop"), or the mode alone */
+static int m_display(struct ubus_context *c, struct ubus_object *obj,
+		     struct ubus_request_data *req, const char *method,
+		     struct blob_attr *msg)
+{
+	struct blob_attr *tb[__DSP_MAX];
+	const char *s;
+	enum display_state state;
+
+	blobmsg_parse(display_policy, __DSP_MAX, tb, blob_data(msg), blob_len(msg));
+	if (tb[DSP_MODE] && display_set_mode(blobmsg_get_string(tb[DSP_MODE]))) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	if (tb[DSP_MODE] && !tb[DSP_TITLE] && !tb[DSP_ARTIST] && !tb[DSP_ALBUM] &&
+	    !tb[DSP_STATE]) {
+		return 0;
+	}
+
+	s = tb[DSP_STATE] ? blobmsg_get_string(tb[DSP_STATE]) : "stop";
+	if (!strcmp(s, "play")) {
+		state = DISPLAY_PLAYING;
+	} else if (!strcmp(s, "pause")) {
+		state = DISPLAY_PAUSED;
+	} else if (!strcmp(s, "stop")) {
+		state = DISPLAY_STOPPED;
+	} else {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	display_set(tb[DSP_TITLE] ? blobmsg_get_string(tb[DSP_TITLE]) : NULL,
+		    tb[DSP_ARTIST] ? blobmsg_get_string(tb[DSP_ARTIST]) : NULL,
+		    tb[DSP_ALBUM] ? blobmsg_get_string(tb[DSP_ALBUM]) : NULL, state);
+	return 0;
+}
+
+enum { MTR_LEFT, MTR_RIGHT, MTR_LEFT_PEAK, MTR_RIGHT_PEAK, __MTR_MAX };
+
+static const struct blobmsg_policy meter_policy[__MTR_MAX] = {
+	[MTR_LEFT] = { .name = "left", .type = BLOBMSG_TYPE_INT32 },
+	[MTR_RIGHT] = { .name = "right", .type = BLOBMSG_TYPE_INT32 },
+	[MTR_LEFT_PEAK] = { .name = "left_peak", .type = BLOBMSG_TYPE_INT32 },
+	[MTR_RIGHT_PEAK] = { .name = "right_peak", .type = BLOBMSG_TYPE_INT32 },
+};
+
+/* the levels for the meter: RMS, and peaks for the markers, dBFS */
+static int m_meter(struct ubus_context *c, struct ubus_object *obj,
+		   struct ubus_request_data *req, const char *method,
+		   struct blob_attr *msg)
+{
+	struct blob_attr *tb[__MTR_MAX];
+	int l, r;
+
+	blobmsg_parse(meter_policy, __MTR_MAX, tb, blob_data(msg), blob_len(msg));
+	if (!tb[MTR_LEFT] || !tb[MTR_RIGHT]) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	l = (int32_t)blobmsg_get_u32(tb[MTR_LEFT]);
+	r = (int32_t)blobmsg_get_u32(tb[MTR_RIGHT]);
+	display_meter(l, r, tb[MTR_LEFT_PEAK] ? (int32_t)blobmsg_get_u32(tb[MTR_LEFT_PEAK]) : l,
+		      tb[MTR_RIGHT_PEAK] ? (int32_t)blobmsg_get_u32(tb[MTR_RIGHT_PEAK]) : r);
 	return 0;
 }
 
@@ -967,6 +1052,8 @@ static const struct ubus_method mcu_methods[] = {
 	UBUS_METHOD("stream", m_stream, stream_policy),
 	UBUS_METHOD("outputs", m_outputs, outputs_policy),
 	UBUS_METHOD("levels", m_levels, levels_policy),
+	UBUS_METHOD("display", m_display, display_policy),
+	UBUS_METHOD("meter", m_meter, meter_policy),
 	UBUS_METHOD("network", m_network, network_policy),
 	UBUS_METHOD("power", m_power, power_policy),
 	UBUS_METHOD("update", m_update, update_policy),
@@ -975,6 +1062,26 @@ static const struct ubus_method mcu_methods[] = {
 };
 
 static struct ubus_object_type mcu_type = UBUS_OBJECT_TYPE("mcu", mcu_methods);
+
+/* dspd's levels go straight to the meter, ten a second */
+static void on_dsp_meter(struct ubus_context *c, struct ubus_event_handler *ev,
+			 const char *type, struct blob_attr *msg)
+{
+	struct blob_attr *tb[__MTR_MAX];
+	int l, r;
+
+	blobmsg_parse(meter_policy, __MTR_MAX, tb, blob_data(msg), blob_len(msg));
+	if (!tb[MTR_LEFT] || !tb[MTR_RIGHT]) {
+		return;
+	}
+
+	l = (int32_t)blobmsg_get_u32(tb[MTR_LEFT]);
+	r = (int32_t)blobmsg_get_u32(tb[MTR_RIGHT]);
+	display_meter(l, r, tb[MTR_LEFT_PEAK] ? (int32_t)blobmsg_get_u32(tb[MTR_LEFT_PEAK]) : l,
+		      tb[MTR_RIGHT_PEAK] ? (int32_t)blobmsg_get_u32(tb[MTR_RIGHT_PEAK]) : r);
+}
+
+static struct ubus_event_handler dsp_meter_handler = { .cb = on_dsp_meter };
 
 static struct ubus_object mcu_object = {
 	.name = "mcu",
@@ -1040,6 +1147,12 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	rc = ubus_register_event_handler(ctx, &dsp_meter_handler, "dsp.meter");
+	if (rc) {
+		log_msg(LOG_ERR, "ubus: %s", ubus_strerror(rc));
+		return 1;
+	}
+
 	rc = link_open(spi_hz, proto_rx);
 	if (rc) {
 		log_msg(LOG_ERR, "cannot open the MCU link: %s", strerror(-rc));
@@ -1047,6 +1160,7 @@ int main(int argc, char **argv)
 	}
 
 	default_version(version, sizeof(version));
+	display_on_mode(on_display_mode);
 	proto_init(&ops, version);
 	uloop_run();
 	link_close();

@@ -57,6 +57,7 @@ E3 -> 63, EA -> 6A).
 | 66 | item | answer to E6. Item 1: [1] 1, [3] DHCP, [4..23] IP, netmask, gateway, DNS 1, DNS 2 (each a 32-bit little endian value), [24..29] MAC. Item 5: 05 + friendly name |
 | 68 | type ... | answers in the firmware update, see below |
 | 6A | 1 byte | reply to EA, echoes its byte; after 6A 01 the MCU cuts the board's power |
+| 71 | screen, see below | the front panel on NET |
 | 73 | 00 or 01, "!1...", CR | ISCP towards the MCU: mcud asks `!1LMDQSTN` (00); 01 with NTI shows nothing |
 
 ### 0x42 stream status
@@ -142,9 +143,29 @@ the MCU's input sequence, and the NET input stays muted.
 | E6 | network | [0] item: 0 status, 1 IP settings, 2 proxy, 3 network control, 4 interface, 5 friendly name, 6-0A change a setting, 0B-0D tests. The network menu shows item 1; stock does not answer 2 |
 | E8 | update | firmware update, see below |
 | EA | power | [0] 00 on, 01 off, 02 factory reset -> 6A with the same byte. 01 comes only when the main zone, Zone 2 and Zone 3 are all off; stock syncs the file systems before answering |
-| F1-F3 | update_source / update_mode / update_start, ISCP | F3 01 "!1..." = ISCP from the MCU |
+| F1 | screen request | [0] 00 [1] kind and zone (11): send the whole 71 screen. On NET only, at the switch and on every press of DISPLAY |
+| F2, F3 | update_mode / update_start, ISCP | F3 01 "!1..." = ISCP from the MCU |
 
 Payload layouts not listed are unknown so far.
+
+### 0x71 front panel
+
+The MCU shows 71 only while the input is NET: two lines of 13 characters,
+Latin-1 (0x20-0x7E, 0xA1-0xFF; 0x7F is a full block, 0x80-0x9F and
+0x0A/0x0B/0x1A-0x1F are icons such as ▶ ⏸ ⏩ ⏪ ← →).
+
+| byte | |
+|---|---|
+| 0 | screen: 0 NET top (the MCU fills in its stored service list), 5 playback |
+| 1 | kind (low nibble) and zone (high nibble, 1 main) |
+| 2-3 | change mask, LE: bit 0 play state, bits 7-13 text block 0-6, bit 15 whole screen |
+| 4 | play state: 02 stopped, 04 playing, 05 paused |
+| 5-18 | elapsed and total time, track, repeat, shuffle, indicators (0) |
+| 19 | number of text blocks, then the blocks |
+
+A text block is `[n + 6] [attr] [type] [col] [width] [n] text`, at most 13
+characters. Type 0 has no icon in front; title (2), artist (3) and album
+(4) have one. Longer text scrolls only if the sender shifts it.
 
 ## Start-up
 
@@ -246,13 +267,15 @@ ubus object `mcu`:
 
 | method | arguments | |
 |---|---|---|
-| `status` | | handshake stage, model, stream status, and once known: bass and treble, the listening mode (`listening_mode`, `listening_mode_name`), the distances, the speaker setup, the input's `interface` (C1 [2]), `update_check` (the MCU waits for an answer to its update check) |
+| `status` | | handshake stage, model, stream status, and once known: bass and treble, the listening mode (`listening_mode`, `listening_mode_name`), the distances, the speaker setup, the input's `interface` (C1 [2]), `update_check` (the MCU waits for an answer to its update check), the front panel's `display` mode |
 | `identity` | `dsp_version`, `dsp_id` | strings for 41 and 46 |
 | `stream` | 0x42 fields by name | updates the stream status, sent if changed; the next speaker setup frame sets the mask again |
 | `outputs` | `mask` | 4A |
 | `levels` | 13 values | 45 |
 | `update` | one of `available` (bool), `progress` (%), `downloaded` (bytes), `result` (`ok`/`error`) | the 68 answers; a failed download is told as a failed 68 01 |
 | `usb` | `present`, `port` | 65 03 |
+| `display` | `title`, `artist`, `album`, `state` (`play`, `pause`, `stop`), `mode` (`name`, `text`, `meter`) | the front panel on NET (71); `mode` alone only changes the mode |
+| `meter` | `left`, `right`, `left_peak`, `right_peak` (dBFS) | levels for the meter, as in dsp.meter (which mcud also takes itself) |
 | `send` | `cmd`, `data` (hex) | any frame, for experiments |
 
 Events (`ubus listen mcu`):
@@ -260,6 +283,7 @@ Events (`ubus listen mcu`):
 | event | from | data |
 |---|---|---|
 | `mcu.ready` | end of start-up | `model`, `make`, `code` |
+| `mcu.display` | DISPLAY on NET | `mode`, the front panel mode it changed to |
 | `mcu.input` | C1, E5 | decoded fields |
 | `mcu.volume` | D3 | `volume` (0.01 dB); also in `mcu status` |
 | `mcu.audyssey` | C7 | `dynamic_eq`, `dynamic_eq_offset` (dB), `dynamic_volume` (0 off to 3), each once the MCU has sent it; also in `mcu status` |
