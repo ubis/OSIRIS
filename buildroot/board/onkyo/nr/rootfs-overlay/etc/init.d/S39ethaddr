@@ -9,8 +9,6 @@ start() {
 	mac=$(osiris-ethaddr)
 	[ -n "$mac" ] || { echo "eth0: no ethaddr in the U-Boot environment"; return 0; }
 	[ "$mac" = "$(cat /sys/class/net/eth0/address 2>/dev/null)" ] && return 0
-	# taking eth0 down under an NFS root would hang the system
-	grep -q "^[^ ]* / nfs" /proc/mounts && { echo "eth0: NFS root, keeping MAC"; return 0; }
 	# an address set by the kernel (ip=, installer) survives the restart, its default route does not
 	gw=$(ip route | sed -n 's/^default via \([0-9.]*\).*/\1/p')
 	ip link set eth0 down
