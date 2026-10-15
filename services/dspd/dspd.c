@@ -32,6 +32,13 @@
 #define PSC_ENABLE	3
 #define MDCTL_LRST	(1u << 8)	/* 0 = DSP held in local reset */
 #define SYSCFG_BASE	0x01C14000u
+#define PSC1_BASE	0x01E27000u
+#define PSC1_MDSTAT_MCASP1 (0x800 + 4 * 8)
+#define MCASP1_BASE	0x01D04000u
+#define MCASP_GBLCTL	0x44
+#define EDMA_BASE	0x01C00000u
+#define EDMA_EECR	0x1028
+#define EDMA_MCASP1	(1u << 2 | 1u << 3)	/* its receive and transmit events */
 #define HOST1CFG	0x44		/* DSP boot address */
 #define L2_BASE		0x11800000u
 #define L2_SIZE		0x40000u
@@ -86,8 +93,9 @@ static const char *const input_name[__INPUT_MAX] = {
 
 static struct ubus_context *ctx;
 static struct blob_buf b;
-static volatile uint32_t *psc, *syscfg;
+static volatile uint32_t *psc, *syscfg, *psc1, *mcasp1, *edma;
 static volatile uint8_t *l2;
+static volatile uint8_t *ddr;		/* the decoder's SDRAM, DSPAUDIO_DDR */
 static volatile struct dspaudio_shared *sh;
 static int gpio_fd = -1;
 
@@ -652,10 +660,73 @@ static void apply(void)
 	}
 }
 
+/*
+ * A DMA image's McASP and EDMA run on without the DSP: stop them, or they
+ * write into L2 while the next image is copied there.
+ */
 static void dsp_stop(void)
 {
+	/* the DSP first, so that it cannot start them again */
 	psc[PSC_MDCTL_DSP / 4] &= ~MDCTL_LRST;
 	usleep(1000);
+
+	if (edma) {
+		edma[EDMA_EECR / 4] = EDMA_MCASP1;
+	}
+	if (psc1 && mcasp1 && (psc1[PSC1_MDSTAT_MCASP1 / 4] & 0x1F) == PSC_ENABLE) {
+		mcasp1[MCASP_GBLCTL / 4] = 0;
+	}
+}
+
+/*
+ * An image built with the AC-3 decoder has its SDRAM part in a file beside
+ * it, .ddr for .bin; none there is no error. SDRAM keeps what the last image
+ * left there: its magic word is cleared first, so that an image never runs a
+ * decoder it was not loaded with.
+ */
+static int dsp_load_ddr(const char *image)
+{
+	char path[256];
+	size_t n = strlen(image);
+	long size;
+	FILE *f;
+	int rc = 0;
+
+	if (ddr) {
+		*(volatile uint32_t *)ddr = 0;
+	}
+
+	if (n > 4 && !strcmp(image + n - 4, ".bin")) {
+		n -= 4;
+	}
+	if (n + 5 > sizeof(path)) {
+		return -ENAMETOOLONG;
+	}
+	memcpy(path, image, n);
+	strcpy(path + n, ".ddr");
+
+	f = fopen(path, "rb");
+	if (!f) {
+		return errno == ENOENT ? 0 : -errno;
+	}
+
+	fseek(f, 0, SEEK_END);
+	size = ftell(f);
+	rewind(f);
+	if (!ddr) {
+		rc = -ENXIO;
+	} else if (size < 4 || size > (long)DSPAUDIO_DDR_LEN) {
+		rc = -EFBIG;
+	} else if (fread((void *)ddr, 1, size, f) != (size_t)size) {
+		*(volatile uint32_t *)ddr = 0;
+		rc = -EIO;
+	}
+	if (ddr) {
+		msync((void *)ddr, DSPAUDIO_DDR_LEN, MS_SYNC);
+	}
+
+	fclose(f);
+	return rc;
 }
 
 static int dsp_start(const char *image)
@@ -694,6 +765,11 @@ static int dsp_start(const char *image)
 	dsp_stop();
 	memcpy((void *)(l2 + DSPAUDIO_LOAD - L2_BASE), img, size);
 	free(img);
+	t = dsp_load_ddr(image);
+	if (t) {
+		log_msg(LOG_ERR, "%s: its SDRAM part: %s", image, strerror(-t));
+		return t;
+	}
 	memset((void *)sh, 0, sizeof(*sh));
 	apply();
 	apply_tone();
@@ -723,6 +799,18 @@ static int dsp_start(const char *image)
 
 	log_msg(LOG_ERR, "DSP did not start, state %u", sh->state);
 	return -ETIMEDOUT;
+}
+
+/* liba52's layout as front/rear.lfe: 3/2.1 */
+static const char *ac3_layout(uint32_t mode)
+{
+	static const char *const name[8] = {
+		"1+1", "1/0", "2/0", "3/0", "2/1", "3/1", "2/2", "3/2",
+	};
+	static char buf[8];
+
+	snprintf(buf, sizeof(buf), "%s.%u", name[mode & 7], (mode >> 4) & 1);
+	return buf;
 }
 
 /* IEC 61937 data types, as Pc names them */
@@ -847,7 +935,10 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_u8(&b, "subwoofer", subwoofer);
 	blobmsg_add_u8(&b, "double_bass", double_bass);
 	blobmsg_add_string(&b, "input", input_name[input]);
-	blobmsg_add_string(&b, "bitstream", bitstream_name(sh->bitstream));
+	blobmsg_add_string(&b, "bitstream", bitstream_name(sh->bitstream & 0x1f));
+	if (sh->bitstream >> 8) {
+		blobmsg_add_string(&b, "decoded", ac3_layout(sh->bitstream >> 8));
+	}
 	blobmsg_add_u32(&b, "lfe_level", (uint32_t)lfe_level);
 	blobmsg_add_u32(&b, "av_sync", (uint32_t)av_sync);
 	blobmsg_add_u32(&b, "loudness", (uint32_t)loudness);
@@ -1310,7 +1401,11 @@ int main(int argc, char **argv)
 
 	psc = map(fd, PSC0_BASE, 0x1000);
 	syscfg = map(fd, SYSCFG_BASE, 0x1000);
+	psc1 = map(fd, PSC1_BASE, 0x1000);
+	mcasp1 = map(fd, MCASP1_BASE, 0x1000);
+	edma = map(fd, EDMA_BASE, 0x2000);
 	l2 = (volatile uint8_t *)map(fd, L2_BASE, L2_SIZE);
+	ddr = (volatile uint8_t *)map(fd, DSPAUDIO_DDR, DSPAUDIO_DDR_LEN);
 	if (!psc || !syscfg || !l2) {
 		log_msg(LOG_ERR, "mmap: %s", strerror(errno));
 		return 1;

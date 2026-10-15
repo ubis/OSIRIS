@@ -32,6 +32,10 @@
 #define DSPAUDIO_AV_BUF		0xC3800000u
 #define DSPAUDIO_AV_LEN		131072	/* processed frames, 4 MiB: 2.7 s at 48 kHz */
 
+/* the AC-3 decoder (an AC3=1 image): its code and data in the next 1 MiB */
+#define DSPAUDIO_DDR		0xC3C00000u
+#define DSPAUDIO_DDR_LEN	0x00100000u
+
 /*
  * Audio from Linux (the NET input): a ring of stereo frames at 48 kHz in the
  * on-chip shared RAM above the reverb, uncached on both sides. Linux writes
@@ -196,7 +200,8 @@ struct dspaudio_shared {
 	uint32_t decim;			/* 2: process every other frame (above 48 kHz), else 1 */
 	uint32_t ring_on;		/* the front pair comes from the ring, not the McASP */
 	/* written by the DSP */
-	uint32_t bitstream;		/* IEC 61937 data type while one plays, else 0 */
+	uint32_t bitstream;		/* IEC 61937 data type while one plays, else 0;
+					 * decoded AC-3: | its layout << 8 (acmod | 0x10 LFE) */
 	float dvol_gain;		/* dB Dynamic Volume applies now */
 };
 
