@@ -1053,6 +1053,17 @@ void dspaudio_main(void)
 				input[1] = tone(1, r);
 			}
 
+			for (in = 0; ready && in < 2; in++) {
+				float x = input[in] / FULL_SCALE;
+
+				mag = input[in] < 0 ? -(uint32_t)input[in] : (uint32_t)input[in];
+				if (mag > SH->meter[in]) {
+					SH->meter[in] = mag;
+				}
+				SH->meter_sq[in] += x * x;
+			}
+			SH->meter_n += ready;
+
 			if (ready && SH->surround.on) {
 				upmix(input[0], input[1]);
 			}
