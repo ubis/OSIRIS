@@ -122,6 +122,10 @@ pcmd [-r rate] [path]    # default 44100 Hz, /var/run/pcm
 cat music.raw > /var/run/pcm
 ```
 
+AirPlay: shairport-sync (`/etc/init.d/S50airplay`, `/etc/shairport-sync.conf`)
+announces the receiver under its host name and writes into the same pipe.
+The AirPlay volume is a digital cut of up to 30 dB.
+
 ## osirisd
 
 What it does today:

@@ -1,0 +1,11 @@
+config BR2_PACKAGE_SHAIRPORT_SYNC
+	bool "shairport-sync"
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	select BR2_PACKAGE_OPENSSL
+	select BR2_PACKAGE_POPT
+	select BR2_PACKAGE_LIBCONFIG
+	help
+	  AirPlay audio player. OSIRIS plays its output on the NET input
+	  through pcmd.
+
+	  https://github.com/mikebrady/shairport-sync

@@ -1,0 +1,24 @@
+#!/bin/sh
+#
+# AirPlay (shairport-sync), after the network: it announces the receiver
+# over mDNS and plays into pcmd's pipe.
+#
+
+case "$1" in
+start)
+	echo -n "Starting AirPlay: "
+	start-stop-daemon -b -S -q -m -p /var/run/shairport-sync.pid \
+		-x /usr/bin/shairport-sync -- -c /etc/shairport-sync.conf && echo "OK"
+	;;
+stop)
+	start-stop-daemon -K -q -p /var/run/shairport-sync.pid
+	;;
+restart|reload)
+	"$0" stop
+	"$0" start
+	;;
+*)
+	echo "Usage: $0 {start|stop|restart}"
+	exit 1
+	;;
+esac
