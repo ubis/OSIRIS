@@ -213,7 +213,7 @@ local function call(object, method, args)
 	local res = conn:call(object, method, args or {})
 	if not res and method ~= "set" and method ~= "identity" and method ~= "network" and
 	   method ~= "power" and method ~= "update" and method ~= "usb" and
-	   method ~= "display" and method ~= "meter" then
+	   method ~= "display" and method ~= "meter" and method ~= "input" then
 		err("%s %s: no answer", object, method)
 	end
 	return res
@@ -781,6 +781,10 @@ local function meta_item(kind, code, data)
 	elseif kind == "ssnc" and META_STATES[code] then
 		if code == "pfls" then
 			pcmd_flush()
+		end
+		-- a phone starts or resumes playing: the receiver goes to NET
+		if META_STATES[code] == "play" and input_now ~= "network" then
+			call("mcu", "input", { input = "net" })
 		end
 		if code == "pend" then
 			track.title, track.artist, track.album = nil, nil, nil

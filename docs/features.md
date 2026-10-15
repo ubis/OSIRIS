@@ -69,7 +69,7 @@ does not sound exactly like the stock firmware.
 | Front panel: "AirPlay" and the album, title and artist, a level meter; DISPLAY switches | ✅ ² |
 | Spotify Connect, internet radio, DLNA | ❌ not yet |
 | USB playback, the NET menu on the TV | ❌ not yet |
-| Switching to NET when a phone starts playing | ❌ not yet |
+| Switching to NET when a phone starts playing | ✅ ² |
 | The AirPlay volume slider sets the receiver's volume | ❌ not yet, it is a digital cut of up to 30 dB |
 | The remote's arrow keys skip tracks on the phone | ❌ not yet |
 
