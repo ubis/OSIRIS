@@ -838,6 +838,61 @@ static int m_meter(struct ubus_context *c, struct ubus_object *obj,
 	return 0;
 }
 
+enum { ISCP_COMMAND, __ISCP_MAX };
+
+static const struct blobmsg_policy iscp_policy[__ISCP_MAX] = {
+	[ISCP_COMMAND] = { .name = "command", .type = BLOBMSG_TYPE_STRING },
+};
+
+static int m_iscp(struct ubus_context *c, struct ubus_object *obj,
+		  struct ubus_request_data *req, const char *method,
+		  struct blob_attr *msg)
+{
+	struct blob_attr *tb[__ISCP_MAX];
+
+	blobmsg_parse(iscp_policy, __ISCP_MAX, tb, blob_data(msg), blob_len(msg));
+	if (!tb[ISCP_COMMAND] || proto_iscp(blobmsg_get_string(tb[ISCP_COMMAND]))) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	return 0;
+}
+
+/* the receiver's inputs by name, as ISCP SLI codes */
+static const struct {
+	const char *name, *code;
+} inputs[] = {
+	{ "vcr_dvr", "00" }, { "cbl_sat", "01" }, { "game", "02" }, { "aux", "03" },
+	{ "pc", "05" }, { "bd_dvd", "10" }, { "phono", "22" }, { "tv_cd", "23" },
+	{ "tuner", "26" }, { "usb", "29" }, { "net", "2B" },
+};
+
+enum { IN_INPUT, __IN_MAX };
+
+static const struct blobmsg_policy input_policy[__IN_MAX] = {
+	[IN_INPUT] = { .name = "input", .type = BLOBMSG_TYPE_STRING },
+};
+
+/* select an input, as the remote would */
+static int m_input(struct ubus_context *c, struct ubus_object *obj,
+		   struct ubus_request_data *req, const char *method,
+		   struct blob_attr *msg)
+{
+	struct blob_attr *tb[__IN_MAX];
+	char cmd[8];
+	size_t i;
+
+	blobmsg_parse(input_policy, __IN_MAX, tb, blob_data(msg), blob_len(msg));
+	for (i = 0; tb[IN_INPUT] && i < ARRAY_SIZE(inputs); i++) {
+		if (!strcmp(blobmsg_get_string(tb[IN_INPUT]), inputs[i].name)) {
+			snprintf(cmd, sizeof(cmd), "SLI%s", inputs[i].code);
+			return proto_iscp(cmd) ? UBUS_STATUS_UNKNOWN_ERROR : 0;
+		}
+	}
+
+	return UBUS_STATUS_INVALID_ARGUMENT;
+}
+
 enum { LV_HEX, __LV_MAX };
 
 static const struct blobmsg_policy levels_policy[__LV_MAX] = {
@@ -1054,6 +1109,8 @@ static const struct ubus_method mcu_methods[] = {
 	UBUS_METHOD("levels", m_levels, levels_policy),
 	UBUS_METHOD("display", m_display, display_policy),
 	UBUS_METHOD("meter", m_meter, meter_policy),
+	UBUS_METHOD("iscp", m_iscp, iscp_policy),
+	UBUS_METHOD("input", m_input, input_policy),
 	UBUS_METHOD("network", m_network, network_policy),
 	UBUS_METHOD("power", m_power, power_policy),
 	UBUS_METHOD("update", m_update, update_policy),
