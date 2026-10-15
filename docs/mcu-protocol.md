@@ -109,7 +109,7 @@ within a second of E5 or on the return, at most every 3 s.
 | C4 | equalizer | [2] 00, then 0 manual EQ off, 1 on; [96] 01, then dB per band (signed): 15 bands from 25 Hz to 16 kHz for front, center, surround, surround back, front high, front wide, then 5 from 25 to 160 Hz for the subwoofer. Not in C0: comes when the menu changes it |
 | C5 | thx | |
 | C6 | multiplex_mono | |
-| C7 | dd_dts_adsy_td | [0] which setting: 07 Dynamic EQ (0 off, 1 on); 08 its reference level offset in 5 dB steps, then 60 09 08 07 E8 03 (not known); 0A Dynamic Volume (0 off, then light, medium, heavy); 03 and 06 not known |
+| C7 | dd_dts_adsy_td | [0] which setting: 07 Dynamic EQ (0 off, 1 on); 08 Dynamic Volume (0 off, then light, medium, heavy), then 60 09 08 07 E8 03 (not known); 0A Dynamic EQ's reference level offset in 5 dB steps; 03 and 06 not known |
 | C8 | dsd_dac_direct | |
 | C9 | lfe_level | [0] format: DD, DTS, AAC, multichannel PCM, TrueHD, DTS-HD MA, DSD; [1] 0 off, 1 -20 dB, 2 -10 dB, 3 0 dB |
 | CA | av_sync | [1..2] u16 LE, ms: the menu's A/V sync less 22 ms (0 up to 20), per input, sent on input changes; AudioApp limits it to 800, 400 or 200 by sample rate |
