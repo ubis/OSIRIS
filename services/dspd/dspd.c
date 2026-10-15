@@ -153,6 +153,22 @@ static int subwoofer, double_bass;
 static int lfe_level;			/* dB, the receiver's LFE level; -100 off */
 static int av_sync;			/* ms */
 static int loudness = -1;		/* dB of bass boost, -1 off */
+static int dynamic_volume;		/* 0 off, 1 light, 2 medium, 3 heavy */
+
+/* Dynamic Volume: how hard each level pulls towards the target */
+static const struct {
+	double strength, boost_max, cut_max;
+} dvol_presets[] = {
+	{ 0.4, 6, 10 },
+	{ 0.6, 10, 15 },
+	{ 0.8, 15, 20 },
+};
+
+#define DVOL_GATE	-60.0		/* dB RMS of the front pair and centre */
+#define DVOL_AVERAGE_MS	10000.0
+#define DVOL_RMS_MS	400.0
+#define DVOL_ATTACK_MS	20.0
+#define DVOL_RELEASE_MS	2000.0
 #define LOUDNESS_MAX	12
 
 /* the receiver's equalizer bands; the subwoofer has the first five */
@@ -423,6 +439,35 @@ static void apply_reverb(void)
 	s->on = 1;
 }
 
+static float per_frame(double ms)
+{
+	return 1.0 - exp(-1000.0 / (ms * SAMPLE_HZ));
+}
+
+static void apply_dvol(void)
+{
+	volatile struct dspaudio_dvol *s = &sh->dvol;
+	struct dspaudio_dvol n = { 0 };
+
+	s->on = 0;
+	__sync_synchronize();
+	if (dynamic_volume < 1 || dynamic_volume > (int)ARRAY_SIZE(dvol_presets)) {
+		return;
+	}
+
+	n.strength = dvol_presets[dynamic_volume - 1].strength;
+	n.boost_max = dvol_presets[dynamic_volume - 1].boost_max;
+	n.cut_max = dvol_presets[dynamic_volume - 1].cut_max;
+	n.gate = DVOL_GATE;
+	n.rms = per_frame(DVOL_RMS_MS);
+	n.average = per_frame(DVOL_AVERAGE_MS);
+	n.attack = per_frame(DVOL_ATTACK_MS);
+	n.release = per_frame(DVOL_RELEASE_MS);
+	put_words(s, &n, sizeof(n));
+	__sync_synchronize();
+	s->on = 1;
+}
+
 static uint32_t ms_samples(double ms)
 {
 	uint32_t n = lround(ms * SAMPLE_HZ / 1000.0);
@@ -635,6 +680,7 @@ static int dsp_start(const char *image)
 	apply_noise();
 	apply_delays();
 	apply_av_sync();
+	apply_dvol();
 	apply_surround();
 	apply_reverb();
 	apply_bass();
@@ -760,6 +806,8 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_u32(&b, "lfe_level", (uint32_t)lfe_level);
 	blobmsg_add_u32(&b, "av_sync", (uint32_t)av_sync);
 	blobmsg_add_u32(&b, "loudness", (uint32_t)loudness);
+	blobmsg_add_u32(&b, "dynamic_volume", (uint32_t)dynamic_volume);
+	blobmsg_add_u32(&b, "dynamic_volume_db", (uint32_t)lround(sh->dvol_gain));
 	a = blobmsg_open_array(&b, "absent");
 	for (i = 0; i < DSPAUDIO_OUT; i++) {
 		if (absent & (1u << i)) {
@@ -776,7 +824,8 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
 	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, SET_CROSSOVER, SET_SUBWOOFER,
 	SET_SUB_LOWPASS, SET_REVERB, SET_DOUBLE_BASS, SET_ABSENT, SET_INPUT,
-	SET_LFE_LEVEL, SET_EQ, SET_AV_SYNC, SET_LOUDNESS, __SET_MAX };
+	SET_LFE_LEVEL, SET_EQ, SET_AV_SYNC, SET_LOUDNESS,
+	SET_DYNAMIC_VOLUME, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -799,6 +848,7 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_EQ] = { .name = "eq", .type = BLOBMSG_TYPE_TABLE },
 	[SET_AV_SYNC] = { .name = "av_sync", .type = BLOBMSG_TYPE_INT32 },
 	[SET_LOUDNESS] = { .name = "loudness", .type = BLOBMSG_TYPE_INT32 },
+	[SET_DYNAMIC_VOLUME] = { .name = "dynamic_volume", .type = BLOBMSG_TYPE_INT32 },
 };
 
 static int out_index(const char *name)
@@ -1041,6 +1091,13 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 	}
 
 	input = new_input;
+
+	/* only on a change: it starts the leveller over */
+	if (tb[SET_DYNAMIC_VOLUME] &&
+	    (int32_t)blobmsg_get_u32(tb[SET_DYNAMIC_VOLUME]) != dynamic_volume) {
+		dynamic_volume = (int32_t)blobmsg_get_u32(tb[SET_DYNAMIC_VOLUME]);
+		apply_dvol();
+	}
 
 	if (tb[SET_AV_SYNC]) {
 		av_sync = (int32_t)blobmsg_get_u32(tb[SET_AV_SYNC]);
