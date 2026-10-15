@@ -14,7 +14,7 @@
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		18
+#define DSPAUDIO_ABI		19
 
 #define DSPAUDIO_IN		8	/* 4 serializers x 2 slots, as the outputs */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
@@ -31,6 +31,20 @@
 /* A/V sync: a delay line of every output in the SDRAM Linux leaves alone (mem=56M) */
 #define DSPAUDIO_AV_BUF		0xC3800000u
 #define DSPAUDIO_AV_LEN		131072	/* processed frames, 4 MiB: 2.7 s at 48 kHz */
+
+/*
+ * Audio from Linux (the NET input): a ring of stereo frames at 48 kHz in the
+ * on-chip shared RAM above the reverb, uncached on both sides. Linux writes
+ * frames and moves write; the DSP takes one per frame and moves read.
+ */
+#define DSPAUDIO_RING		0x80014000u
+#define DSPAUDIO_RING_LEN	4096	/* frames, 85 ms */
+
+struct dspaudio_ring {
+	uint32_t write, read;		/* frames, 0..DSPAUDIO_RING_LEN - 1 */
+	uint32_t pad[14];
+	int32_t frame[DSPAUDIO_RING_LEN][2];
+};
 
 /*
  * Outputs: serializer AXR1_n slot s is output 2n + s, and AXR1_n feeds
@@ -177,11 +191,13 @@ struct dspaudio_shared {
 	uint32_t inputs;		/* one bit per input the source has */
 	uint32_t av_delay;		/* frames every output is held back for A/V sync */
 	uint32_t decim;			/* 2: process every other frame (above 48 kHz), else 1 */
+	uint32_t ring_on;		/* the front pair comes from the ring, not the McASP */
 	/* written by the DSP */
 	uint32_t bitstream;		/* IEC 61937 data type while one plays, else 0 */
 	float dvol_gain;		/* dB Dynamic Volume applies now */
 };
 
 _Static_assert(sizeof(struct dspaudio_shared) <= 0x1000, "the shared block is 4 KiB");
+_Static_assert(sizeof(struct dspaudio_ring) <= 0x0C000, "the ring fits above the reverb");
 
 #endif

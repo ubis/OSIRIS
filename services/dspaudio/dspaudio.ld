@@ -46,6 +46,7 @@ SECTIONS
 	} > L2
 
 	__image_end = .;
+	ASSERT(__image_end <= 0x1181F000, "the image runs into the shared block")
 
 	.shram (NOLOAD) : ALIGN(8) {
 		__shram_start = .;
@@ -53,6 +54,7 @@ SECTIONS
 		. = ALIGN(8);
 		__shram_end = .;
 	} > SHRAM
+	ASSERT(__shram_end <= 0x80014000, "the reverb runs into the ring of audio from Linux")
 
 	/DISCARD/ : {
 		*(.c6xabi.exidx* .c6xabi.extab* .comment .note* .ARM.attributes)

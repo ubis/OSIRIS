@@ -234,6 +234,23 @@ static void tx_restart(void)
 
 static int32_t input[DSPAUDIO_IN];
 
+#define RING		((volatile struct dspaudio_ring *)DSPAUDIO_RING)
+
+/* the next frame from Linux, silence while it has none */
+static void ring_take(int32_t *l, int32_t *r)
+{
+	uint32_t rd = RING->read;
+
+	if (rd == RING->write || rd >= DSPAUDIO_RING_LEN) {
+		*l = *r = 0;
+		return;
+	}
+
+	*l = RING->frame[rd][0];
+	*r = RING->frame[rd][1];
+	RING->read = rd + 1 == DSPAUDIO_RING_LEN ? 0 : rd + 1;
+}
+
 /*
  * Dolby and DTS come wrapped in IEC 61937: each burst starts with the 16-bit
  * words F872 4E1F, then one with the data type. The DSP cannot decode them;
@@ -955,6 +972,7 @@ void dspaudio_main(void)
 	report_start();
 	reverb_clear();
 	av_clear();
+	RING->read = RING->write = 0;
 	psc1_enable(LPSC_MCASP1);
 	if (mcasp_init()) {
 		/* leave the step that timed out for dspd to report */
@@ -999,7 +1017,7 @@ void dspaudio_main(void)
 						}
 					}
 
-					used = burst_hold ? 0 : SH->inputs;
+					used = burst_hold || SH->ring_on ? 0 : SH->inputs;
 				}
 
 				/* the receiver's tone controls are for the front pair */
@@ -1021,6 +1039,15 @@ void dspaudio_main(void)
 				input[in] = !(used & (1u << in)) ? 0 :
 					    in < 2 ? tone(in, rx_acc[in]) : rx_acc[in];
 				rx_acc[in] = 0;
+			}
+
+			/* the NET input: the front pair from Linux */
+			if (ready && SH->ring_on) {
+				int32_t l, r;
+
+				ring_take(&l, &r);
+				input[0] = tone(0, l);
+				input[1] = tone(1, r);
 			}
 
 			if (ready && SH->surround.on) {
