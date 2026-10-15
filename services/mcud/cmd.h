@@ -27,6 +27,7 @@ enum mcu_cmd {
 	NET_NETWORK		= 0x66,	/* answer to MCU_NETWORK */
 	NET_UPDATE		= 0x68,	/* [0] UPDATE_CHECK..., answers MCU_UPDATE */
 	NET_POWER		= 0x6a,	/* answer to MCU_POWER, echoes its byte */
+	NET_FL			= 0x71,	/* front panel text on NET (display.c) */
 	NET_ISCP		= 0x73,	/* 00 or 01, "!1...", CR */
 
 	/* MCU -> DSP */
@@ -65,7 +66,7 @@ enum mcu_cmd {
 	MCU_NETWORK		= 0xe6,	/* [0] item, asked when the network menu opens */
 	MCU_UPDATE		= 0xe8,	/* [0] UPDATE_SOURCE... */
 	MCU_POWER		= 0xea,	/* POWER_* */
-	MCU_UPDATE_SOURCE	= 0xf1,
+	MCU_FL_REQUEST		= 0xf1,	/* [0] 00: send the whole NET_FL screen */
 	MCU_UPDATE_MODE		= 0xf2,
 	MCU_ISCP		= 0xf3,	/* 01 "!1..." */
 };

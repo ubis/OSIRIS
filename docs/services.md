@@ -42,6 +42,7 @@ mcud -v                           # (with S10osiris stopped) log every frame
 | event | when |
 |---|---|
 | `mcu.ready` | handshake done, with the receiver model |
+| `mcu.display` | DISPLAY on NET changed the front panel mode: `name` ("AirPlay" and the album), `text` (title and artist) or `meter` (levels) |
 | `mcu.volume` | volume changed, in 0.01 dB (the MCU applies it itself) |
 | `mcu.input` | input or stream format changed |
 | `mcu.listening_mode` | listening mode changed: `mode` (the MCU's byte, codes in [mcu-protocol.md](mcu-protocol.md)) and `name` (`plii_movie`, `all_ch_stereo`, ...) |
