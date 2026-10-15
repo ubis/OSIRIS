@@ -85,6 +85,7 @@ static void add_listening_mode(void)
 }
 static int tone_known, bass, treble;	/* front tone, dB */
 static int input_interface = -1;	/* MCU_INPUT [2], -1 not known */
+static int av_sync = -1;		/* MCU_AV_SYNC, ms, -1 not known */
 
 /* MCU_DISTANCE, in the receiver's order; the 13th value is not a speaker */
 static const char *const distance_ch[] = {
@@ -422,6 +423,16 @@ static void on_frame(const struct link_frame *f, const char *name)
 		}
 
 		return;
+	case MCU_AV_SYNC:
+		/* the menu's value less 22 ms, what the stock DSP delayed anyway */
+		if (f->len < 3) {
+			break;
+		}
+
+		av_sync = d[1] | (d[2] << 8);
+		blobmsg_add_u32(&b, "ms", (uint32_t)av_sync);
+		event("mcu.av_sync");
+		return;
 	case MCU_LFE_LEVEL:
 		if (f->len < 2 || d[0] >= ARRAY_SIZE(lfe_format) || d[1] >= ARRAY_SIZE(lfe_level_db)) {
 			break;
@@ -551,6 +562,10 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 
 		add_equalizer();
 		blobmsg_close_table(&b, t);
+	}
+
+	if (av_sync >= 0) {
+		blobmsg_add_u32(&b, "av_sync", (uint32_t)av_sync);
 	}
 
 	if (input_interface >= 0) {

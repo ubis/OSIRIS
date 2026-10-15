@@ -151,6 +151,7 @@ static const struct reverb_preset *reverb;	/* NULL: off */
 static int crossover[DSPAUDIO_OUT];	/* Hz, 0 = large: full range */
 static int subwoofer, double_bass;
 static int lfe_level;			/* dB, the receiver's LFE level; -100 off */
+static int av_sync;			/* ms */
 
 /* the receiver's equalizer bands; the subwoofer has the first five */
 #define EQ_BANDS	15
@@ -475,6 +476,14 @@ static void apply_tone(void)
 	sh->tone_sel = next;
 }
 
+/* every output held back by as much, the delay line takes 2.7 s at 48 kHz */
+static void apply_av_sync(void)
+{
+	long n = av_sync > 0 ? lround(av_sync * SAMPLE_HZ / 1000.0) : 0;
+
+	sh->av_delay = n < DSPAUDIO_AV_LEN ? n : DSPAUDIO_AV_LEN - 1;
+}
+
 /* hold the nearer speakers back until the farthest one's sound arrives */
 static void apply_delays(void)
 {
@@ -617,6 +626,7 @@ static int dsp_start(const char *image)
 	apply_tone();
 	apply_noise();
 	apply_delays();
+	apply_av_sync();
 	apply_surround();
 	apply_reverb();
 	apply_bass();
@@ -740,6 +750,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_string(&b, "input", input_name[input]);
 	blobmsg_add_string(&b, "bitstream", bitstream_name(sh->bitstream));
 	blobmsg_add_u32(&b, "lfe_level", (uint32_t)lfe_level);
+	blobmsg_add_u32(&b, "av_sync", (uint32_t)av_sync);
 	a = blobmsg_open_array(&b, "absent");
 	for (i = 0; i < DSPAUDIO_OUT; i++) {
 		if (absent & (1u << i)) {
@@ -756,7 +767,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
 	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, SET_CROSSOVER, SET_SUBWOOFER,
 	SET_SUB_LOWPASS, SET_REVERB, SET_DOUBLE_BASS, SET_ABSENT, SET_INPUT,
-	SET_LFE_LEVEL, SET_EQ, __SET_MAX };
+	SET_LFE_LEVEL, SET_EQ, SET_AV_SYNC, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -777,6 +788,7 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_INPUT] = { .name = "input", .type = BLOBMSG_TYPE_STRING },
 	[SET_LFE_LEVEL] = { .name = "lfe_level", .type = BLOBMSG_TYPE_INT32 },
 	[SET_EQ] = { .name = "eq", .type = BLOBMSG_TYPE_TABLE },
+	[SET_AV_SYNC] = { .name = "av_sync", .type = BLOBMSG_TYPE_INT32 },
 };
 
 static int out_index(const char *name)
@@ -1019,6 +1031,12 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 	}
 
 	input = new_input;
+
+	if (tb[SET_AV_SYNC]) {
+		av_sync = (int32_t)blobmsg_get_u32(tb[SET_AV_SYNC]);
+		av_sync = av_sync < 0 ? 0 : av_sync;
+		apply_av_sync();
+	}
 
 	if (tb[SET_LFE_LEVEL]) {
 		lfe_level = (int32_t)blobmsg_get_u32(tb[SET_LFE_LEVEL]);

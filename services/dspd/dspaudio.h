@@ -14,7 +14,7 @@
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		13
+#define DSPAUDIO_ABI		14
 
 #define DSPAUDIO_IN		8	/* 4 serializers x 2 slots, as the outputs */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
@@ -28,6 +28,9 @@
 #define DSPAUDIO_REVERB_LINES	4
 #define DSPAUDIO_REVERB_LINE_MAX	4095	/* samples per feedback line */
 #define DSPAUDIO_PREDELAY_MAX	4095	/* samples before the reverb starts */
+/* A/V sync: a delay line of every output in the SDRAM Linux leaves alone (mem=56M) */
+#define DSPAUDIO_AV_BUF		0xC3800000u
+#define DSPAUDIO_AV_LEN		131072	/* frames, 4 MiB: 800 ms at 96 kHz fits */
 
 /*
  * Outputs: serializer AXR1_n slot s is output 2n + s, and AXR1_n feeds
@@ -154,6 +157,7 @@ struct dspaudio_shared {
 	uint32_t bass_gen;
 	uint32_t swap;			/* 1: left comes in the right slot (HDMI) */
 	uint32_t inputs;		/* one bit per input the source has */
+	uint32_t av_delay;		/* frames every output is held back for A/V sync */
 	/* written by the DSP */
 	uint32_t bitstream;		/* IEC 61937 data type while one plays, else 0 */
 };

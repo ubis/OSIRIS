@@ -687,6 +687,29 @@ static void bass_finish(float *y)
 #define LIMIT_RELEASE	0.99995f	/* per sample: ~0.4 s back to unity */
 
 static int32_t frame[DSPAUDIO_OUT];
+
+/*
+ * The A/V sync delay line, in SDRAM. L1D caches it (MAR195 covers
+ * 0xC3000000-0xC3FFFFFF), so reading back a frame is one line fill for
+ * several frames.
+ */
+#define MAR(n)		(0x01848000u + 4 * (n))
+#define AV_MASK		(DSPAUDIO_AV_LEN - 1)
+
+static int32_t (*const av_buf)[DSPAUDIO_OUT] = (int32_t (*)[DSPAUDIO_OUT])DSPAUDIO_AV_BUF;
+static unsigned int av_pos;
+
+static void av_clear(void)
+{
+	unsigned int i, out;
+
+	REG(MAR(DSPAUDIO_AV_BUF >> 24)) = 1;
+	for (i = 0; i < DSPAUDIO_AV_LEN; i++) {
+		for (out = 0; out < DSPAUDIO_OUT; out++) {
+			av_buf[i][out] = 0;
+		}
+	}
+}
 static float peak_env[DSPAUDIO_OUT];
 
 /*
@@ -735,6 +758,7 @@ static void frame_first(void)
 
 static void frame_second(void)
 {
+	uint32_t d, r;
 	float *y = frame_y;
 	unsigned int out;
 
@@ -747,10 +771,15 @@ static void frame_second(void)
 		y[DSPAUDIO_OUT_SW] = cascade(bm->sub, sub_z, y[DSPAUDIO_OUT_SW]);
 	}
 
+	d = SH->av_delay;
+	r = (av_pos - (d < DSPAUDIO_AV_LEN ? d : AV_MASK)) & AV_MASK;
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
 		y[out] = limit(out, y[out]);
-		frame[out] = delayed(out, (int32_t)(clampf(y[out], -1.0f, 0.99999994f) * FULL_SCALE));
+		av_buf[av_pos][out] = delayed(out, (int32_t)(clampf(y[out], -1.0f, 0.99999994f) * FULL_SCALE));
+		frame[out] = av_buf[r][out];
 	}
+
+	av_pos = (av_pos + 1) & AV_MASK;
 }
 
 static void report_start(void)
@@ -779,6 +808,7 @@ void dspaudio_main(void)
 
 	report_start();
 	reverb_clear();
+	av_clear();
 	psc1_enable(LPSC_MCASP1);
 	if (mcasp_init()) {
 		/* leave the step that timed out for dspd to report */

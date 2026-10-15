@@ -112,7 +112,7 @@ within a second of E5 or on the return, at most every 3 s.
 | C7 | dd_dts_adsy_td | |
 | C8 | dsd_dac_direct | |
 | C9 | lfe_level | [0] format: DD, DTS, AAC, multichannel PCM, TrueHD, DTS-HD MA, DSD; [1] 0 off, 1 -20 dB, 2 -10 dB, 3 0 dB |
-| CA | av_sync | [1..2] u16 LE, probably ms; AudioApp limits it to 800, 400 or 200 by sample rate |
+| CA | av_sync | [1..2] u16 LE, ms: the menu's A/V sync less 22 ms (0 up to 20), per input, sent on input changes; AudioApp limits it to 800, 400 or 200 by sample rate |
 | CB | hdmi_audio_tv_out | |
 | CC | bass_treble | [0] 0 = front, [1] bass, [8] treble: signed dB, -10..+10 in 2 dB steps |
 | CD | re_eq | [0] 0 THX Re-EQ, 1 Re-EQ; [1] 0 off, 1 on |
@@ -260,6 +260,7 @@ Events (`ubus listen mcu`):
 | `mcu.volume` | D3 | `volume` (0.01 dB) |
 | `mcu.speakers` | C0, C2, D5 | `speakers` (crossover in Hz by speaker, 0 large, missing ones left out), `subwoofers`, `surround_back_channels`, `lfe_lowpass` (0 bypass), `double_bass`, `layout`; also in `mcu status` |
 | `mcu.lfe_level` | C9 | `format`, `level` (dB, -100 off) |
+| `mcu.av_sync` | CA | `ms`, as the MCU sends it; also in `mcu status` |
 | `mcu.equalizer` | C4 | `equalizer`: `eq_on` and a list of band levels in dB for each speaker; also in `mcu status` |
 | `mcu.listening_mode` | D2, F3 !1LMD | `mode` (the D2 byte), `name` (from the ISCP code); also in `mcu status` as `listening_mode` and `listening_mode_name` |
 | `mcu.testtone` | D0 | `channel` |

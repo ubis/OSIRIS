@@ -87,6 +87,7 @@ ubus call dsp set '{"double_bass": true, "absent": ["sbl", "sbr"]}'  # large fro
 ubus call dsp set '{"input": "digital"}'           # "analog", "digital" (HDMI's left and right come swapped) or "multichannel" (PCM from HDMI)
 ubus call dsp set '{"lfe_level": -10}'            # dB on top of the LFE channel's +10, -100 = off
 ubus call dsp set '{"eq": {"fl": [0, 0, 3], "sw": [5]}}'  # dB per band from 25 Hz up (25, 40, 63 ... 16k), at most 6 bands per output
+ubus call dsp set '{"av_sync": 200}'              # ms every output is held back, in SDRAM above Linux (mem=56M)
 ```
 
 dspaudio takes the I2S input from the PCM9211 (the tuner and analog inputs
