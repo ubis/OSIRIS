@@ -1,0 +1,7 @@
+liba52, the AC-3 (Dolby Digital) decoder by Michel Lespinasse and Aaron
+Holtzman, from https://code.videolan.org/videolan/liba52 at commit
+ed8b14b (0.7.4 and fixes up to 2009). Only the decoder files are here,
+unchanged; the DSP-side glue lives in ../.
+
+liba52 is GPL-2.0-or-later (COPYING), so a dspaudio image built with it
+is GPL-2.0-or-later as a whole; OSIRIS's own files keep their licence.
