@@ -89,7 +89,7 @@ static int av_sync = -1;		/* MCU_AV_SYNC, ms, -1 not known */
 static int volume_known, volume;	/* MCU_VOLUME, 0.01 dB */
 
 /* MCU_DD_DTS: one setting per subcommand, each -1 until the MCU sends it */
-enum { ADSY_DEQ = 0x07, ADSY_DEQ_OFFSET = 0x08, ADSY_DVOL = 0x0a };
+enum { ADSY_DEQ = 0x07, ADSY_DVOL = 0x08, ADSY_DEQ_OFFSET = 0x0a };
 static struct {
 	int deq, deq_offset, dvol;
 } adsy = { -1, -1, -1 };
