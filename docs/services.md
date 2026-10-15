@@ -89,6 +89,7 @@ ubus call dsp set '{"lfe_level": -10}'            # dB on top of the LFE channel
 ubus call dsp set '{"eq": {"fl": [0, 0, 3], "sw": [5]}}'  # dB per band from 25 Hz up (25, 40, 63 ... 16k), at most 6 bands per output
 ubus call dsp set '{"av_sync": 200}'              # ms every output is held back, in SDRAM above Linux (mem=56M)
 ubus call dsp set '{"loudness": 6}'               # dB of bass boost on every output (Dynamic EQ), -1 = off
+ubus call dsp set '{"dynamic_volume": 2}'         # Dynamic Volume: 0 off, 1 light, 2 medium, 3 heavy
 ```
 
 dspaudio takes the I2S input from the PCM9211 (the tuner and analog inputs

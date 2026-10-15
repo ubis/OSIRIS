@@ -271,6 +271,11 @@ local function set_loudness()
 	end
 end
 
+-- Dynamic Volume, 0 off to 3 heavy, as the MCU sets it
+local function set_dynamic_volume()
+	call("dsp", "set", { dynamic_volume = adsy_now.dynamic_volume or 0 })
+end
+
 -- how much of the LFE channel multichannel PCM plays; the receiver has one
 -- setting per format, the DSP plays PCM only
 local function set_lfe(format, db)
@@ -690,7 +695,7 @@ local handlers = {
 		set_speakers(call("mcu", "status"))
 		set_distances(distances_now or saved_distances(saved))
 		call("dsp", "set", { input = input_now, lfe_level = lfe_pcm, av_sync = av_now,
-				     loudness = loudness_now })
+				     loudness = loudness_now, dynamic_volume = adsy_now.dynamic_volume or 0 })
 		set_eq()
 	end,
 	["mcu.ready"] = function(msg)
@@ -729,6 +734,7 @@ local handlers = {
 	["mcu.audyssey"] = function(msg)
 		adsy_now = msg
 		set_loudness()
+		set_dynamic_volume()
 	end,
 	["mcu.av_sync"] = function(msg)
 		if msg.ms then
@@ -803,8 +809,10 @@ if st and st.av_sync then
 end
 if st then
 	volume_now = st.volume or volume_now
-	adsy_now = { dynamic_eq = st.dynamic_eq, dynamic_eq_offset = st.dynamic_eq_offset }
+	adsy_now = { dynamic_eq = st.dynamic_eq, dynamic_eq_offset = st.dynamic_eq_offset,
+		     dynamic_volume = st.dynamic_volume }
 	set_loudness()
+	set_dynamic_volume()
 end
 set_eq(saved_eq(saved))
 set_eq(st and st.equalizer)

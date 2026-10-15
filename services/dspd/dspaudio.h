@@ -14,7 +14,7 @@
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		15
+#define DSPAUDIO_ABI		16
 
 #define DSPAUDIO_IN		8	/* 4 serializers x 2 slots, as the outputs */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
@@ -131,6 +131,19 @@ struct dspaudio_bass {
 	struct dspaudio_biquad loud;	/* low shelf, the same on every output */
 };
 
+/*
+ * Dynamic Volume: the level of the front pair and the centre (RMS) pulls
+ * one gain for every output towards its own slow average, by strength of
+ * the difference, boosting at most boost_max and cutting at most cut_max
+ * dB, down fast and up slowly. The overall level stays; the jumps shrink.
+ * Below the gate it holds the gain and the average.
+ */
+struct dspaudio_dvol {
+	uint32_t on;
+	float strength, boost_max, cut_max, gate;	/* dB */
+	float rms, average, attack, release;	/* one-pole coefficients per frame */
+};
+
 struct dspaudio_shared {
 	/* written by the DSP */
 	uint32_t magic;
@@ -151,6 +164,7 @@ struct dspaudio_shared {
 	uint32_t delay[DSPAUDIO_OUT];	/* samples each output is held back */
 	struct dspaudio_surround surround;	/* gain[out][0] scales each output */
 	struct dspaudio_reverb reverb;	/* only with the surround decoder */
+	struct dspaudio_dvol dvol;
 	/*
 	 * dspd fills bass[(bass_gen + 1) & 1], then increments bass_gen. The
 	 * DSP copies the set in pieces and takes it only if bass_gen has not
@@ -163,6 +177,7 @@ struct dspaudio_shared {
 	uint32_t av_delay;		/* frames every output is held back for A/V sync */
 	/* written by the DSP */
 	uint32_t bitstream;		/* IEC 61937 data type while one plays, else 0 */
+	float dvol_gain;		/* dB Dynamic Volume applies now */
 };
 
 _Static_assert(sizeof(struct dspaudio_shared) <= 0x1000, "the shared block is 4 KiB");
