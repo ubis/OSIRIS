@@ -2,7 +2,7 @@
 CC	?= gcc
 CFLAGS	?= -Os
 DSPD	?= ../dspd
-override CFLAGS += -Wall -Wextra -std=gnu99 -I$(DSPD)
+override CFLAGS += -Wall -Wextra -Wno-unused-parameter -std=gnu99 -I$(DSPD)
 LDLIBS	+= -lm
 
 pcmd: pcmd.o

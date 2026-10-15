@@ -115,7 +115,8 @@ to 48 kHz and writes it into a ring of 4096 frames in the DSP's shared RAM
 When dspd's input is `network`, the DSP takes the front pair from the ring
 instead of the McASP, one frame per sample period; the rest of the
 processing is the same as for any other input. Writing waits while the ring
-is full, so the DSP's clock sets the pace.
+is full, so the DSP's clock sets the pace. SIGUSR1 drops what is queued in the pipe and
+the ring, so a pause takes effect at once.
 
 ```sh
 pcmd [-r rate] [path]    # default 44100 Hz, /var/run/pcm
