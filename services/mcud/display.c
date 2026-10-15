@@ -25,8 +25,10 @@
 #define SCROLL_HOLD	5	/* steps at either end of a long text */
 #define METER_MS	80	/* at most this often (dspd sends every 100 ms): each frame is a full SPI transfer */
 #define METER_FALL	4	/* half cells per update */
-#define METER_FLOOR	-42	/* dBFS at the left end ... */
-#define METER_TOP	-6	/* ... and the right: AirPlay's volume cuts before us */
+#define METER_FLOOR	-26	/* dBFS at the left end ... */
+#define METER_TOP	0	/* ... and the right: 2 dB a cell */
+#define SOUND_DB	-60	/* RMS above this ... */
+#define SOUND_UPDATES	10	/* ... this often in a row: something plays */
 #define PEAK_LIFT	10	/* dB under the peak the bar reaches at least */
 #define PEAK_HOLD_MS	1200
 #define PEAK_FALL_MS	80	/* per half cell */
@@ -75,6 +77,7 @@ static struct uloop_timeout draw_timer = { .cb = draw_later };
 
 static int level[2], peak[2];			/* half cells, 0..2 * COLS */
 static long peak_at[2], peak_fell[2], meter_at;
+static int sounding;			/* meter updates in a row with sound */
 
 static long now_ms(void)
 {
@@ -279,6 +282,7 @@ void display_set(const char *t, const char *a, const char *al, enum display_stat
 
 	strcpy(title, nt);
 	strcpy(artist, na);
+	sounding = 0;
 	strcpy(album, ns);
 	state = s;
 	level[0] = level[1] = peak[0] = peak[1] = 0;
@@ -296,6 +300,14 @@ void display_meter(int left, int right, int left_peak, int right_peak)
 {
 	int db[2] = { left, right }, pk[2] = { left_peak, right_peak }, c, changed = 0;
 	long now = now_ms();
+
+	/* sound while we think nothing plays (osirisd restarted mid-session) */
+	sounding = left > SOUND_DB || right > SOUND_DB ?
+		   (sounding < SOUND_UPDATES ? sounding + 1 : sounding) : 0;
+	if (sounding == SOUND_UPDATES && state == DISPLAY_STOPPED) {
+		state = DISPLAY_PLAYING;
+		redraw();
+	}
 
 	for (c = 0; c < 2; c++) {
 		/* a transient lifts the bar at once: peaks sit 10-14 dB over the RMS */
@@ -334,6 +346,7 @@ void display_input(int interface)
 		/* after the MCU's own redraw request, if it sends one */
 		uloop_timeout_set(&draw_timer, 300);
 	} else if (!on) {
+		sounding = 0;
 		uloop_timeout_cancel(&draw_timer);
 		uloop_timeout_cancel(&scroll_timer);
 	}
