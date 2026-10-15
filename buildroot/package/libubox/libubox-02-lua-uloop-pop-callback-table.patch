@@ -1,0 +1,27 @@
+[PATCH] lua/uloop: pop the callback table after a callback
+
+The timer and process callbacks push __uloop_cb and leave it on the Lua
+stack. A timer that fires often overflows the stack within seconds and
+the interpreter crashes; pop it after the call.
+---
+ lua/uloop.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/lua/uloop.c
++++ b/lua/uloop.c
+@@ -44,6 +44,7 @@
+ 	lua_getglobal(state, "__uloop_cb");
+ 	lua_rawgeti(state, -1, tout->r);
+ 	lua_call(state, 0, 0);
++	lua_pop(state, 1);
+ }
+ 
+ static int ul_timer_set(lua_State *L)
+@@ -135,6 +136,7 @@
+ 	luaL_unref(state, -2, proc->r);
+ 	lua_pushinteger(state, ret >> 8);
+ 	lua_call(state, 1, 0);
++	lua_pop(state, 1);
+ }
+ 
+ static int ul_process(lua_State *L)
