@@ -152,6 +152,8 @@ static int crossover[DSPAUDIO_OUT];	/* Hz, 0 = large: full range */
 static int subwoofer, double_bass;
 static int lfe_level;			/* dB, the receiver's LFE level; -100 off */
 static int av_sync;			/* ms */
+static int loudness = -1;		/* dB of bass boost, -1 off */
+#define LOUDNESS_MAX	12
 
 /* the receiver's equalizer bands; the subwoofer has the first five */
 #define EQ_BANDS	15
@@ -359,6 +361,12 @@ static void apply_bass(void)
 			bm->sub[k].b0 = 1;
 			bm->sub[k].b1 = bm->sub[k].b2 = bm->sub[k].a1 = bm->sub[k].a2 = 0;
 		}
+	}
+
+	/* on at 0 dB too: switching it on and off would clear the filters */
+	bm->loud_on = loudness >= 0;
+	if (loudness >= 0) {
+		shelf(&bm->loud, BASS_HZ, loudness, 0);
 	}
 
 	bm->small = small;
@@ -751,6 +759,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_string(&b, "bitstream", bitstream_name(sh->bitstream));
 	blobmsg_add_u32(&b, "lfe_level", (uint32_t)lfe_level);
 	blobmsg_add_u32(&b, "av_sync", (uint32_t)av_sync);
+	blobmsg_add_u32(&b, "loudness", (uint32_t)loudness);
 	a = blobmsg_open_array(&b, "absent");
 	for (i = 0; i < DSPAUDIO_OUT; i++) {
 		if (absent & (1u << i)) {
@@ -767,7 +776,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
 	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, SET_CROSSOVER, SET_SUBWOOFER,
 	SET_SUB_LOWPASS, SET_REVERB, SET_DOUBLE_BASS, SET_ABSENT, SET_INPUT,
-	SET_LFE_LEVEL, SET_EQ, SET_AV_SYNC, __SET_MAX };
+	SET_LFE_LEVEL, SET_EQ, SET_AV_SYNC, SET_LOUDNESS, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -789,6 +798,7 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_LFE_LEVEL] = { .name = "lfe_level", .type = BLOBMSG_TYPE_INT32 },
 	[SET_EQ] = { .name = "eq", .type = BLOBMSG_TYPE_TABLE },
 	[SET_AV_SYNC] = { .name = "av_sync", .type = BLOBMSG_TYPE_INT32 },
+	[SET_LOUDNESS] = { .name = "loudness", .type = BLOBMSG_TYPE_INT32 },
 };
 
 static int out_index(const char *name)
@@ -1061,12 +1071,17 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 	}
 
 	if (tb[SET_CROSSOVER] || tb[SET_SUBWOOFER] || tb[SET_SUB_LOWPASS] ||
-	    tb[SET_DOUBLE_BASS] || tb[SET_ABSENT] || tb[SET_EQ]) {
+	    tb[SET_DOUBLE_BASS] || tb[SET_ABSENT] || tb[SET_EQ] || tb[SET_LOUDNESS]) {
 		/* the decoder only cares whether there is a centre speaker */
 		int centre = (absent ^ new_absent) & 1u << DSPAUDIO_OUT_C;
 
 		memcpy(crossover, xover, sizeof(crossover));
 		memcpy(eq, new_eq, sizeof(eq));
+		if (tb[SET_LOUDNESS]) {
+			loudness = (int32_t)blobmsg_get_u32(tb[SET_LOUDNESS]);
+			loudness = loudness < 0 ? -1 : loudness > LOUDNESS_MAX ? LOUDNESS_MAX : loudness;
+		}
+
 		absent = new_absent;
 		sub_lowpass = lowpass;
 		if (tb[SET_SUBWOOFER]) {

@@ -109,7 +109,7 @@ within a second of E5 or on the return, at most every 3 s.
 | C4 | equalizer | [2] 00, then 0 manual EQ off, 1 on; [96] 01, then dB per band (signed): 15 bands from 25 Hz to 16 kHz for front, center, surround, surround back, front high, front wide, then 5 from 25 to 160 Hz for the subwoofer. Not in C0: comes when the menu changes it |
 | C5 | thx | |
 | C6 | multiplex_mono | |
-| C7 | dd_dts_adsy_td | |
+| C7 | dd_dts_adsy_td | [0] which setting: 07 Dynamic EQ (0 off, 1 on); 08 its reference level offset in 5 dB steps, then 60 09 08 07 E8 03 (not known); 0A Dynamic Volume (0 off, then light, medium, heavy); 03 and 06 not known |
 | C8 | dsd_dac_direct | |
 | C9 | lfe_level | [0] format: DD, DTS, AAC, multichannel PCM, TrueHD, DTS-HD MA, DSD; [1] 0 off, 1 -20 dB, 2 -10 dB, 3 0 dB |
 | CA | av_sync | [1..2] u16 LE, ms: the menu's A/V sync less 22 ms (0 up to 20), per input, sent on input changes; AudioApp limits it to 800, 400 or 200 by sample rate |
@@ -121,7 +121,7 @@ within a second of E5 or on the return, at most every 3 s.
 | D0 | testtone_ch | level calibration: [1] channel 0 fl, 1 c, 2 fr, 3 sr, 4 sbr, 5 sbl, 6 sl, 7 sw, 8 fhl, 9 fhr, 10 fwl, 11 fwr. Comes with listening mode F1; the MCU sets the reference volume (MVL52) and the channel levels itself |
 | D1 | testmode | |
 | D2 | listening_mode | [1] mode, [2] variant, see below; F1 = test tone (calibration) |
-| D3 | volume | [1..2] s16 LE, 0.01 dB; for information, the MCU sets it in the analog stage |
+| D3 | volume | [1..2] s16 LE, 0.01 dB, 0 at the reference level; the MCU sets it in the analog stage, OSIRIS reads it for Dynamic EQ |
 | D4 | headphone | [1] 1 = headphones plugged in |
 | D5 | ch_layout | [1] what the surround back amplifiers drive: 0 nothing, 1 SB, 2 FH, 3 FW, 4 SB+FH, 5 SB+FW, 6 FH+FW, 7 FH+SB(pre), 8 FW+SB(pre), 9 FW+FH(pre), 10 SB(pre), 11 FH(pre), 12 FW(pre), 13 SB+FH+FW(pre) |
 | D6 | special_mode | |
@@ -257,7 +257,8 @@ Events (`ubus listen mcu`):
 |---|---|---|
 | `mcu.ready` | end of start-up | `model`, `make`, `code` |
 | `mcu.input` | C1, E5 | decoded fields |
-| `mcu.volume` | D3 | `volume` (0.01 dB) |
+| `mcu.volume` | D3 | `volume` (0.01 dB); also in `mcu status` |
+| `mcu.audyssey` | C7 | `dynamic_eq`, `dynamic_eq_offset` (dB), `dynamic_volume` (0 off to 3), each once the MCU has sent it; also in `mcu status` |
 | `mcu.speakers` | C0, C2, D5 | `speakers` (crossover in Hz by speaker, 0 large, missing ones left out), `subwoofers`, `surround_back_channels`, `lfe_lowpass` (0 bypass), `double_bass`, `layout`; also in `mcu status` |
 | `mcu.lfe_level` | C9 | `format`, `level` (dB, -100 off) |
 | `mcu.av_sync` | CA | `ms`, as the MCU sends it; also in `mcu status` |

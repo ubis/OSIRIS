@@ -561,6 +561,7 @@ static uint32_t bass_gen, copy_gen, bass_copy;	/* words of the spare done */
 static float bass_z[DSPAUDIO_OUT][2][DSPAUDIO_XO][2];	/* [high, low] */
 static float sub_z[DSPAUDIO_XO][2];
 static float eq_z[DSPAUDIO_OUT][DSPAUDIO_EQ][2];
+static float loud_z[DSPAUDIO_OUT][2];
 
 static float cascade(const struct dspaudio_biquad *q, float (*z)[2], float x)
 {
@@ -592,6 +593,29 @@ static void bass_reset(void)
 	for (i = 0; i < sizeof(eq_z) / sizeof(float); i++) {
 		((float *)eq_z)[i] = 0.0f;
 	}
+
+	for (i = 0; i < sizeof(loud_z) / sizeof(float); i++) {
+		((float *)loud_z)[i] = 0.0f;
+	}
+}
+
+/* the same filters in the same places: their state still fits */
+static int bass_same_layout(const struct dspaudio_bass *a, const struct dspaudio_bass *b)
+{
+	unsigned int out;
+
+	if (a->small != b->small || a->copy != b->copy || a->subwoofer != b->subwoofer ||
+	    a->loud_on != b->loud_on) {
+		return 0;
+	}
+
+	for (out = 0; out < DSPAUDIO_OUT; out++) {
+		if (a->eq_n[out] != b->eq_n[out]) {
+			return 0;
+		}
+	}
+
+	return 1;
 }
 
 static void bass_follow(void)
@@ -627,8 +651,10 @@ static void bass_follow(void)
 		return;
 	}
 
-	/* the old filters' state does not fit the new ones */
-	bass_reset();
+	/* other filters: the old state does not fit them, clear it */
+	if (!bass_same_layout(bm, spare)) {
+		bass_reset();
+	}
 
 	bm = spare;
 	bass_gen = gen;
@@ -653,12 +679,21 @@ static void bass_split(float *y, unsigned int from, unsigned int to)
 	}
 }
 
-/* the equalizer of outputs from .. to - 1 */
+/* the loudness shelf and the equalizer of outputs from .. to - 1 */
 static void eq_split(float *y, unsigned int from, unsigned int to)
 {
 	unsigned int out, k, n;
 
 	for (out = from; out < to; out++) {
+		if (bm->loud_on) {
+			const struct dspaudio_biquad *q = &bm->loud;
+			float *z = loud_z[out], x = y[out], v = q->b0 * x + z[0];
+
+			z[0] = q->b1 * x - q->a1 * v + z[1];
+			z[1] = q->b2 * x - q->a2 * v;
+			y[out] = v;
+		}
+
 		n = bm->eq_n[out] < DSPAUDIO_EQ ? bm->eq_n[out] : DSPAUDIO_EQ;
 		for (k = 0; k < n; k++) {
 			const struct dspaudio_biquad *q = &bm->eq[out][k];
