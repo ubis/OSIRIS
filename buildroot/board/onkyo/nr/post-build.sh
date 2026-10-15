@@ -24,5 +24,5 @@ fi
 
 # which build this is (osiris-upgrade shows it)
 sh $(dirname $0)/../../../../tools/version.sh > $TARGET/etc/osiris-version
-# the clock starts from here when nothing newer is known (S02clock)
+# the clock starts from here until NTP syncs (S02clock)
 echo ${SOURCE_DATE_EPOCH:-$(date +%s)} > $TARGET/etc/osiris-build-time

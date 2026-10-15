@@ -15,7 +15,7 @@ start() {
 	done
 	echo -n "Starting ntpd: "
 	start-stop-daemon -b -S -q -m -p $PIDFILE --exec /usr/sbin/ntpd -- \
-		-n -S /etc/init.d/S02clock $args
+		-n $args
 	echo "OK"
 }
 
