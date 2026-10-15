@@ -8,7 +8,8 @@
   of the receiver's DSP board (UART1), and Python 3 with pyserial on the
   computer it is plugged into.
 - A way to switch the chip between flash (NAND) and serial (UART) boot. On
-  the Onkyo boards that means soldering a DIP switch to its BOOT pins.
+  the Onkyo boards that means soldering a DIP switch to its BOOT pins
+  ([boot-switch.md](boot-switch.md)).
 - An Ethernet cable and a TFTP server on the same network, for loading the
   installer.
 

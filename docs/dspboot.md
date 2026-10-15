@@ -32,7 +32,8 @@ needs a serial cable and a computer.
   serial console pins (for the Onkyo receivers: UART1, as used by the stock
   firmware).
 - A way to switch the chip between **NAND and UART boot** (its BOOT pins).
-  On the Onkyo receivers that means soldering DIP switches to those pins.
+  On the Onkyo receivers that means soldering DIP switches to those pins
+  ([boot-switch.md](boot-switch.md)).
 - The dspboot images: `make dspboot` builds them into `dist/dspboot/`,
   one directory per board. The tools are in `dspboot/tools/`.
 
