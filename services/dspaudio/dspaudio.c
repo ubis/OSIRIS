@@ -532,6 +532,19 @@ static float cascade(const struct dspaudio_biquad *q, float (*z)[2], float x)
 	return x;
 }
 
+static void bass_reset(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < sizeof(bass_z) / sizeof(float); i++) {
+		((float *)bass_z)[i] = 0.0f;
+	}
+
+	for (i = 0; i < sizeof(sub_z) / sizeof(float); i++) {
+		((float *)sub_z)[i] = 0.0f;
+	}
+}
+
 static void bass_follow(void)
 {
 	uint32_t gen = SH->bass_gen;
@@ -566,13 +579,7 @@ static void bass_follow(void)
 	}
 
 	/* the old filters' state does not fit the new ones */
-	for (end = 0; end < sizeof(bass_z) / sizeof(float); end++) {
-		((float *)bass_z)[end] = 0.0f;
-	}
-
-	for (end = 0; end < sizeof(sub_z) / sizeof(float); end++) {
-		((float *)sub_z)[end] = 0.0f;
-	}
+	bass_reset();
 
 	bm = spare;
 	bass_gen = gen;
@@ -634,6 +641,8 @@ static float limit(unsigned int out, float x)
  */
 static float frame_y[DSPAUDIO_OUT];
 
+static int frame_noise;		/* level calibration: the noise alone, no bass split */
+
 static void frame_first(void)
 {
 	unsigned int out;
@@ -643,8 +652,16 @@ static void frame_first(void)
 		frame_y[out] = mix(out);
 	}
 
+	/* the filters held the music from before: do not let it ring out after */
+	if (frame_noise && SH->noise_out == DSPAUDIO_NOISE_OFF) {
+		bass_reset();
+	}
+
+	frame_noise = SH->noise_out != DSPAUDIO_NOISE_OFF;
 	bass_sub = 0.0f;
-	bass_split(frame_y, 0, DSPAUDIO_OUT / 2);
+	if (!frame_noise) {
+		bass_split(frame_y, 0, DSPAUDIO_OUT / 2);
+	}
 }
 
 static void frame_second(void)
@@ -652,8 +669,14 @@ static void frame_second(void)
 	float *y = frame_y;
 	unsigned int out;
 
-	bass_split(y, DSPAUDIO_OUT / 2, DSPAUDIO_OUT);
-	bass_finish(y);
+	if (!frame_noise) {
+		bass_split(y, DSPAUDIO_OUT / 2, DSPAUDIO_OUT);
+		bass_finish(y);
+	} else if (bm->subwoofer) {
+		/* the subwoofer is measured as it plays: through its low pass */
+		y[DSPAUDIO_OUT_SW] = cascade(bm->sub, sub_z, y[DSPAUDIO_OUT_SW]);
+	}
+
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
 		y[out] = limit(out, y[out]);
 		frame[out] = delayed(out, (int32_t)(clampf(y[out], -1.0f, 0.99999994f) * FULL_SCALE));
