@@ -961,13 +961,95 @@ static void report_start(void)
 	SH->state = DSPAUDIO_POWER;
 }
 
+/*
+ * One receive slot: rx holds the RX_SERS serializers' samples of the slot,
+ * odd says it is the second of the frame. Returns whether a frame is in:
+ * every frame, or every other one above 48 kHz.
+ */
+static uint32_t used, front[2], decim = 1;
+static int32_t rx_acc[DSPAUDIO_IN];
+static unsigned int rx_odd;
+
+static unsigned int rx_slot(unsigned int odd, const int32_t *rx)
+{
+	uint32_t mag, was;
+	int32_t smp;
+	unsigned int slot, in, i, j, ready;
+
+	slot = odd ^ (SH->swap & 1);
+	for (i = 0; i < RX_SERS; i++) {
+		in = 2 * i + (slot ^ (RX_FLIP >> i & 1));
+		smp = rx[i];
+		if (i == 0) {
+			front[odd] = smp;
+			if (odd) {
+				was = burst_hold;
+				burst_find(front[0], front[1]);
+				/* found with this frame: its first half is stored already */
+				for (j = 0; !was && burst_hold && j < DSPAUDIO_IN; j++) {
+					input[j] = 0;
+				}
+			}
+
+			used = burst_hold || SH->ring_on ? 0 : SH->inputs;
+		}
+
+		/* the receiver's tone controls are for the front pair */
+		if (decim == 2) {
+			rx_acc[in] += smp >> 1;
+		} else if (in >= 2 || !SH->ring_on) {
+			/* the ring's frame goes in as a whole, below */
+			input[in] = !(used & (1u << in)) ? 0 : in < 2 ? tone(in, smp) : smp;
+		}
+
+		mag = smp < 0 ? -(uint32_t)smp : (uint32_t)smp;
+		if (mag > SH->peak[in]) {
+			SH->peak[in] = mag;
+		}
+	}
+
+	/* a frame in: every frame, or every other one, the mean of two */
+	ready = odd && (decim == 1 || (rx_odd ^= 1) == 0);
+	for (in = 0; ready && decim == 2 && in < DSPAUDIO_IN; in++) {
+		if (in >= 2 || !SH->ring_on) {
+			input[in] = !(used & (1u << in)) ? 0 :
+				    in < 2 ? tone(in, rx_acc[in]) : rx_acc[in];
+		}
+		rx_acc[in] = 0;
+	}
+
+	/* the NET input: the front pair from Linux */
+	if (ready && SH->ring_on) {
+		int32_t l, r;
+
+		ring_take(&l, &r);
+		input[0] = tone(0, l);
+		input[1] = tone(1, r);
+	}
+
+	for (in = 0; ready && in < 2; in++) {
+		float x = input[in] / FULL_SCALE;
+
+		mag = input[in] < 0 ? -(uint32_t)input[in] : (uint32_t)input[in];
+		if (mag > SH->meter[in]) {
+			SH->meter[in] = mag;
+		}
+		SH->meter_sq[in] += x * x;
+	}
+	SH->meter_n += ready;
+
+	if (ready && SH->surround.on) {
+		upmix(input[0], input[1]);
+	}
+
+	SH->samples++;
+	return ready;
+}
+
 void dspaudio_main(void)
 {
-	uint32_t xs, rs, idle = 0, mag, used = 0, was, front[2] = { 0, 0 }, decim, last_decim = 1;
-	int32_t rx_acc[DSPAUDIO_IN] = { 0 };
-	unsigned int rx_odd = 0, tx_odd = 0, ready;
-	int32_t smp;
-	unsigned int slot, odd, in, i, j;
+	uint32_t xs, rs, idle = 0, last_decim = 1;
+	unsigned int tx_odd = 0, slot, in, i;
 
 	report_start();
 	reverb_clear();
@@ -1001,74 +1083,13 @@ void dspaudio_main(void)
 
 		rs = REG(RSTAT);
 		if (rs & STAT_DATA) {
-			odd = (rs & STAT_ODD_SLOT) ? 1 : 0;
-			slot = odd ^ (SH->swap & 1);
+			int32_t rx[RX_SERS];
+
 			for (i = 0; i < RX_SERS; i++) {
-				in = 2 * i + (slot ^ (RX_FLIP >> i & 1));
-				smp = (int32_t)REG(RBUF(rx_ser[i]));
-				if (i == 0) {
-					front[odd] = smp;
-					if (odd) {
-						was = burst_hold;
-						burst_find(front[0], front[1]);
-						/* found with this frame: its first half is stored already */
-						for (j = 0; !was && burst_hold && j < DSPAUDIO_IN; j++) {
-							input[j] = 0;
-						}
-					}
-
-					used = burst_hold || SH->ring_on ? 0 : SH->inputs;
-				}
-
-				/* the receiver's tone controls are for the front pair */
-				if (decim == 2) {
-					rx_acc[in] += smp >> 1;
-				} else if (in >= 2 || !SH->ring_on) {
-					/* the ring's frame goes in as a whole, below */
-					input[in] = !(used & (1u << in)) ? 0 : in < 2 ? tone(in, smp) : smp;
-				}
-
-				mag = smp < 0 ? -(uint32_t)smp : (uint32_t)smp;
-				if (mag > SH->peak[in]) {
-					SH->peak[in] = mag;
-				}
+				rx[i] = (int32_t)REG(RBUF(rx_ser[i]));
 			}
 
-			/* a frame in: every frame, or every other one, the mean of two */
-			ready = odd && (decim == 1 || (rx_odd ^= 1) == 0);
-			for (in = 0; ready && decim == 2 && in < DSPAUDIO_IN; in++) {
-				if (in >= 2 || !SH->ring_on) {
-					input[in] = !(used & (1u << in)) ? 0 :
-						    in < 2 ? tone(in, rx_acc[in]) : rx_acc[in];
-				}
-				rx_acc[in] = 0;
-			}
-
-			/* the NET input: the front pair from Linux */
-			if (ready && SH->ring_on) {
-				int32_t l, r;
-
-				ring_take(&l, &r);
-				input[0] = tone(0, l);
-				input[1] = tone(1, r);
-			}
-
-			for (in = 0; ready && in < 2; in++) {
-				float x = input[in] / FULL_SCALE;
-
-				mag = input[in] < 0 ? -(uint32_t)input[in] : (uint32_t)input[in];
-				if (mag > SH->meter[in]) {
-					SH->meter[in] = mag;
-				}
-				SH->meter_sq[in] += x * x;
-			}
-			SH->meter_n += ready;
-
-			if (ready && SH->surround.on) {
-				upmix(input[0], input[1]);
-			}
-
-			SH->samples++;
+			rx_slot((rs & STAT_ODD_SLOT) ? 1 : 0, rx);
 			if (rs & STAT_UNDERRUN) {
 				SH->overruns++;
 				REG(RSTAT) = STAT_UNDERRUN | STAT_ERR;
