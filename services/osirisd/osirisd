@@ -113,6 +113,7 @@ local back = BACK.sb		-- what the surround back outputs play
 local distances_now		-- the MCU's distances by speaker
 local testtone_ch = "fl"
 local input_now			-- "analog", "digital", "multichannel"; nil: not known yet
+local lfe_pcm = 0		-- dB, the LFE level for multichannel PCM; -100 off
 local media = {}		-- mounted USB storage, by directory
 local bundle			-- { path, version } of an update on it
 local job			-- the running update step: its steps, percent, process
@@ -234,6 +235,18 @@ local function set_model(m)
 	local host = m.model:upper():gsub("[^A-Z0-9]", "-")
 	os.execute("hostname " .. host)
 	log("%s %s (%s), hostname %s", m.make or "", m.model, m.code or "", host)
+end
+
+-- how much of the LFE channel multichannel PCM plays; the receiver has one
+-- setting per format, the DSP plays PCM only
+local function set_lfe(format, db)
+	if format ~= "multichannel_pcm" or not db then
+		return
+	end
+
+	lfe_pcm = db
+	save_state({ lfe_multichannel_pcm = db })
+	call("dsp", "set", { lfe_level = db })
 end
 
 -- noise only during level calibration, on the channel the MCU picked
@@ -591,7 +604,7 @@ local handlers = {
 		set_tone(tonumber(saved.bass or ""), tonumber(saved.treble or ""))
 		set_speakers(call("mcu", "status"))
 		set_distances(distances_now or saved_distances(saved))
-		call("dsp", "set", { input = input_now })
+		call("dsp", "set", { input = input_now, lfe_level = lfe_pcm })
 	end,
 	["mcu.ready"] = function(msg)
 		set_model(msg)
@@ -616,6 +629,9 @@ local handlers = {
 		if msg.interface then
 			set_input(msg.interface)
 		end
+	end,
+	["mcu.lfe_level"] = function(msg)
+		set_lfe(msg.format, msg.level)
 	end,
 	["mcu.testtone"] = function(msg)
 		testtone_ch = msg.channel or testtone_ch
@@ -676,6 +692,7 @@ end
 
 set_speakers(st)
 set_distances(st and st.distances or saved_distances(saved))
+set_lfe("multichannel_pcm", tonumber(saved.lfe_multichannel_pcm or "") or 0)
 if st and st.interface then
 	set_input(st.interface)
 end
