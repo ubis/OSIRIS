@@ -159,7 +159,10 @@ What it does today:
   crossover and distance of what the receiver's layout puts there (surround
   back, front high or front wide)
 - passes the speaker distances to the DSP and keeps them in the state file
-- plays the ring (pcmd, AirPlay) on the NET input
+- plays the ring (pcmd, AirPlay) on the NET input, with the level meter on
+- reads shairport-sync's metadata pipe: the track and the play state go to
+  the front panel, and a pause or skip makes pcmd drop its queued audio
+- keeps the front panel mode DISPLAY picked in the state file
 - answers the network menu with the address, link state and MAC of eth0
 - offers an update bundle of another version on a USB stick when the
   receiver asks for updates: the receiver shows its update notice, and its
