@@ -96,6 +96,9 @@ local BACK = {
 	fh = { speaker = "front_high", l = "fhl", r = "fhr" },
 	fw = { speaker = "front_wide", l = "fwl", r = "fwr" },
 }
+local EQ_SPEAKERS = {
+	"front", "center", "surround", "surround_back", "front_high", "front_wide", "subwoofer",
+}
 local OUTPUT_SPEAKER = {
 	fl = "front", fr = "front", c = "center", sl = "surround", sr = "surround",
 }
@@ -112,6 +115,7 @@ local mode_now, mode_name
 local back = BACK.sb		-- what the surround back outputs play
 local distances_now		-- the MCU's distances by speaker
 local testtone_ch = "fl"
+local eq_now = {}		-- the receiver's equalizer: eq_on and bands by speaker
 local input_now			-- "analog", "digital", "multichannel"; nil: not known yet
 local lfe_pcm = 0		-- dB, the LFE level for multichannel PCM; -100 off
 local media = {}		-- mounted USB storage, by directory
@@ -341,6 +345,53 @@ local function set_distances(d)
 	call("dsp", "set", { distances = out })
 end
 
+-- the receiver's equalizer on the outputs, flat while it is off; the
+-- surround back outputs take the bands of what the layout has them drive.
+-- mcud reports only what the MCU has sent since it started: the rest stays.
+local function set_eq(e)
+	local bands, out = {}, {}
+
+	for k, v in pairs(e or {}) do
+		eq_now[k] = v
+	end
+
+	e = eq_now
+	local save = { eq_on = e.eq_on and 1 or 0 }
+	for _, sp in ipairs(EQ_SPEAKERS) do
+		local b = type(e[sp]) == "table" and e[sp] or {}
+
+		bands[sp] = e.eq_on and b or {}
+		save["eq_" .. sp] = table.concat(b, ",")
+	end
+
+	for _, o in ipairs(OUTPUTS) do
+		local sp = o == "sw" and "subwoofer" or (o == "sbl" or o == "sbr") and back.speaker or
+			   OUTPUT_SPEAKER[o]
+
+		out[o] = bands[sp] or {}
+	end
+
+	save_state(save)
+	call("dsp", "set", { eq = out })
+end
+
+-- the equalizer as saved, for a start before the MCU reports it
+local function saved_eq(saved)
+	local e = { eq_on = saved.eq_on == "1" }
+
+	for _, sp in ipairs(EQ_SPEAKERS) do
+		local b = {}
+
+		for v in (saved["eq_" .. sp] or ""):gmatch("-?%d+") do
+			b[#b + 1] = tonumber(v)
+		end
+
+		e[sp] = b
+	end
+
+	return e
+end
+
 -- the speakers there are, small ones' bass to the subwoofer
 local function set_speakers(m)
 	if not m or not m.speakers then
@@ -375,6 +426,10 @@ local function set_speakers(m)
 		absent = absent,
 	})
 	set_distances(distances_now)
+	-- not before the saved equalizer is loaded, it would be saved flat
+	if next(eq_now) then
+		set_eq()
+	end
 end
 
 local function saved_distances(saved)
@@ -605,6 +660,7 @@ local handlers = {
 		set_speakers(call("mcu", "status"))
 		set_distances(distances_now or saved_distances(saved))
 		call("dsp", "set", { input = input_now, lfe_level = lfe_pcm })
+		set_eq()
 	end,
 	["mcu.ready"] = function(msg)
 		set_model(msg)
@@ -629,6 +685,9 @@ local handlers = {
 		if msg.interface then
 			set_input(msg.interface)
 		end
+	end,
+	["mcu.equalizer"] = function(msg)
+		set_eq(msg.equalizer)
 	end,
 	["mcu.lfe_level"] = function(msg)
 		set_lfe(msg.format, msg.level)
@@ -693,6 +752,8 @@ end
 set_speakers(st)
 set_distances(st and st.distances or saved_distances(saved))
 set_lfe("multichannel_pcm", tonumber(saved.lfe_multichannel_pcm or "") or 0)
+set_eq(saved_eq(saved))
+set_eq(st and st.equalizer)
 if st and st.interface then
 	set_input(st.interface)
 end

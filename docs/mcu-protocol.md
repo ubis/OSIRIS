@@ -106,7 +106,7 @@ within a second of E5 or on the return, at most every 3 s.
 | C1 | input_settings | [1] decode mode [2] interface [3] fs code [4] MCLK [5] status |
 | C2 | speaker_config | [1] subwoofers (0, 1, 2), [2..7] front, center, surround, surround back, front high, front wide: 0 none, 1 large, 2..15 small with the crossover 40, 45, 50, 55, 60, 70, 80, 90, 100, 110, 120, 130, 150, 200 Hz; [8] surround back 0 one, 1 two channels; [9] LFE low pass 80, 90, 100, 110, 120 Hz, 5 bypass; [10] double bass; [11..17] wireless; stock answers with 45 |
 | C3 | distance | [0] not known (perhaps the unit the menu shows), [1..26] 13 x u16 LE in cm: fl, c, fr, sl, sr, sbl, sbr, fhl, fhr, fwl, fwr, sw, (0); 5 cm steps; sent when changed |
-| C4 | equalizer | |
+| C4 | equalizer | [2] 00, then 0 manual EQ off, 1 on; [96] 01, then dB per band (signed): 15 bands from 25 Hz to 16 kHz for front, center, surround, surround back, front high, front wide, then 5 from 25 to 160 Hz for the subwoofer. Not in C0: comes when the menu changes it |
 | C5 | thx | |
 | C6 | multiplex_mono | |
 | C7 | dd_dts_adsy_td | |
@@ -260,6 +260,7 @@ Events (`ubus listen mcu`):
 | `mcu.volume` | D3 | `volume` (0.01 dB) |
 | `mcu.speakers` | C0, C2, D5 | `speakers` (crossover in Hz by speaker, 0 large, missing ones left out), `subwoofers`, `surround_back_channels`, `lfe_lowpass` (0 bypass), `double_bass`, `layout`; also in `mcu status` |
 | `mcu.lfe_level` | C9 | `format`, `level` (dB, -100 off) |
+| `mcu.equalizer` | C4 | `equalizer`: `eq_on` and a list of band levels in dB for each speaker; also in `mcu status` |
 | `mcu.listening_mode` | D2, F3 !1LMD | `mode` (the D2 byte), `name` (from the ISCP code); also in `mcu status` as `listening_mode` and `listening_mode_name` |
 | `mcu.testtone` | D0 | `channel` |
 | `mcu.distance` | C0, C3 | `distances` (cm by speaker); C3 [0] is only logged |

@@ -34,7 +34,7 @@ enum mcu_cmd {
 	MCU_INPUT		= 0xc1,	/* [1] decode [2] interface [3] fs [4] MCLK [5] status */
 	MCU_SPEAKERS		= 0xc2,	/* [1] subwoofers, [2..7] SPEAKER_* crossover codes, [8] SB channels, [9] LFE low pass, [10] double bass */
 	MCU_DISTANCE		= 0xc3,	/* [0] ?, [1..26] 13 x u16 LE cm, DISTANCE_ORDER */
-	MCU_EQUALIZER		= 0xc4,
+	MCU_EQUALIZER		= 0xc4,	/* [2] 00, then on; [96] 01, then dB per band */
 	MCU_THX			= 0xc5,
 	MCU_MULTIPLEX_MONO	= 0xc6,
 	MCU_DD_DTS		= 0xc7,

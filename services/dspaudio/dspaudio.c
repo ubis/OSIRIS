@@ -560,6 +560,7 @@ static const struct dspaudio_bass *bm = &bass_buf[0];
 static uint32_t bass_gen, copy_gen, bass_copy;	/* words of the spare done */
 static float bass_z[DSPAUDIO_OUT][2][DSPAUDIO_XO][2];	/* [high, low] */
 static float sub_z[DSPAUDIO_XO][2];
+static float eq_z[DSPAUDIO_OUT][DSPAUDIO_EQ][2];
 
 static float cascade(const struct dspaudio_biquad *q, float (*z)[2], float x)
 {
@@ -586,6 +587,10 @@ static void bass_reset(void)
 
 	for (i = 0; i < sizeof(sub_z) / sizeof(float); i++) {
 		((float *)sub_z)[i] = 0.0f;
+	}
+
+	for (i = 0; i < sizeof(eq_z) / sizeof(float); i++) {
+		((float *)eq_z)[i] = 0.0f;
 	}
 }
 
@@ -648,6 +653,24 @@ static void bass_split(float *y, unsigned int from, unsigned int to)
 	}
 }
 
+/* the equalizer of outputs from .. to - 1 */
+static void eq_split(float *y, unsigned int from, unsigned int to)
+{
+	unsigned int out, k, n;
+
+	for (out = from; out < to; out++) {
+		n = bm->eq_n[out] < DSPAUDIO_EQ ? bm->eq_n[out] : DSPAUDIO_EQ;
+		for (k = 0; k < n; k++) {
+			const struct dspaudio_biquad *q = &bm->eq[out][k];
+			float *z = eq_z[out][k], x = y[out], v = q->b0 * x + z[0];
+
+			z[0] = q->b1 * x - q->a1 * v + z[1];
+			z[1] = q->b2 * x - q->a2 * v;
+			y[out] = v;
+		}
+	}
+}
+
 static void bass_finish(float *y)
 {
 	float sub = bass_sub;
@@ -705,6 +728,8 @@ static void frame_first(void)
 	bass_sub = 0.0f;
 	if (!frame_noise) {
 		bass_split(frame_y, 0, DSPAUDIO_OUT / 2);
+		/* the subwoofer's is only final after the second half */
+		eq_split(frame_y, 0, DSPAUDIO_OUT_SW);
 	}
 }
 
@@ -716,6 +741,7 @@ static void frame_second(void)
 	if (!frame_noise) {
 		bass_split(y, DSPAUDIO_OUT / 2, DSPAUDIO_OUT);
 		bass_finish(y);
+		eq_split(y, DSPAUDIO_OUT_SW, DSPAUDIO_OUT);
 	} else if (bm->subwoofer) {
 		/* the subwoofer is measured as it plays: through its low pass */
 		y[DSPAUDIO_OUT_SW] = cascade(bm->sub, sub_z, y[DSPAUDIO_OUT_SW]);
