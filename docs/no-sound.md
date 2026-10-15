@@ -88,8 +88,7 @@ Replacing the NAND is harder than it sounds:
 | Stock firmware gone, no backup | Run OSIRIS |
 
 OSIRIS runs on both the D830 and the OMAP-L137 and on 512 B, 2 KiB and
-4 KiB page NAND. It does not decode Dolby or DTS;
-[Features](features.md) lists what works.
+4 KiB page NAND; [Features](features.md) lists what works.
 
 ## Bypassing the DSP
 
