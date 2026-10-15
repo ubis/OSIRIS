@@ -214,7 +214,7 @@ local function call(object, method, args)
 	local res = conn:call(object, method, args or {})
 	if not res and method ~= "set" and method ~= "identity" and method ~= "network" and
 	   method ~= "power" and method ~= "update" and method ~= "usb" and
-	   method ~= "display" and method ~= "meter" and method ~= "input" and method ~= "volume" then
+	   method ~= "display" and method ~= "meter" and method ~= "input" and method ~= "volume" and method ~= "stream" then
 		err("%s %s: no answer", object, method)
 	end
 	return res
@@ -355,11 +355,19 @@ function set_back_fill()
 	end
 end
 
+-- AC-3 the DSP decodes (dsp.bitstream): with a centre or surrounds it plays
+-- as multichannel from a digital input; ac3_ca is its layout as a CEA-861
+-- allocation, nil otherwise. ac3_now: the 0x42 the MCU got for it. c1_*:
+-- the MCU's last input report, to go back to.
+local ac3_ca, ac3_now, c1_interface, c1_channels
+
 -- the source by the MCU's C1 interface: 1 analog, 2 multichannel PCM from
 -- HDMI, 5 the NET input (audio from Linux), else digital
 local function set_input(interface, fs, channels)
-	local input = interface == 1 and "analog" or interface == 2 and "multichannel" or
-		      interface == 5 and "network" or "digital"
+	c1_interface, c1_channels = interface, channels or c1_channels
+	local decoded = ac3_ca and interface ~= 1 and interface ~= 5
+	local input = decoded and "multichannel" or interface == 1 and "analog" or
+		      interface == 2 and "multichannel" or interface == 5 and "network" or "digital"
 	local was = input_now
 
 	-- the DSP works out its filters and delays for the rate the MCU reports
@@ -372,7 +380,7 @@ local function set_input(interface, fs, channels)
 	end
 
 	input_now = input
-	channels_now = channels or channels_now
+	channels_now = decoded and ac3_ca or channels or channels_now
 	set_back_fill()
 	if input == was then
 		return
@@ -871,6 +879,24 @@ local function meta_tick()
 	meta_timer:set(META_MS)
 end
 
+-- AC-3 layouts (acmod) as AudioApp tells the MCU: the source's channel
+-- mask, and the count of front and rear channels for " 5.1"
+local AC3_MASK = { [0] = 0x2000, 0x0002, 0x0005, 0x0007, 0x0025, 0x0027, 0x008D, 0x008F }
+local AC3_FRONT = { [0] = 2, 1, 2, 3, 2, 3, 2, 3 }
+local AC3_REAR = { [0] = 0, 0, 0, 0, 1, 1, 2, 2 }
+local STREAM_PCM = { type = 2, input_mask = 0x0005, lfe = false, channels = " 2.0", format = 0x20 }
+
+-- liba52's layout names (dsp status "decoded") back to acmod
+local AC3_NAMES = { ["1+1"] = 0, ["1/0"] = 1, ["2/0"] = 2, ["3/0"] = 3, ["2/1"] = 4,
+		    ["3/1"] = 5, ["2/2"] = 6, ["3/2"] = 7 }
+
+local function ac3_stream(acmod, lfe)
+	local text = acmod == 0 and " 1+1" or
+		     string.format(" %d.%d", AC3_FRONT[acmod] + AC3_REAR[acmod], lfe and 1 or 0)
+
+	return { type = 3, input_mask = AC3_MASK[acmod], lfe = lfe, channels = text, format = 0x20 }
+end
+
 local handlers = {
 	["dsp.ready"] = function()
 		-- a restarted dspd has none of it: send it all again
@@ -891,8 +917,34 @@ local handlers = {
 	["mcu.display"] = function(msg)
 		save_state({ display = msg.mode })
 	end,
+	-- Dolby Digital decoded on the DSP: the MCU shows it, and with a centre or
+	-- surrounds it plays as multichannel (2/0 stays stereo for the upmix)
+	["dsp.bitstream"] = function(msg)
+		local was = ac3_ca
+		local acmod = tonumber(msg.acmod)
+
+		if msg.decoded and acmod and AC3_MASK[acmod] then
+			ac3_ca = acmod >= 3 and (AC3_REAR[acmod] > 0 and 0x0B or 0x00) or nil
+			ac3_now = ac3_stream(acmod, msg.lfe == true or msg.lfe == 1)
+			call("mcu", "stream", ac3_now)
+		else
+			ac3_ca = nil
+			if ac3_now then
+				ac3_now = nil
+				call("mcu", "stream", STREAM_PCM)
+			end
+		end
+
+		if (ac3_ca ~= nil) ~= (was ~= nil) and c1_interface then
+			set_input(c1_interface, nil, c1_channels)
+		end
+	end,
 	["mcu.ready"] = function(msg)
 		set_model(msg)
+		-- a restarted mcud starts from PCM
+		if ac3_now then
+			call("mcu", "stream", ac3_now)
+		end
 		set_display(load_state().display)
 		show_track()
 		set_usb()
@@ -1010,6 +1062,14 @@ end
 
 local saved = load_state()
 set_display(saved.display)
+-- AC-3 decoded since before osirisd started: dspd only tells changes
+local ds = call("dsp", "status")
+if ds and ds.decoded then
+	local name, lfe = ds.decoded:match("^([^.]+)%.(%d)$")
+	if name and AC3_NAMES[name] then
+		handlers["dsp.bitstream"]({ decoded = ds.decoded, acmod = AC3_NAMES[name], lfe = lfe == "1" })
+	end
+end
 if st and (st.listening_mode or st.listening_mode_name) then
 	set_mode(st.listening_mode, st.listening_mode_name)
 else

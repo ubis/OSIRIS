@@ -187,6 +187,8 @@ What it does today:
   the bottom, `airplay_max_db` at the top (-40 dB unless a line such as
   `airplay_max_db=-30` in `/data/osiris/state` says otherwise, at most 0)
 - keeps the front panel mode DISPLAY picked in the state file
+- plays AC-3 the DSP decodes as multichannel when it has a centre or
+  surrounds, and has the MCU show it as Dolby Digital with its layout
 - answers the network menu with the address, link state and MAC of eth0
 - offers an update bundle of another version on a USB stick when the
   receiver asks for updates: the receiver shows its update notice, and its
