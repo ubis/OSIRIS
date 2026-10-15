@@ -73,7 +73,7 @@ Tested on the TX-NR717.
 | HDMI audio, PCM stereo and multichannel, up to 96 kHz | ✅ (5.1 tested) |
 | HDMI ARC | ❌ not yet |
 | Network control (Onkyo Remote app) | ❌ not yet |
-| AirPlay | 🚧 in progress: plays through the DSP, the NET input not yet |
+| AirPlay | ✅ |
 | Spotify, DLNA, internet radio, USB playback, NET menu | ❌ not yet |
 | Dolby Digital / DTS decoding | ❌ not yet, the bitstreams are muted; maybe in the far future (open AC-3 / DTS core decoders like liba52 exist) |
 
