@@ -4,6 +4,7 @@ source "package/busybox/Config.in"
 
 menu "OSIRIS (Onkyo receivers)"
 	source "package/mcud/Config.in"
+	source "package/pcmd/Config.in"
 	source "package/dspd/Config.in"
 	source "package/dspaudio/Config.in"
 	source "package/osirisd/Config.in"

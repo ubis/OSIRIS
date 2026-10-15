@@ -1,7 +1,8 @@
 #!/bin/sh
 #
 # Start the receiver services: the watchdog, the ubus, the MCU link (mcud),
-# the DSP (dspd) and the policy between them (osirisd). They log to syslog.
+# the DSP (dspd), the policy between them (osirisd) and audio from Linux to
+# the DSP (pcmd). They log to syslog.
 #
 
 # daemon /path/to/name [args]: runs it in the background with /var/run/name.pid
@@ -25,12 +26,13 @@ start() {
 	daemon /usr/sbin/mcud && echo -n "mcud "
 	daemon /usr/sbin/dspd && echo -n "dspd "
 	daemon /usr/sbin/osirisd && echo -n "osirisd "
+	daemon /usr/sbin/pcmd && echo -n "pcmd "
 	echo "OK"
 }
 
 stop() {
 	echo -n "Stopping OSIRIS: "
-	for d in osirisd dspd mcud ubusd; do
+	for d in pcmd osirisd dspd mcud ubusd; do
 		start-stop-daemon -K -q -p /var/run/$d.pid
 	done
 	echo "OK"
