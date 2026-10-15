@@ -39,6 +39,7 @@ local OWN_HOSTNAME = "/data/etc/hostname"
 local STATE = "/data/osiris/state"
 
 -- listening modes (D2), with the ISCP name the MCU reports alongside
+local LM_STEREO = 0x04				-- LMD00
 local LM_ALL_CH_STEREO = 0x0A			-- LMD0C
 local LM_FULL_MONO = 0x0B			-- LMD13
 local LM_TESTTONE = 0xF1			-- level calibration (C_LM_TESTTONE)
@@ -111,6 +112,7 @@ local mode_now, mode_name
 local back = BACK.sb		-- what the surround back outputs play
 local distances_now		-- the MCU's distances by speaker
 local testtone_ch = "fl"
+local input_now			-- "analog", "digital", "multichannel"; nil: not known yet
 local media = {}		-- mounted USB storage, by directory
 local bundle			-- { path, version } of an update on it
 local job			-- the running update step: its steps, percent, process
@@ -255,13 +257,39 @@ local function set_mode(mode, name)
 
 	mode_now, mode_name = mode, name
 	local surround = mode ~= LM_TESTTONE and MODE_SURROUND[name] or "off"
+	local outputs = MODE_OUTPUTS[name] or MODE_OUTPUTS[mode] or "front"
+
+	-- multichannel already has its channels: Stereo folds them down
+	if input_now == "multichannel" then
+		surround = "off"
+		if outputs == "front" and name ~= "stereo" and (name or mode ~= LM_STEREO) then
+			outputs = "multichannel"
+		end
+	end
 
 	call("dsp", "set", {
-		outputs = MODE_OUTPUTS[name] or MODE_OUTPUTS[mode] or "front",
+		outputs = outputs,
 		surround = surround,
 		reverb = surround ~= "off" and MODE_REVERB[name] or "off",
 	})
 	set_testtone()
+end
+
+-- the source by the MCU's C1 interface: 1 analog, 2 multichannel PCM from
+-- HDMI, else digital
+local function set_input(interface)
+	local input = interface == 1 and "analog" or interface == 2 and "multichannel" or "digital"
+	local was = input_now
+
+	if input == was then
+		return
+	end
+
+	input_now = input
+	call("dsp", "set", { input = input })
+	if (input == "multichannel") ~= (was == "multichannel") then
+		set_mode(mode_now, mode_name)
+	end
 end
 
 -- front bass and treble in dB, from the receiver's tone controls
@@ -563,6 +591,7 @@ local handlers = {
 		set_tone(tonumber(saved.bass or ""), tonumber(saved.treble or ""))
 		set_speakers(call("mcu", "status"))
 		set_distances(distances_now or saved_distances(saved))
+		call("dsp", "set", { input = input_now })
 	end,
 	["mcu.ready"] = function(msg)
 		set_model(msg)
@@ -582,6 +611,11 @@ local handlers = {
 	["mcu.listening_mode"] = function(msg)
 		-- the name can come without the MCU's byte, after a restart
 		set_mode(msg.mode or mode_now, msg.name)
+	end,
+	["mcu.input"] = function(msg)
+		if msg.interface then
+			set_input(msg.interface)
+		end
 	end,
 	["mcu.testtone"] = function(msg)
 		testtone_ch = msg.channel or testtone_ch
@@ -642,5 +676,8 @@ end
 
 set_speakers(st)
 set_distances(st and st.distances or saved_distances(saved))
+if st and st.interface then
+	set_input(st.interface)
+end
 
 uloop.run()

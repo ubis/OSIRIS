@@ -242,7 +242,7 @@ ubus object `mcu`:
 
 | method | arguments | |
 |---|---|---|
-| `status` | | handshake stage, model, stream status, and once known: bass and treble, the listening mode (`listening_mode`, `listening_mode_name`), the distances, the speaker setup, `update_check` (the MCU waits for an answer to its update check) |
+| `status` | | handshake stage, model, stream status, and once known: bass and treble, the listening mode (`listening_mode`, `listening_mode_name`), the distances, the speaker setup, the input's `interface` (C1 [2]), `update_check` (the MCU waits for an answer to its update check) |
 | `identity` | `dsp_version`, `dsp_id` | strings for 41 and 46 |
 | `stream` | 0x42 fields by name | updates the stream status, sent if changed; the next speaker setup frame sets the mask again |
 | `outputs` | `mask` | 4A |

@@ -14,12 +14,12 @@
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		9
+#define DSPAUDIO_ABI		11
 
-#define DSPAUDIO_IN		2	/* PCM9211 I2S: left, right */
+#define DSPAUDIO_IN		8	/* 4 serializers x 2 slots, as the outputs */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
 #define DSPAUDIO_GAIN_ONE	(1 << 24)	/* gains are 8.24 fixed point */
-#define DSPAUDIO_TONE		2	/* biquads on every input: bass, treble */
+#define DSPAUDIO_TONE		2	/* biquads on the front pair: bass, treble */
 #define DSPAUDIO_NOISE_OFF	0xff
 #define DSPAUDIO_DELAY_MAX	2047	/* samples at 48 kHz: 42 ms, 14.6 m */
 #define DSPAUDIO_SURROUND_DELAY_MAX	2047	/* surround and back delay, samples */
@@ -44,9 +44,19 @@ enum dspaudio_out {
 	DSPAUDIO_OUT_SBR,
 };
 
+/*
+ * Inputs: the PCM9211 brings the front pair of every input; multichannel
+ * PCM from HDMI brings the rest on lines of its own, on the same clocks.
+ */
 enum dspaudio_in {
-	DSPAUDIO_IN_L,
+	DSPAUDIO_IN_L,		/* AXR1_4: PCM9211, front */
 	DSPAUDIO_IN_R,
+	DSPAUDIO_IN_C,		/* AXR1_5: HDMI receiver, centre, LFE */
+	DSPAUDIO_IN_LFE,
+	DSPAUDIO_IN_SL,		/* AXR1_8: surround */
+	DSPAUDIO_IN_SR,
+	DSPAUDIO_IN_SBL,	/* AXR1_9: surround back */
+	DSPAUDIO_IN_SBR,
 };
 
 enum dspaudio_state {
@@ -138,6 +148,8 @@ struct dspaudio_shared {
 	 */
 	struct dspaudio_bass bass[2];
 	uint32_t bass_gen;
+	uint32_t swap;			/* 1: left comes in the right slot (HDMI) */
+	uint32_t inputs;		/* one bit per input the source has */
 };
 
 #endif

@@ -66,7 +66,8 @@ Tested on the TX-NR717.
 | Digital inputs (optical, coax), PCM | ❓ not tested, no sources yet |
 | A/V sync, Late Night, Re-EQ, Music Optimizer, headphone downmix | ❌ not yet |
 | Audyssey 2EQ, Dynamic EQ, Dynamic Volume | ❌ not yet |
-| HDMI audio, ARC | ❌ not yet |
+| HDMI audio, PCM stereo and multichannel | ✅ (5.1 tested) |
+| HDMI ARC | ❌ not yet |
 | Network control (Onkyo Remote app) | ❌ not yet |
 | Network audio, USB playback, NET menu | ❌ not yet |
 | Dolby Digital / DTS decoding | ❌ not yet, maybe in the far future (open AC-3 / DTS core decoders like liba52 exist) |

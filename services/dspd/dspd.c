@@ -58,13 +58,27 @@ struct gpio_cmd {
 #define NOISE_MAX	(-15)		/* dBFS RMS; peaks are 12.8 dB higher */
 #define NOISE_MIN	(-80)
 #define SOUND_CM_S	34300.0
+#define LFE_GAIN	3.16227766	/* +10 dB */
 
-enum outputs { OUTPUTS_FRONT, OUTPUTS_ALL, OUTPUTS_MONO, __OUTPUTS_MAX };
+enum outputs { OUTPUTS_FRONT, OUTPUTS_ALL, OUTPUTS_MONO, OUTPUTS_MULTI, __OUTPUTS_MAX };
 
 static const char *const outputs_name[__OUTPUTS_MAX] = {
 	[OUTPUTS_FRONT] = "front",
 	[OUTPUTS_ALL] = "all",
 	[OUTPUTS_MONO] = "mono",
+	[OUTPUTS_MULTI] = "multichannel",
+};
+
+/*
+ * What the source is: the analog inputs, a digital one (HDMI comes with
+ * left and right swapped), or multichannel PCM from HDMI on four lines.
+ */
+enum input { INPUT_ANALOG, INPUT_DIGITAL, INPUT_MULTI, __INPUT_MAX };
+
+static const char *const input_name[__INPUT_MAX] = {
+	[INPUT_ANALOG] = "analog",
+	[INPUT_DIGITAL] = "digital",
+	[INPUT_MULTI] = "multichannel",
 };
 
 static struct ubus_context *ctx;
@@ -77,6 +91,7 @@ static int gpio_fd = -1;
 static int volume;			/* 0.01 dB */
 static int muted;
 static enum outputs outputs = OUTPUTS_FRONT;
+static enum input input = INPUT_ANALOG;
 static int bass, treble;		/* dB */
 static int noise_out = -1;		/* enum dspaudio_out, -1 off */
 static int noise_level = -30;		/* dBFS RMS */
@@ -188,8 +203,9 @@ static int32_t gain_of(int vol)
  * How much of the left and right input each output gets, in halves: the
  * front pair alone, stereo on every speaker with left + right at -6 dB
  * each on the centre and the subwoofer, or that mono mix everywhere.
+ * Multichannel from a stereo source is the front pair.
  */
-static const uint8_t mix[__OUTPUTS_MAX][DSPAUDIO_OUT][DSPAUDIO_IN] = {
+static const uint8_t mix[__OUTPUTS_MAX][DSPAUDIO_OUT][2] = {
 	[OUTPUTS_FRONT] = {
 		[DSPAUDIO_OUT_FL] = { 2, 0 },
 		[DSPAUDIO_OUT_FR] = { 0, 2 },
@@ -214,6 +230,16 @@ static const uint8_t mix[__OUTPUTS_MAX][DSPAUDIO_OUT][DSPAUDIO_IN] = {
 		[DSPAUDIO_OUT_SBL] = { 1, 1 },
 		[DSPAUDIO_OUT_SBR] = { 1, 1 },
 	},
+	[OUTPUTS_MULTI] = {
+		[DSPAUDIO_OUT_FL] = { 2, 0 },
+		[DSPAUDIO_OUT_FR] = { 0, 2 },
+	},
+};
+
+/* a multichannel source as a stereo pair, without the LFE */
+static const double downmix[2][DSPAUDIO_IN] = {
+	{ 1, 0, M_SQRT1_2, 0, M_SQRT1_2, 0, M_SQRT1_2, 0 },
+	{ 0, 1, M_SQRT1_2, 0, 0, M_SQRT1_2, 0, M_SQRT1_2 },
 };
 
 /* RBJ cookbook shelving filter, slope 1: low shelf for bass, high for treble */
@@ -417,22 +443,79 @@ static void apply_delays(void)
 	}
 }
 
+/* move what an output without a speaker would play onto others */
+static void fold(double (*m)[DSPAUDIO_IN], unsigned int from, unsigned int to,
+		 unsigned int to2, double k)
+{
+	unsigned int in;
+
+	if (!(absent & 1u << from)) {
+		return;
+	}
+
+	for (in = 0; in < DSPAUDIO_IN; in++) {
+		m[to][in] += k * m[from][in];
+		m[to2][in] += to2 == to ? 0 : k * m[from][in];
+		m[from][in] = 0;
+	}
+}
+
+/* each input on its own output, the inputs are in the outputs' order */
+static void discrete(double (*m)[DSPAUDIO_IN])
+{
+	unsigned int out;
+
+	for (out = 0; out < DSPAUDIO_OUT; out++) {
+		m[out][out] = 1;
+	}
+
+	/* the LFE channel is recorded 10 dB down */
+	m[DSPAUDIO_OUT_SW][DSPAUDIO_IN_LFE] = LFE_GAIN;
+
+	fold(m, DSPAUDIO_OUT_SBL, DSPAUDIO_OUT_SL, DSPAUDIO_OUT_SL, 1);
+	fold(m, DSPAUDIO_OUT_SBR, DSPAUDIO_OUT_SR, DSPAUDIO_OUT_SR, 1);
+	fold(m, DSPAUDIO_OUT_SL, DSPAUDIO_OUT_FL, DSPAUDIO_OUT_FL, 1);
+	fold(m, DSPAUDIO_OUT_SR, DSPAUDIO_OUT_FR, DSPAUDIO_OUT_FR, 1);
+	fold(m, DSPAUDIO_OUT_C, DSPAUDIO_OUT_FL, DSPAUDIO_OUT_FR, M_SQRT1_2);
+	fold(m, DSPAUDIO_OUT_SW, DSPAUDIO_OUT_FL, DSPAUDIO_OUT_FR, M_SQRT1_2);
+}
+
 static void apply(void)
 {
 	/* the test noise plays alone */
 	int32_t g = noise_out < 0 ? gain_of(volume) : 0;
-	unsigned int out, in;
+	double m[DSPAUDIO_OUT][DSPAUDIO_IN] = { { 0 } }, v;
+	unsigned int out, in, s;
 
+	int multi = input == INPUT_MULTI;
+
+	if (outputs == OUTPUTS_MULTI && multi) {
+		discrete(m);
+	} else {
+		for (out = 0; out < DSPAUDIO_OUT; out++) {
+			for (s = 0; s < 2; s++) {
+				for (in = 0; in < DSPAUDIO_IN; in++) {
+					v = multi ? downmix[s][in] : in == s;
+					m[out][in] += mix[outputs][out][s] / 2.0 * v;
+				}
+			}
+		}
+	}
+
+	sh->inputs = multi ? 0xff : 0x03;
+	sh->swap = input != INPUT_ANALOG;
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
 		for (in = 0; in < DSPAUDIO_IN; in++) {
 			/* the decoder makes the outputs; [0] only scales them */
 			if (absent & 1u << out) {
-				sh->gain[out][in] = 0;
+				v = 0;
 			} else if (surround) {
-				sh->gain[out][in] = in == 0 ? g : 0;
+				v = in == 0 ? g : 0;
 			} else {
-				sh->gain[out][in] = g / 2 * mix[outputs][out][in];
+				v = g * m[out][in];
 			}
+
+			sh->gain[out][in] = v >= INT32_MAX ? INT32_MAX : v <= -INT32_MAX ? -INT32_MAX : (int32_t)v;
 		}
 	}
 }
@@ -565,6 +648,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_close_table(&b, a);
 	blobmsg_add_u8(&b, "subwoofer", subwoofer);
 	blobmsg_add_u8(&b, "double_bass", double_bass);
+	blobmsg_add_string(&b, "input", input_name[input]);
 	a = blobmsg_open_array(&b, "absent");
 	for (i = 0; i < DSPAUDIO_OUT; i++) {
 		if (absent & (1u << i)) {
@@ -580,7 +664,8 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 
 enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
 	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, SET_CROSSOVER, SET_SUBWOOFER,
-	SET_SUB_LOWPASS, SET_REVERB, SET_DOUBLE_BASS, SET_ABSENT, __SET_MAX };
+	SET_SUB_LOWPASS, SET_REVERB, SET_DOUBLE_BASS, SET_ABSENT, SET_INPUT,
+	__SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -598,6 +683,7 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_REVERB] = { .name = "reverb", .type = BLOBMSG_TYPE_STRING },
 	[SET_DOUBLE_BASS] = { .name = "double_bass", .type = BLOBMSG_TYPE_BOOL },
 	[SET_ABSENT] = { .name = "absent", .type = BLOBMSG_TYPE_ARRAY },
+	[SET_INPUT] = { .name = "input", .type = BLOBMSG_TYPE_STRING },
 };
 
 static int out_index(const char *name)
@@ -684,7 +770,7 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 	struct blob_attr *tb[__SET_MAX], *cur;
 	const struct surround_preset *new_surround = surround;
 	const struct reverb_preset *new_reverb = reverb;
-	int new_outputs = outputs, nb = bass, nt = treble, level = noise_level;
+	int new_outputs = outputs, new_input = input, nb = bass, nt = treble, level = noise_level;
 	int nout = noise_out, lowpass = sub_lowpass, i;
 	int dist[DSPAUDIO_OUT], xover[DSPAUDIO_OUT];
 	uint32_t new_absent = absent;
@@ -696,6 +782,13 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 		new_outputs = name_index(blobmsg_get_string(tb[SET_OUTPUTS]), outputs_name,
 					 __OUTPUTS_MAX);
 		if (new_outputs < 0) {
+			return UBUS_STATUS_INVALID_ARGUMENT;
+		}
+	}
+
+	if (tb[SET_INPUT]) {
+		new_input = name_index(blobmsg_get_string(tb[SET_INPUT]), input_name, __INPUT_MAX);
+		if (new_input < 0) {
 			return UBUS_STATUS_INVALID_ARGUMENT;
 		}
 	}
@@ -793,6 +886,8 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 	if (tb[SET_MUTE]) {
 		muted = blobmsg_get_bool(tb[SET_MUTE]);
 	}
+
+	input = new_input;
 
 	if (tb[SET_BASS] || tb[SET_TREBLE]) {
 		bass = nb;
