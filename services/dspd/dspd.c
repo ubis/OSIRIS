@@ -71,14 +71,16 @@ static const char *const outputs_name[__OUTPUTS_MAX] = {
 
 /*
  * What the source is: the analog inputs, a digital one (HDMI comes with
- * left and right swapped), or multichannel PCM from HDMI on four lines.
+ * left and right swapped), multichannel PCM from HDMI on four lines, or
+ * audio from Linux through the ring (the NET input).
  */
-enum input { INPUT_ANALOG, INPUT_DIGITAL, INPUT_MULTI, __INPUT_MAX };
+enum input { INPUT_ANALOG, INPUT_DIGITAL, INPUT_MULTI, INPUT_NETWORK, __INPUT_MAX };
 
 static const char *const input_name[__INPUT_MAX] = {
 	[INPUT_ANALOG] = "analog",
 	[INPUT_DIGITAL] = "digital",
 	[INPUT_MULTI] = "multichannel",
+	[INPUT_NETWORK] = "network",
 };
 
 static struct ubus_context *ctx;
@@ -628,7 +630,8 @@ static void apply(void)
 
 	sh->inputs = multi ? 0xff : 0x03;
 	sh->decim = sample_hz > SAMPLE_HZ ? 2 : 1;
-	sh->swap = input != INPUT_ANALOG;
+	sh->swap = input == INPUT_DIGITAL || input == INPUT_MULTI;
+	sh->ring_on = input == INPUT_NETWORK;
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
 		for (in = 0; in < DSPAUDIO_IN; in++) {
 			/* the decoder makes the outputs; [0] only scales them */
