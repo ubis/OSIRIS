@@ -39,6 +39,41 @@ Without building, take the same files from the
 [releases](https://github.com/ubis/osiris/releases): `dspboot-<version>.zip`,
 `osiris-<version>.tar` and `uImage-installer`.
 
+## Trying it from RAM
+
+dspboot, U-Boot and the installer can all run from RAM, and the installer
+runs the whole system with its settings in RAM. Nothing is written to the
+flash; the next power-on starts whatever is on it. You need the same things
+as for an install, except the backup.
+
+1. **dspboot and U-Boot.** Take U-Boot out of the bundle:
+
+   ```sh
+   tar -xf osiris-<version>.tar u-boot.dbi
+   ```
+
+   On a board that already has dspboot in the flash, open the console at
+   115200 baud in a terminal that can send YMODEM (picocom with `sz`,
+   minicom, or Tera Term on Windows), power it on and press a key at
+   `Hit any key to stop autoboot`. At the `dspboot>` prompt type `loady`,
+   send `u-boot.dbi` and type `bootram`.
+
+   On a board with the stock firmware, put it into UART boot mode, power it
+   on and let uartboot start dspboot, send U-Boot and start it:
+
+   ```sh
+   python3 dspboot/tools/uartboot.py -p /dev/ttyUSB0 \
+       --ais dist/dspboot/onkyo-tx-nr/dspboot.ais --ymodem u-boot.dbi
+   ```
+
+   Either way, press a key in the console to stop U-Boot's autoboot.
+
+2. **The installer.** Put `uImage-installer` on your TFTP server and boot
+   it as in step 3 of the first install below (`setenv ipaddr`, `setenv
+   serverip`, `tftp`, `setenv bootargs`, `bootm`), without `saveenv`. Log
+   in over the network or on the console as `root` (password `osiris`), and
+   do not run `osiris-install`.
+
 ## First install
 
 The first install puts dspboot into the flash over the serial cable, starts
