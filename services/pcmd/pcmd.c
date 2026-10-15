@@ -7,11 +7,13 @@
  *
  *   pcmd [-r rate] [path]    default 44100 Hz, /var/run/pcm
  *
- * A named pipe is opened again whenever its writer goes away.
+ * A named pipe is opened again whenever its writer goes away. SIGUSR1
+ * drops what is queued in the pipe and the ring (a pause or skip).
  */
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +32,7 @@
 #define FULL_WAIT_US	2000
 
 static volatile struct dspaudio_ring *ring;
+static volatile sig_atomic_t flush;
 
 static double bessel_i0(double x)
 {
@@ -109,6 +112,10 @@ static void ring_put(int32_t l, int32_t r)
 		    next != ring->read) {
 			break;
 		}
+
+		if (flush) {
+			return;
+		}
 		usleep(FULL_WAIT_US);
 	}
 
@@ -157,6 +164,34 @@ static void resample(const int16_t *in)
 	phase -= up;
 }
 
+static void on_flush(int sig)
+{
+	flush = 1;
+}
+
+/* empty the pipe and the ring, start the resampler from silence */
+static void drop(int fd)
+{
+	char junk[4096];
+	int fl = fcntl(fd, F_GETFL);
+	uint32_t rd;
+
+	fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+	while (read(fd, junk, sizeof(junk)) > 0) {
+	}
+	fcntl(fd, F_SETFL, fl);
+
+	/* the DSP may move read meanwhile: until it holds still */
+	do {
+		rd = ring->read;
+		ring->write = rd;
+	} while (ring->read != rd);
+
+	memset(hist, 0, sizeof(hist));
+	phase = 0;
+	flush = 0;
+}
+
 static int play(int fd)
 {
 	int16_t buf[CHUNK][2];
@@ -164,9 +199,18 @@ static int play(int fd)
 	ssize_t n;
 
 	for (;;) {
+		if (flush) {
+			drop(fd);
+			have = 0;
+		}
+
 		n = read(fd, (char *)buf + have, sizeof(buf) - have);
+		if (n < 0 && errno == EINTR) {
+			continue;
+		}
+
 		if (n <= 0) {
-			return n < 0 && errno != EINTR ? -1 : 0;
+			return n < 0 ? -1 : 0;
 		}
 
 		have += n;
@@ -202,6 +246,8 @@ int main(int argc, char **argv)
 	}
 
 	openlog("pcmd", LOG_PID, LOG_DAEMON);
+	/* no SA_RESTART: a blocked read returns to look at the flag */
+	sigaction(SIGUSR1, &(struct sigaction){ .sa_handler = on_flush }, NULL);
 	if (rate < 8000 || rate > 192000 || resampler_init(rate)) {
 		fprintf(stderr, "%s: bad rate %u\n", argv[0], rate);
 		return 1;
@@ -229,7 +275,12 @@ int main(int argc, char **argv)
 	}
 
 	do {
-		fd = open(path, O_RDONLY);
+		/* waits for a writer; a flush meanwhile has nothing to drop */
+		do {
+			flush = 0;
+			fd = open(path, O_RDONLY);
+		} while (fd < 0 && errno == EINTR);
+
 		if (fd < 0) {
 			syslog(LOG_ERR, "%s: %s", path, strerror(errno));
 			return 1;
