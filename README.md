@@ -44,7 +44,7 @@ Tested on the TX-NR717.
 | Model detection, hostname after model | ✅ |
 | Volume, front panel, remote | ✅ (handled by the MCU) |
 | Analog inputs (RCA) | ✅ |
-| FM radio | ✅ |
+| FM and AM radio, RDS | ✅ |
 | Sound from all channels (Stereo, All Ch Stereo, Full Mono) | ✅ |
 | Zones, powered speakers (analog sources such as FM) | ✅ |
 | Bass and treble (front) | ✅ |
@@ -54,13 +54,14 @@ Tested on the TX-NR717.
 | Standby: board switched off, data synced | ✅ |
 | Speaker distances (delays) | ✅ |
 | Bass management (crossovers, double bass) | ✅ |
+| Manual equalizer | ✅ |
 | Surround from stereo in the Surround, PLII, Neo:6, Neural and THX Cinema/Music/Games modes | ✅ ¹ |
 | Sound field modes (Orchestra, Unplugged, Studio-Mix, TV Logic, ...) | ✅ ¹ |
 | Factory reset | ❓ not tested |
 | Zone line outputs, headphones | ❓ not tested |
 | Subwoofer pre-out | ✅ |
 | Other 7.2 pre-outs | ❓ not tested |
-| Phono input, AM radio, RDS | ❓ not tested |
+| Phono input | ❓ not tested |
 | 12 V trigger, IR input | ❓ not tested |
 | HDMI video switching, on-screen menu | ❓ not tested |
 | Digital inputs (optical, coax), PCM | ❓ not tested, no sources yet |
@@ -70,7 +71,7 @@ Tested on the TX-NR717.
 | HDMI ARC | ❌ not yet |
 | Network control (Onkyo Remote app) | ❌ not yet |
 | Network audio, USB playback, NET menu | ❌ not yet |
-| Dolby Digital / DTS decoding | ❌ not yet, maybe in the far future (open AC-3 / DTS core decoders like liba52 exist) |
+| Dolby Digital / DTS decoding | ❌ not yet, the bitstreams are muted; maybe in the far future (open AC-3 / DTS core decoders like liba52 exist) |
 
 ¹ OSIRIS's own processing: it does what these modes are for, surround
 from stereo and a room around the music, but it is not Dolby's, DTS's,
