@@ -53,6 +53,7 @@ static struct uloop_timeout select_timer;	/* pending: E5 seen, no C1 since */
 static struct uloop_timeout relock_timer;	/* pending: a 0x42 for it went out */
 #define RELOCK_MS	3000
 static uint8_t input_status = 0xff;		/* MCU_INPUT [5], 0 while not locked */
+static uint8_t select_was;			/* the last MCU_INPUT_SELECT [0] */
 
 /* what the stock firmware reports; the encoding is not known */
 static uint8_t levels[LEVELS_LEN] = {
@@ -332,6 +333,18 @@ void proto_rx(const struct link_frame *f)
 		break;
 	case MCU_INPUT_SELECT:
 		uloop_timeout_set(&select_timer, SELECT_MS);
+		/*
+		 * A switch to a network source (NET, USB, ...): AudioApp sends a
+		 * bare 0x40, without it the MCU keeps restarting its input
+		 * sequence and the outputs stay muted.
+		 */
+		if (f->len >= 1 && d[0] != select_was && stage == STAGE_READY &&
+		    (d[0] == 1 || d[0] == 2 || d[0] == 3 || d[0] == 5 || d[0] == 6)) {
+			queue(DSP_READY, NULL, 0);
+		}
+		if (f->len >= 1) {
+			select_was = d[0];
+		}
 		break;
 	case MCU_SPEAKERS:
 		queue(DSP_LEVELS, levels, LEVELS_LEN);
