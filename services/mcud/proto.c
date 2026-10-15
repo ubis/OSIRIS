@@ -48,6 +48,11 @@ static uint8_t stream[STREAM_LEN] = {
 };
 
 static uint8_t stream_sent[STREAM_LEN];
+static struct uloop_timeout select_timer;	/* pending: E5 seen, no C1 since */
+#define SELECT_MS	1000
+static struct uloop_timeout relock_timer;	/* pending: a 0x42 for it went out */
+#define RELOCK_MS	3000
+static uint8_t input_status = 0xff;		/* MCU_INPUT [5], 0 while not locked */
 
 /* what the stock firmware reports; the encoding is not known */
 static uint8_t levels[LEVELS_LEN] = {
@@ -292,6 +297,7 @@ static void retry_cb(struct uloop_timeout *t)
 void proto_rx(const struct link_frame *f)
 {
 	const uint8_t *d = f->data;
+	int relock;
 
 	if (!f->csum_ok) {
 		log_msg(LOG_WARNING, "checksum error in 0x%02x", f->cmd);
@@ -305,11 +311,27 @@ void proto_rx(const struct link_frame *f)
 			memset(stream + STREAM_FS, d[3], 3);
 		}
 
+		/*
+		 * After a switch, or when the source comes back on the same
+		 * input, the MCU unmutes a digital input only on a 0x42. It
+		 * restarts its input handling on one: not again for a while.
+		 */
+		relock = f->len >= 6 && d[5] && !input_status;
+		if (f->len >= 6) {
+			input_status = d[5];
+		}
+
+		if ((select_timer.pending || (relock && !relock_timer.pending)) &&
+		    stage == STAGE_READY) {
+			uloop_timeout_cancel(&select_timer);
+			uloop_timeout_set(&relock_timer, RELOCK_MS);
+			memset(stream_sent, 0, STREAM_LEN);
+		}
+
 		stream_update();
 		break;
-	case MCU_INITIAL:
 	case MCU_INPUT_SELECT:
-		stream_update();
+		uloop_timeout_set(&select_timer, SELECT_MS);
 		break;
 	case MCU_SPEAKERS:
 		queue(DSP_LEVELS, levels, LEVELS_LEN);
@@ -393,6 +415,8 @@ static void start(void)
 
 	/* a question in the middle of the handshake would be dropped */
 	uloop_timeout_cancel(&lmd_timer);
+	uloop_timeout_cancel(&select_timer);
+	uloop_timeout_cancel(&relock_timer);
 
 	/* the AudioApp part, in the stock order */
 	queue(DSP_VERSION, version, VERSION_LEN);

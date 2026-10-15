@@ -92,7 +92,11 @@ The surround back relay closes for bits 4, 5, 6, 9 and 10. With the FW layout,
 LW RW light from bit 11 only while that relay is closed, from bit 12 without it.
 
 Sending 0x42 for every C1 makes the MCU restart its input sequence: AudioApp
-only sends it when a field changes.
+only sends it when a field changes. After an input switch (E5), or when the
+source comes back on the same input (C1 [5] from 0 to non-zero), the MCU keeps
+a digital input such as HDMI muted until a 0x42 arrives; AudioApp's 0x42
+changes as the receiver locks, so mcud sends it once then, on the first C1
+within a second of E5 or on the return, at most every 3 s.
 
 ## MCU -> DSP
 
