@@ -10,11 +10,15 @@ OBJDUMP	:= $(CROSS)objdump
 SIZE	:= $(CROSS)size
 O	?= build
 VERSION	?= unknown
+DMA	?= 0
 
 CFLAGS	:= -march=c674x -mlittle-endian -O2 -std=gnu99 -Wall -Wextra \
 	   -ffreestanding -fno-builtin -ffunction-sections -fdata-sections \
 	   -fno-asynchronous-unwind-tables -fno-unwind-tables -msdata=default \
 	   -I../dspd -DDSPAUDIO_VERSION='"$(VERSION)"'
+ifeq ($(DMA),1)
+CFLAGS	+= -DDSPAUDIO_DMA
+endif
 LDFLAGS	:= -nostdlib -nostartfiles -Wl,--gc-sections -Wl,--no-warn-rwx-segments \
 	   -Wl,-T,dspaudio.ld -Wl,-Map,$(O)/dspaudio.map
 
@@ -43,7 +47,11 @@ $(O)/dspaudio.lst: $(O)/dspaudio.elf
 $(O)/version: FORCE | $(O)
 	@echo '$(VERSION)' | cmp -s - $@ || echo '$(VERSION)' > $@
 
-$(O)/dspaudio.o: $(O)/version
+# and so are the build options
+$(O)/options: FORCE | $(O)
+	@echo 'DMA=$(DMA)' | cmp -s - $@ || echo 'DMA=$(DMA)' > $@
+
+$(O)/dspaudio.o: $(O)/version $(O)/options
 
 $(O):
 	mkdir -p $@
