@@ -893,6 +893,36 @@ static int m_input(struct ubus_context *c, struct ubus_object *obj,
 	return UBUS_STATUS_INVALID_ARGUMENT;
 }
 
+/* ISCP MVL: the master volume in 1 dB steps from -82 dB (00) */
+#define MVL_DB_MIN	(-82)
+#define MVL_MAX		0x64
+
+enum { VOL_DB, __VOL_MAX };
+
+static const struct blobmsg_policy volume_policy[__VOL_MAX] = {
+	[VOL_DB] = { .name = "db", .type = BLOBMSG_TYPE_INT32 },
+};
+
+/* set the master volume, as the knob would */
+static int m_volume(struct ubus_context *c, struct ubus_object *obj,
+		    struct ubus_request_data *req, const char *method,
+		    struct blob_attr *msg)
+{
+	struct blob_attr *tb[__VOL_MAX];
+	char cmd[8];
+	int mvl;
+
+	blobmsg_parse(volume_policy, __VOL_MAX, tb, blob_data(msg), blob_len(msg));
+	if (!tb[VOL_DB]) {
+		return UBUS_STATUS_INVALID_ARGUMENT;
+	}
+
+	mvl = (int32_t)blobmsg_get_u32(tb[VOL_DB]) - MVL_DB_MIN;
+	mvl = mvl < 0 ? 0 : mvl > MVL_MAX ? MVL_MAX : mvl;
+	snprintf(cmd, sizeof(cmd), "MVL%02X", mvl);
+	return proto_iscp(cmd) ? UBUS_STATUS_UNKNOWN_ERROR : 0;
+}
+
 enum { LV_HEX, __LV_MAX };
 
 static const struct blobmsg_policy levels_policy[__LV_MAX] = {
@@ -1111,6 +1141,7 @@ static const struct ubus_method mcu_methods[] = {
 	UBUS_METHOD("meter", m_meter, meter_policy),
 	UBUS_METHOD("iscp", m_iscp, iscp_policy),
 	UBUS_METHOD("input", m_input, input_policy),
+	UBUS_METHOD("volume", m_volume, volume_policy),
 	UBUS_METHOD("network", m_network, network_policy),
 	UBUS_METHOD("power", m_power, power_policy),
 	UBUS_METHOD("update", m_update, update_policy),

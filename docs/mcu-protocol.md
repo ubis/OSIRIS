@@ -280,6 +280,7 @@ ubus object `mcu`:
 | `display` | `title`, `artist`, `album`, `state` (`play`, `pause`, `stop`), `mode` (`name`, `text`, `meter`) | the front panel on NET (71); `mode` alone only changes the mode |
 | `meter` | `left`, `right`, `left_peak`, `right_peak` (dBFS) | levels for the meter, as in dsp.meter (which mcud also takes itself) |
 | `input` | `input`: `net`, `usb`, `tuner`, `phono`, `tv_cd`, `bd_dvd`, `cbl_sat`, `game`, `pc`, `aux` or `vcr_dvr` | selects it, as ISCP SLI in a 73 |
+| `volume` | `db` | the master volume, as ISCP MVL (dB + 82, 00 to 64) |
 | `iscp` | `command`, e.g. `SLI2B` | sends `!1` + command as 73 00 |
 | `send` | `cmd`, `data` (hex) | any frame, for experiments |
 
