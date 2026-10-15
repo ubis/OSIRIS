@@ -90,6 +90,7 @@ ubus call dsp set '{"eq": {"fl": [0, 0, 3], "sw": [5]}}'  # dB per band from 25 
 ubus call dsp set '{"av_sync": 200}'              # ms every output is held back, in SDRAM above Linux (mem=56M)
 ubus call dsp set '{"loudness": 6}'               # dB of bass boost on every output (Dynamic EQ), -1 = off
 ubus call dsp set '{"dynamic_volume": 2}'         # Dynamic Volume: 0 off, 1 light, 2 medium, 3 heavy
+ubus call dsp set '{"fs": 44100}'                 # the source's sample rate, Hz: filters, delays and times are worked out for it
 ```
 
 dspaudio takes the I2S input from the PCM9211 (the tuner and analog inputs
