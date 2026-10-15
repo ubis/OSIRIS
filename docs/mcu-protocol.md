@@ -258,7 +258,8 @@ once, from state it holds, and turns everything else into ubus events.
 
 Answered by mcud itself:
 - the start-up sequence and its retries
-- E0 -> 60, EA -> 6A
+- E0 -> 60; EA 00 -> 6A at once, EA 01/02 after `mcu power` from the
+  policy (or 3 s)
 - 41 / 46 from its identity strings (default from `/etc/osiris-version`,
   replaced through `mcu identity`)
 - 42 / 45 / 4A when the values set through ubus change
@@ -267,13 +268,15 @@ ubus object `mcu`:
 
 | method | arguments | |
 |---|---|---|
-| `status` | | handshake stage, model, stream status, and once known: bass and treble, the listening mode (`listening_mode`, `listening_mode_name`), the distances, the speaker setup, the input's `interface` (C1 [2]), `update_check` (the MCU waits for an answer to its update check), the front panel's `display` mode |
+| `status` | | handshake stage, model, stream status, `update_check` (the MCU waits for an answer to its update check), the front panel's `display` mode, and once the MCU has sent them the input's interface, fs and channels and the settings marked "also in `mcu status`" below |
 | `identity` | `dsp_version`, `dsp_id` | strings for 41 and 46 |
 | `stream` | 0x42 fields by name | updates the stream status, sent if changed; the next speaker setup frame sets the mask again |
 | `outputs` | `mask` | 4A |
 | `levels` | 13 values | 45 |
 | `update` | one of `available` (bool), `progress` (%), `downloaded` (bytes), `result` (`ok`/`error`) | the 68 answers; a failed download is told as a failed 68 01 |
 | `usb` | `present`, `port` | 65 03 |
+| `network` | `link`, `dhcp`, `ip`, `netmask`, `gateway`, `dns`, `mac`, `name` | the answer to E6 (66) |
+| `power` | `state` (`off`, `reset`) | the answer to EA (6A) |
 | `display` | `title`, `artist`, `album`, `state` (`play`, `pause`, `stop`), `mode` (`name`, `text`, `meter`) | the front panel on NET (71); `mode` alone only changes the mode |
 | `meter` | `left`, `right`, `left_peak`, `right_peak` (dBFS) | levels for the meter, as in dsp.meter (which mcud also takes itself) |
 | `send` | `cmd`, `data` (hex) | any frame, for experiments |
