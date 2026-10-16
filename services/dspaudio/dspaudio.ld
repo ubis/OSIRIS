@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /*
  * dspaudio runs from DSP L2 RAM at 0x11800000, where dspd loads it. Image,
- * bss and stack stay below 0x1181F000, the block shared with dspd. The
+ * bss and stack stay below 0x1181F000, the block shared with dspd; more
+ * code and data go above it, up to the L2 cache at 0x11830000. The
  * reverb's delay lines are in the on-chip shared RAM, which Linux does not
  * use; dspaudio clears them itself. With the AC-3 decoder, liba52 and its
  * heap are in SDRAM above the A/V sync line: dspd loads that part from the
@@ -13,6 +14,7 @@ ENTRY(_start)
 MEMORY
 {
 	L2 (rwx) : ORIGIN = 0x11800000, LENGTH = 0x1F000
+	L2_HI (rwx) : ORIGIN = 0x11820000, LENGTH = 0x10000	/* between the shared block and the cache */
 	SHRAM (rw) : ORIGIN = 0x80000000, LENGTH = 0x20000
 	DDR (rwx) : ORIGIN = 0xC3C00000, LENGTH = 0x100000
 }
@@ -66,6 +68,19 @@ SECTIONS
 
 	__image_end = .;
 	ASSERT(__image_end <= 0x1181F000, "the image runs into the shared block")
+
+	/*
+	 * Above the shared block: loaded with the image, which then spans the
+	 * block (dspd clears it after loading). The data is not cleared:
+	 * whoever uses it clears it.
+	 */
+	.text_hi : ALIGN(32) {
+		*(.text_hi .text_hi.*)
+	} > L2_HI
+
+	.l2_hi (NOLOAD) : ALIGN(8) {
+		*(.l2_hi .l2_hi.*)
+	} > L2_HI
 
 	.shram (NOLOAD) : ALIGN(8) {
 		__shram_start = .;
