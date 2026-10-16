@@ -167,8 +167,8 @@ What it does today:
 - plays pink noise on the channel level calibration asks for (front high
   and wide on the surround back pair)
 - passes the receiver's bass and treble to the DSP and keeps them in the
-  state file; dspd turns every channel down by the larger boost, so that
-  it has room below full scale
+  state file; dspd turns every channel down by the largest boost (bass
+  with Dynamic EQ's, or treble), so that it has room below full scale
 - passes the speaker setup to the DSP: small speakers' bass goes to the
   subwoofer at their crossover, or to the front pair when there is none;
   missing speakers get nothing (no centre: the
