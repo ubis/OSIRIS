@@ -89,8 +89,9 @@ static int frame_noise;		/* level calibration: the noise alone, no bass split */
 
 /*
  * A processed frame is made in four steps. At 48 kHz two run after each
- * slot; above it each slot gets one, every other frame is processed and
- * played twice, and the inputs are the mean of two frames.
+ * slot; above it each slot gets one and every other frame is processed,
+ * with the half-band filter (halfband.c) on the inputs and, in DMA builds,
+ * the outputs.
  */
 void frame_step1(void)
 {

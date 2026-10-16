@@ -36,7 +36,7 @@ endif
 LDFLAGS	:= -nostdlib -nostartfiles -Wl,--gc-sections -Wl,--no-warn-rwx-segments \
 	   -Wl,-T,dspaudio.ld -Wl,-Map,$(O)/dspaudio.map
 
-OBJS	:= $(O)/start.o $(O)/main.o $(O)/mcasp.o $(O)/input.o $(O)/frame.o $(O)/bass.o \
+OBJS	:= $(O)/start.o $(O)/main.o $(O)/mcasp.o $(O)/input.o $(O)/halfband.o $(O)/frame.o $(O)/bass.o \
 	   $(O)/surround.o $(O)/dvol.o $(O)/delay.o $(OBJS_DMA) $(OBJS_AC3)
 
 all: $(O)/dspaudio.bin $(O)/dspaudio.lst

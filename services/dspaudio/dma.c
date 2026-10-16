@@ -82,7 +82,8 @@ void dma_start(void)
 /* one block from EDMA: each frame through the same steps as the polled loop */
 static void dma_block(unsigned int half, unsigned int to)
 {
-	unsigned int f, i;
+	const int32_t *out;
+	unsigned int f, i, ready;
 
 	for (f = 0; f < DMA_FRAMES; f++) {
 #ifdef DSPAUDIO_AC3
@@ -90,16 +91,22 @@ static void dma_block(unsigned int half, unsigned int to)
 		ac3_word((uint32_t)dma_rx[half][f][1][0]);
 #endif
 		rx_slot(0, dma_rx[half][f][0]);
-		if (rx_slot(1, dma_rx[half][f][1])) {
+		ready = rx_slot(1, dma_rx[half][f][1]);
+		if (ready) {
 			frame_step1();
 			frame_step2();
 			frame_step3();
 			frame_step4();
+			if (decim == 2) {
+				hb_up(frame);
+			}
 		}
 
+		/* at half the rate: the filtered frame, then the one it follows */
+		out = decim == 2 ? hb_out[!ready] : frame;
 		for (i = 0; i < TX_SERS; i++) {
-			dma_tx[to][f][0][i] = frame[2 * i];
-			dma_tx[to][f][1][i] = frame[2 * i + 1];
+			dma_tx[to][f][0][i] = out[2 * i];
+			dma_tx[to][f][1][i] = out[2 * i + 1];
 		}
 	}
 }
