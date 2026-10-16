@@ -131,9 +131,18 @@ to 48 kHz and writes it into a ring of 4096 frames in the DSP's shared RAM
 (`struct dspaudio_ring` in [dspaudio.h](../services/dspd/dspaudio.h)).
 When dspd's input is `network`, the DSP takes the front pair from the ring
 instead of the McASP, one frame per sample period; the rest of the
-processing is the same as for any other input. Writing waits while the ring
-is full, so the DSP's clock sets the pace. SIGUSR1 drops what is queued in the pipe and
-the ring, so a pause takes effect at once.
+processing is the same as for any other input. AirPlay writes on its own
+time and the DSP's 48 kHz runs 67 ppm slow against the system clock, so
+pcmd keeps the ring full and about as much again in the pipe (170 ms) and
+holds that level by nudging the resampling ratio, by at most 0.1 %; a
+writer on real time never waits. A backlog far above that level is
+skipped; for 5 s after a start only its silence is. While the DSP is on
+another input, pcmd drops what comes in. pcmd runs SCHED_FIFO: an ssh
+login keeps the CPU busy for longer than the ring's 85 ms. From a regular
+file, stdin, or a writer faster than real time such as `cat` below,
+writing waits while the ring is full and the DSP's clock sets the pace.
+SIGUSR1 drops what is queued in the pipe and the ring, so a pause takes
+effect at once.
 
 ```sh
 pcmd [-r rate] [path]    # default 44100 Hz, /var/run/pcm
