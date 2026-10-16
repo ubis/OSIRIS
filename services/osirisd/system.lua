@@ -75,7 +75,7 @@ function M.set_network()
 	call("mcu", "network", n)
 end
 
--- the MCU cuts the power once we answer; S01data sets up a wiped /data again
+-- the MCU cuts the power once we answer; preinit sets up a wiped /data again
 function M.power(state)
 	if state ~= "off" and state ~= "reset" then
 		return

@@ -1,0 +1,12 @@
+# /data: the UBIFS volume that keeps settings, keys and passwords, or RAM
+if [ -e /dev/ubi0 ] && ubinfo -d 0 -N data > /dev/null 2>&1 &&
+   mount -t ubifs ubi0:data /data; then
+	echo "data: ubi0:data mounted on /data"
+else
+	mount -t tmpfs -o mode=0755 tmpfs /data
+	echo "data: no data volume, using RAM"
+fi
+mkdir -p /data/etc/dropbear /data/osiris
+mkdir -p -m 700 /data/root/.ssh
+# the passwords, from the built-in default until passwd changes them
+[ -f /data/etc/shadow ] || install -m 600 /usr/share/osiris/shadow /data/etc/shadow

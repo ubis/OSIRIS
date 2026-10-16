@@ -15,9 +15,9 @@ local LOG_PID, LOG_DAEMON = 0x01, 3 * 8
 local LOG_ERR, LOG_INFO = 3, 6
 local IDENT = "osirisd"		-- openlog keeps the pointer
 
--- what the MCU reported, for the next start: the model (S01hostname reads
--- it at boot) and the listening mode, which the MCU keeps across restarts
--- but does not resend. One key=value per line.
+-- what the MCU reported, for the next start: the model (the host name at
+-- boot, /lib/preinit/30_hostname) and the listening mode, which the MCU
+-- keeps across restarts but does not resend. One key=value per line.
 local STATE = "/data/osiris/state"
 
 local conn

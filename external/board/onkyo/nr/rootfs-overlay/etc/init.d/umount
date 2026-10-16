@@ -1,0 +1,8 @@
+#!/bin/sh /etc/rc.common
+
+STOP=90
+
+stop() {
+	sync
+	umount /data 2> /dev/null || mount -o remount,ro /data
+}

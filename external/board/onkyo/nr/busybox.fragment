@@ -1,3 +1,12 @@
+# CONFIG_INIT is not set
+# CONFIG_LINUXRC is not set
+# CONFIG_DEPMOD is not set
+# CONFIG_INSMOD is not set
+# CONFIG_LSMOD is not set
+# CONFIG_MODINFO is not set
+# CONFIG_MODPROBE is not set
+# CONFIG_RMMOD is not set
+# CONFIG_MDEV is not set
 CONFIG_NTPD=y
 # CONFIG_KLOGD is not set
 # CONFIG_LOGREAD is not set

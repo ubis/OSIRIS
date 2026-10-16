@@ -1,0 +1,27 @@
+#!/bin/sh /etc/rc.common
+# the OSIRIS daemons; "stop <name>" stops one of them, "start" starts it again
+
+START=20
+STOP=80
+USE_PROCD=1
+
+daemon() {
+	procd_open_instance $1
+	procd_set_param command /usr/sbin/$1
+	procd_set_param respawn 3600 5 0
+	procd_set_param stderr 1
+	# osirisd signals pcmd by its pid file
+	procd_set_param pidfile /var/run/$1.pid
+	procd_close_instance
+}
+
+start_service() {
+	# mcud talks to the MCU through spidev
+	if [ ! -e /sys/bus/spi/devices/spi0.0/driver ]; then
+		echo spidev > /sys/bus/spi/devices/spi0.0/driver_override
+		echo spi0.0 > /sys/bus/spi/drivers/spidev/bind
+	fi
+	for d in mcud dspd osirisd pcmd; do
+		daemon $d
+	done
+}

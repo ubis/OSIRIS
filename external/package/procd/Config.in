@@ -1,0 +1,19 @@
+config BR2_PACKAGE_PROCD
+	bool "procd"
+	depends on BR2_INIT_NONE
+	depends on BR2_TOOLCHAIN_HAS_SYNC_4 # ubus
+	depends on !BR2_STATIC_LIBS # ubus
+	select BR2_PACKAGE_JSON_C
+	select BR2_PACKAGE_JSONFILTER # procd.sh
+	select BR2_PACKAGE_LIBUBOX
+	select BR2_PACKAGE_UBOX # kmodloader
+	select BR2_PACKAGE_UBUS
+	select BR2_PACKAGE_UDEBUG
+	help
+	  OpenWrt's init and service manager: preinit, hotplug from the
+	  kernel's uevents, services that procd starts, watches and
+	  restarts, and the system watchdog. Without ujail, uxc and the
+	  seccomp tools, so no uci. OpenWrt's rc.common, procd.sh and
+	  hotplug rules come with it.
+
+	  https://git.openwrt.org/project/procd.git

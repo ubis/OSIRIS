@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh /etc/rc.common
 #
 # Make the slot that just booted the default. After osiris-upgrade, U-Boot
 # boots the new slot once (upgrade_slot); getting this far confirms it.
@@ -6,15 +6,12 @@
 # failed: keep booting the one that works.
 #
 
+START=99
+
 start() {
-	cur=$(sed -n 's/.*osiris\.slot=\([ab]\).*/\1/p' /proc/cmdline)
+	local cur=$(sed -n 's/.*osiris\.slot=\([ab]\).*/\1/p' /proc/cmdline)
+
 	[ -n "$cur" ] || return 0
-	[ "$cur" = "$(fw_printenv -n bootslot 2>/dev/null)" ] && return 0
+	[ "$cur" = "$(fw_printenv -n bootslot 2> /dev/null)" ] && return 0
 	fw_setenv bootslot $cur && echo "slot $cur confirmed as the boot slot"
 }
-
-case "$1" in
-start)	start ;;
-stop|restart|reload)	;;
-*)	echo "Usage: $0 {start}"; exit 1 ;;
-esac

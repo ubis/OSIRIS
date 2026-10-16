@@ -1,0 +1,18 @@
+#!/bin/sh /etc/rc.common
+
+START=21
+STOP=79
+
+start() {
+	grep -q " /media " /proc/mounts ||
+		mount -t tmpfs -o mode=0755,size=64k tmpfs /media
+	for u in /sys/block/sd*/uevent /sys/block/sd*/sd*/uevent; do
+		[ -e "$u" ] && echo add > "$u"
+	done
+}
+
+stop() {
+	for m in /media/*; do
+		[ -d "$m" ] && grep -qF " $m " /proc/mounts && umount -l "$m"
+	done
+}

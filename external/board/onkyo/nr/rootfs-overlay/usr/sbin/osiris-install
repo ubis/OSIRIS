@@ -25,6 +25,11 @@ ROOTFS_VOL_SIZE=12MiB
 
 die() { echo "osiris-install: $*" >&2; exit 1; }
 mtd() { sed -n "s/^mtd\([0-9]*\): .* \"$1\"\$/\1/p" /proc/mtd; }
+# devtmpfs makes a device node a moment after the device appears
+node() {
+	for i in 1 2 3 4 5 6 7 8 9 10; do [ -c $1 ] && return; sleep 0.2; done
+	die "no $1"
+}
 md5() { md5sum | cut -d' ' -f1; }
 
 server=$(sed -n 's/.* ip=[^:]*:\([^: ]*\).*/\1/p' /proc/cmdline)
@@ -75,13 +80,14 @@ echo "creating UBI on mtd$UBI"
 ubidetach -m $UBI > /dev/null 2>&1 || true
 ubiformat -q -y /dev/mtd$UBI
 ubiattach -m $UBI -d 0 > /dev/null
+node /dev/ubi0
 ubimkvol /dev/ubi0 -n 0 -N kernel_a -s $KERNEL_VOL_SIZE > /dev/null
 ubimkvol /dev/ubi0 -n 1 -N kernel_b -s $KERNEL_VOL_SIZE > /dev/null
 ubimkvol /dev/ubi0 -n 2 -N rootfs_a -s $ROOTFS_VOL_SIZE > /dev/null
 ubimkvol /dev/ubi0 -n 3 -N rootfs_b -s $ROOTFS_VOL_SIZE > /dev/null
 ubimkvol /dev/ubi0 -n 4 -N data -m > /dev/null
-for v in 0 1; do ubiupdatevol /dev/ubi0_$v uImage; done
-for v in 2 3; do ubiupdatevol /dev/ubi0_$v rootfs.squashfs; done
+for v in 0 1; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v uImage; done
+for v in 2 3; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v rootfs.squashfs; done
 ubinfo -d 0 -a | sed -n 's/^Name: *//p' | tr '\n' ' '; echo
 
 echo "writing the U-Boot environment"

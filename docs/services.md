@@ -26,9 +26,11 @@ All decisions are in osirisd, a LuaJIT script you can edit on the receiver
 itself; mcud and dspd carry out its calls and report events, and pcmd plays
 what comes down its pipe.
 
-`/etc/init.d/S10osiris` starts them at boot, before the network, after ubus
-(`S01ubus`). They log to syslog, which logd keeps in RAM (`logread`);
-started by hand from a terminal, they log there instead.
+procd starts them at boot (`/etc/init.d/osiris`), before the network, and
+restarts any that exit; `/etc/init.d/osiris stop <name>` stops one and
+`/etc/init.d/osiris start` starts it again. They log to syslog, which logd
+keeps in RAM (`logread`); started by hand from a terminal, they log there
+instead.
 
 ## mcud
 
@@ -41,7 +43,7 @@ events.
 ```sh
 ubus listen                       # watch the events
 ubus call mcu status              # handshake stage, model, the settings it knows
-mcud -v                           # (with S10osiris stopped) log every frame
+mcud -v                           # (after /etc/init.d/osiris stop mcud) log every frame
 ```
 
 | event | when |
@@ -71,7 +73,7 @@ mcud -v                           # (with S10osiris stopped) log every frame
 dspd sends `dsp.ready` when it has started the DSP; osirisd then sets it up
 again. `dsp.bitstream` comes when the bitstream the DSP detects changes:
 `bitstream` (`none`, `ac3`, `dts`, ...) and, while the DSP decodes it,
-`decoded` ("3/2.1"), `acmod` and `lfe`. The hotplug helper sends
+`decoded` ("3/2.1"), `acmod` and `lfe`. The hotplug script (`/etc/hotplug.d/block/10-media`) sends
 `osiris.media` (`dir`, `present`) when USB storage is mounted or goes, and
 `osiris.update` (`version`, `path`) for an update bundle on it.
 
@@ -150,7 +152,7 @@ pcmd [-r rate] [path]    # default 44100 Hz, /var/run/pcm
 cat music.raw > /var/run/pcm
 ```
 
-AirPlay: shairport-sync (`/etc/init.d/S50airplay`, `/etc/shairport-sync.conf`)
+AirPlay: shairport-sync (`/etc/init.d/airplay`, `/etc/shairport-sync.conf`)
 announces the receiver under its host name and writes into the same pipe.
 The AirPlay volume slider sets the receiver's volume (osirisd).
 
@@ -225,7 +227,7 @@ in `/tmp`, stop the running one and start the copy from the terminal:
 
 ```sh
 mkdir /tmp/osd && cp /usr/sbin/osirisd /usr/share/osirisd/*.lua /tmp/osd
-start-stop-daemon -K -p /var/run/osirisd.pid
+/etc/init.d/osiris stop osirisd
 /tmp/osd/osirisd
 ```
 

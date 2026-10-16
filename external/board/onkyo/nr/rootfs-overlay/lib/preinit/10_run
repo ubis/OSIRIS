@@ -1,0 +1,3 @@
+# /run for pid files and the ubus socket
+mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
+mkdir -p /run/lock /run/ubus

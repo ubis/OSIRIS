@@ -1,8 +1,9 @@
 #!/bin/sh
 #
 # osiris-upgrade: install an OSIRIS update bundle into the inactive slot and
-# boot it once. If the new system comes up, S99confirm makes it the default
-# slot; if it does not (panic, watchdog reset), the next boot is the old slot.
+# boot it once. If the new system comes up, /etc/init.d/confirm makes it the
+# default slot; if it does not (panic, watchdog reset), the next boot is the
+# old slot.
 #
 #   osiris-upgrade [-n] bundle.tar      -n: do not reboot afterwards
 #

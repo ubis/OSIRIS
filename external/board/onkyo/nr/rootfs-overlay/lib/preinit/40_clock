@@ -1,0 +1,6 @@
+# no RTC: start the clock from the build time until NTP syncs
+t=$(cat /etc/osiris-build-time 2> /dev/null)
+if [ "${t:-0}" -gt "$(date +%s)" ] 2> /dev/null; then
+	date -s @$t > /dev/null
+	echo "clock: set to $(date) (no time source yet)"
+fi

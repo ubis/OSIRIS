@@ -1,0 +1,12 @@
+#!/bin/sh
+#
+# preinit: procd runs this before it starts the services, with /proc, /sys,
+# /dev and /tmp mounted. The hooks in /lib/preinit run in order.
+#
+[ -z "$PREINIT" ] && exec /sbin/init
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+for pi in /lib/preinit/*; do
+	. $pi
+done
