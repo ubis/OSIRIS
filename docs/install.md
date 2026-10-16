@@ -35,9 +35,10 @@ builds only redo what changed.
 |---|---|
 | `dist/dspboot/<board>/dspboot.ais` | dspboot, for the serial cable and the flash |
 | `dist/images/osiris-<version>.tar` | the bundle: kernel, root file system and U-Boot, for installing and updating |
-| `dist/images/uImage-installer` | the installer: Linux with the system and the bundle built in, runs from RAM |
+| `dist/images/uImage` | Linux, with the board's device tree appended |
+| `dist/images/initrd-installer` | the installer: the system with the bundle in it, runs from RAM with `uImage` |
 
-Without building, take `osiris-<version>.tar` and `uImage-installer` from
+Without building, take `osiris-<version>.tar`, `uImage` and `initrd-installer` from
 an OSIRIS release and `dspboot-<version>.zip` from a dspboot release on the
 [releases](https://github.com/ubis/osiris/releases) page.
 
@@ -70,9 +71,10 @@ as for an install, except the backup.
 
    Either way, press a key in the console to stop U-Boot's autoboot.
 
-2. **The installer.** Put `uImage-installer` on your TFTP server and boot
-   it as in step 3 of the first install below (`setenv ipaddr`, `setenv
-   serverip`, `tftp`, `setenv bootargs`, `bootm`), without `saveenv`. Log
+2. **The installer.** Put `uImage` and `initrd-installer` on your TFTP
+   server and boot them as in step 3 of the first install below (`setenv
+   ipaddr`, `setenv serverip`, `tftp`, `setenv bootargs`, `bootm`),
+   without `saveenv`. Log
    in over the network or on the console as `root` (password `osiris`), and
    do not run `osiris-install`.
 
@@ -107,16 +109,22 @@ you made).
    `bootram`. U-Boot starts from RAM, nothing is written yet; press a key to
    stop its autoboot.
 
-3. **The installer.** Put `uImage-installer` on your TFTP server. In U-Boot,
-   with your own addresses (board, TFTP server, gateway, netmask):
+3. **The installer.** Put `uImage` and `initrd-installer` on your TFTP
+   server. In U-Boot, with your own addresses (board, TFTP server,
+   gateway, netmask):
 
    ```
    setenv ipaddr 192.168.1.50
    setenv serverip 192.168.1.10
-   tftp 0xc2000000 uImage-installer
+   tftp 0xc0700000 uImage
+   tftp 0xc2000000 initrd-installer
+   setenv initrd_high 0xffffffff
    setenv bootargs console=ttyS1,115200n8 mem=56M ip=192.168.1.50:192.168.1.10:192.168.1.1:255.255.255.0::eth0:off
-   bootm 0xc2000000
+   bootm 0xc0700000 0xc2000000
    ```
+
+   `initrd_high` keeps the initrd where it was loaded, inside the 56 MiB
+   Linux uses.
 
    The board keeps the MAC address the stock firmware stored (`ethaddr`).
    On a new, empty flash U-Boot makes up a random one; set the one on the

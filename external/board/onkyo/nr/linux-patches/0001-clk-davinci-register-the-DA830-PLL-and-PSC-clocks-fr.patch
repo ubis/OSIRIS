@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Fri, 16 Oct 2026 17:52:34 +0300
+Subject: [PATCH 1/6] clk: davinci: register the DA830 PLL and PSC clocks from
+ the device tree
+
+The DA830 clock data went with the board files. Bring it back for
+device tree boards: PLL0, which the DA830 has alone, registers itself
+with CLK_OF_DECLARE as on the DA850, and the two PSCs match on
+ti,da830-psc0/1. The new pll-da830.c and psc-da830.c only describe the
+hardware.
+---
+ drivers/clk/davinci/Makefile | 2 ++
+ drivers/clk/davinci/psc.c    | 4 ++++
+ drivers/clk/davinci/psc.h    | 2 ++
+ 3 files changed, 8 insertions(+)
+
+diff --git a/drivers/clk/davinci/Makefile b/drivers/clk/davinci/Makefile
+index f9d5c9a39..5d0ae1ee7 100644
+--- a/drivers/clk/davinci/Makefile
++++ b/drivers/clk/davinci/Makefile
+@@ -4,8 +4,10 @@ ifeq ($(CONFIG_COMMON_CLK), y)
+ obj-$(CONFIG_ARCH_DAVINCI_DA8XX)	+= da8xx-cfgchip.o
+ 
+ obj-y += pll.o
++obj-$(CONFIG_ARCH_DAVINCI_DA830)	+= pll-da830.o
+ obj-$(CONFIG_ARCH_DAVINCI_DA850)	+= pll-da850.o
+ 
+ obj-y += psc.o
++obj-$(CONFIG_ARCH_DAVINCI_DA830)	+= psc-da830.o
+ obj-$(CONFIG_ARCH_DAVINCI_DA850)	+= psc-da850.o
+ endif
+diff --git a/drivers/clk/davinci/psc.c b/drivers/clk/davinci/psc.c
+index f3ee9397b..c15abee2b 100644
+--- a/drivers/clk/davinci/psc.c
++++ b/drivers/clk/davinci/psc.c
+@@ -499,6 +499,10 @@ int of_davinci_psc_clk_init(struct device *dev,
+ }
+ 
+ static const struct of_device_id davinci_psc_of_match[] = {
++#ifdef CONFIG_ARCH_DAVINCI_DA830
++	{ .compatible = "ti,da830-psc0", .data = &of_da830_psc0_init_data },
++	{ .compatible = "ti,da830-psc1", .data = &of_da830_psc1_init_data },
++#endif
+ 	{ .compatible = "ti,da850-psc0", .data = &of_da850_psc0_init_data },
+ 	{ .compatible = "ti,da850-psc1", .data = &of_da850_psc1_init_data },
+ 	{ }
+diff --git a/drivers/clk/davinci/psc.h b/drivers/clk/davinci/psc.h
+index 742672843..ac08e054b 100644
+--- a/drivers/clk/davinci/psc.h
++++ b/drivers/clk/davinci/psc.h
+@@ -94,6 +94,8 @@ struct davinci_psc_init_data {
+ 	int (*psc_init)(struct device *dev, void __iomem *base);
+ };
+ 
++extern const struct davinci_psc_init_data of_da830_psc0_init_data;
++extern const struct davinci_psc_init_data of_da830_psc1_init_data;
+ extern const struct davinci_psc_init_data da850_psc0_init_data;
+ extern const struct davinci_psc_init_data da850_psc1_init_data;
+ extern const struct davinci_psc_init_data of_da850_psc0_init_data;

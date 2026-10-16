@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Fri, 16 Oct 2026 17:52:36 +0300
+Subject: [PATCH 4/6] mtd: rawnand: davinci: cap the turnaround for timing mode
+ 0
+
+Small-page chips that only know timing mode 0 failed to probe: its
+tRHZ of 200 ns needs more turnaround cycles than the two-bit field
+holds. The turnaround only spaces accesses to other devices on the
+bus, so take the most the AEMIF can do instead of failing.
+---
+ drivers/mtd/nand/raw/davinci_nand.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/mtd/nand/raw/davinci_nand.c b/drivers/mtd/nand/raw/davinci_nand.c
+index d6eb6a48d..214adf149 100644
+--- a/drivers/mtd/nand/raw/davinci_nand.c
++++ b/drivers/mtd/nand/raw/davinci_nand.c
+@@ -926,7 +926,12 @@ static int davinci_nand_setup_interface(struct nand_chip *chip, int chipnr,
+ 
+ 	cfg = TO_CYCLES((s32)(sdr->tRHZ_max - (timings.rhold + 1) * cyc_ns * 1000), cyc_ns);
+ 	cfg = max_t(s32, cfg, TO_CYCLES(sdr->tCHZ_max, cyc_ns)) - 1;
+-	timings.ta = cfg > 0 ? cfg : 0;
++	/*
++	 * The turnaround field has two bits, and the slow timing modes ask
++	 * for more (mode 0: tRHZ 200 ns). It only spaces accesses to other
++	 * devices on the bus: take the most the AEMIF can do.
++	 */
++	timings.ta = clamp(cfg, 0, 3);
+ 
+ 	cfg = TO_CYCLES(sdr->tWP_min, cyc_ns) - 1;
+ 	timings.wstrobe = cfg > 0 ? cfg : 0;

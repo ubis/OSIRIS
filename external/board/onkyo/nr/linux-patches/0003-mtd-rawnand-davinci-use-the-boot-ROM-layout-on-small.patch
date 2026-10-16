@@ -1,0 +1,119 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Fri, 16 Oct 2026 17:52:35 +0300
+Subject: [PATCH 3/6] mtd: rawnand: davinci: use the boot ROM layout on small
+ pages
+
+On a chip marked nand-is-boot-medium, large pages already use the DA8xx
+boot ROM placement, ECC in bytes 6-15 of each 16 spare bytes. Small
+pages still get the old layout with ECC at 0-4, 6-7 and 13-15, so
+nothing the ROM or the boot loaders write there reads back, and they
+cannot read what Linux writes. Use the ROM placement on small pages too.
+
+The generic BBT descriptors put their pattern into those ECC bytes; on
+boot media use pattern and version in spare bytes 0-4, as the Linux
+board files of these boards always did, so an existing table is found
+again.
+---
+ drivers/mtd/nand/raw/davinci_nand.c | 74 ++++++++++++++++++++++++++++-
+ 1 file changed, 73 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/mtd/nand/raw/davinci_nand.c b/drivers/mtd/nand/raw/davinci_nand.c
+index 398655388..d6eb6a48d 100644
+--- a/drivers/mtd/nand/raw/davinci_nand.c
++++ b/drivers/mtd/nand/raw/davinci_nand.c
+@@ -488,6 +488,69 @@ static const struct mtd_ooblayout_ops hwecc4_small_ooblayout_ops = {
+ 	.free = hwecc4_ooblayout_small_free,
+ };
+ 
++/*
++ * The DA8xx boot ROM puts the ten ECC bytes of a 512-byte page at OOB 6-15,
++ * after the bad block marker in byte 5, as on large pages; bytes 0-4 hold
++ * the flash BBT pattern and version.
++ */
++static int hwecc4_ooblayout_rbl_small_ecc(struct mtd_info *mtd, int section,
++					  struct mtd_oob_region *oobregion)
++{
++	if (section)
++		return -ERANGE;
++
++	oobregion->offset = 6;
++	oobregion->length = 10;
++
++	return 0;
++}
++
++static int hwecc4_ooblayout_rbl_small_free(struct mtd_info *mtd, int section,
++					   struct mtd_oob_region *oobregion)
++{
++	if (section)
++		return -ERANGE;
++
++	oobregion->offset = 0;
++	oobregion->length = 5;
++
++	return 0;
++}
++
++static const struct mtd_ooblayout_ops hwecc4_rbl_small_ooblayout_ops = {
++	.ecc = hwecc4_ooblayout_rbl_small_ecc,
++	.free = hwecc4_ooblayout_rbl_small_free,
++};
++
++/*
++ * Flash BBT descriptors clear of the boot ROM's ECC bytes: pattern in OOB
++ * 0-3, version in byte 4. The generic ones put the pattern into the ECC.
++ */
++static u8 davinci_nand_rbl_bbt_pattern[] = { 'B', 'b', 't', '0' };
++static u8 davinci_nand_rbl_mirror_pattern[] = { '1', 't', 'b', 'B' };
++
++static struct nand_bbt_descr davinci_nand_rbl_bbt_main_descr = {
++	.options	= NAND_BBT_LASTBLOCK | NAND_BBT_CREATE |
++			  NAND_BBT_WRITE | NAND_BBT_2BIT |
++			  NAND_BBT_VERSION | NAND_BBT_PERCHIP,
++	.offs		= 0,
++	.len		= 4,
++	.veroffs	= 4,
++	.maxblocks	= 4,
++	.pattern	= davinci_nand_rbl_bbt_pattern,
++};
++
++static struct nand_bbt_descr davinci_nand_rbl_bbt_mirror_descr = {
++	.options	= NAND_BBT_LASTBLOCK | NAND_BBT_CREATE |
++			  NAND_BBT_WRITE | NAND_BBT_2BIT |
++			  NAND_BBT_VERSION | NAND_BBT_PERCHIP,
++	.offs		= 0,
++	.len		= 4,
++	.veroffs	= 4,
++	.maxblocks	= 4,
++	.pattern	= davinci_nand_rbl_mirror_pattern,
++};
++
+ static int hwecc4_ooblayout_large_ecc(struct mtd_info *mtd, int section,
+ 				       struct mtd_oob_region *oobregion)
+ {
+@@ -684,7 +747,10 @@ static int davinci_nand_attach_chip(struct nand_chip *chip)
+ 			 * badblock marking data ... and make sure a flash BBT
+ 			 * table marker fits in the free bytes.
+ 			 */
+-			if (chunks == 1) {
++			if (chunks == 1 && (chip->options & NAND_IS_BOOT_MEDIUM)) {
++				mtd_set_ooblayout(mtd,
++						  &hwecc4_rbl_small_ooblayout_ops);
++			} else if (chunks == 1) {
+ 				mtd_set_ooblayout(mtd,
+ 						  &hwecc4_small_ooblayout_ops);
+ 			} else if (chunks == 4 || chunks == 8) {
+@@ -697,6 +763,12 @@ static int davinci_nand_attach_chip(struct nand_chip *chip)
+ 			} else {
+ 				return -EIO;
+ 			}
++
++			if ((chip->options & NAND_IS_BOOT_MEDIUM) &&
++			    !chip->bbt_td) {
++				chip->bbt_td = &davinci_nand_rbl_bbt_main_descr;
++				chip->bbt_md = &davinci_nand_rbl_bbt_mirror_descr;
++			}
+ 		} else {
+ 			/* 1bit ecc hamming */
+ 			chip->ecc.calculate = nand_davinci_calculate_1bit;

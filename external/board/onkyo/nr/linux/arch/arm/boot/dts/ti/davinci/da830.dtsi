@@ -1,0 +1,287 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * TI DA830/OMAP-L137/AM17x, after da850.dtsi.
+ *
+ * Only PLL0; the McASPs and the DSP are not described here.
+ */
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	chosen { };
+	aliases { };
+
+	memory@c0000000 {
+		device_type = "memory";
+		reg = <0xc0000000 0x0>;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu: cpu@0 {
+			compatible = "arm,arm926ej-s";
+			device_type = "cpu";
+			reg = <0>;
+			clocks = <&psc0 14>;
+		};
+	};
+
+	arm {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+		intc: interrupt-controller@fffee000 {
+			compatible = "ti,cp-intc";
+			interrupt-controller;
+			#interrupt-cells = <1>;
+			ti,intc-size = <96>;
+			reg = <0xfffee000 0x2000>;
+		};
+	};
+
+	clocks: clocks {
+		ref_clk: ref_clk {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-output-names = "ref_clk";
+		};
+		usb_refclkin: usb_refclkin {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-output-names = "usb_refclkin";
+			status = "disabled";
+		};
+	};
+
+	soc@1c00000 {
+		compatible = "simple-bus";
+		model = "da830";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0x0 0x01c00000 0x400000>;
+		interrupt-parent = <&intc>;
+
+		psc0: clock-controller@10000 {
+			compatible = "ti,da830-psc0";
+			reg = <0x10000 0x1000>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+			#power-domain-cells = <1>;
+			clocks = <&pll0_sysclk 2>, <&pll0_sysclk 3>,
+				 <&pll0_sysclk 4>, <&pll0_sysclk 6>;
+			clock-names = "pll0_sysclk2", "pll0_sysclk3",
+				      "pll0_sysclk4", "pll0_sysclk6";
+		};
+		pll0: clock-controller@11000 {
+			compatible = "ti,da830-pll";
+			reg = <0x11000 0x1000>;
+			clocks = <&ref_clk>;
+			clock-names = "clksrc";
+
+			pll0_pllout: pllout {
+				#clock-cells = <0>;
+			};
+			pll0_sysclk: sysclk {
+				#clock-cells = <1>;
+			};
+			pll0_auxclk: auxclk {
+				#clock-cells = <0>;
+			};
+		};
+		pmx_core: pinmux@14120 {
+			compatible = "pinctrl-single";
+			reg = <0x14120 0x50>;
+			#pinctrl-cells = <2>;
+			pinctrl-single,bit-per-mux;
+			pinctrl-single,register-width = <32>;
+			pinctrl-single,function-mask = <0xf>;
+			status = "disabled";
+		};
+		cfgchip: chip-controller@1417c {
+			compatible = "ti,da830-cfgchip", "syscon", "simple-mfd";
+			reg = <0x1417c 0x14>;
+
+			usb_phy: usb-phy {
+				compatible = "ti,da830-usb-phy";
+				#phy-cells = <1>;
+				clocks = <&usb_phy_clk 0>, <&usb_phy_clk 1>;
+				clock-names = "usb0_clk48", "usb1_clk48";
+				status = "disabled";
+			};
+			usb_phy_clk: usb-phy-clocks {
+				compatible = "ti,da830-usb-phy-clocks";
+				#clock-cells = <1>;
+				clocks = <&psc1 1>, <&usb_refclkin>,
+					 <&pll0_auxclk>;
+				clock-names = "fck", "usb_refclkin", "auxclk";
+			};
+		};
+		clocksource: timer@20000 {
+			compatible = "ti,da830-timer";
+			reg = <0x20000 0x1000>;
+			interrupts = <21>, <22>;
+			interrupt-names = "tint12", "tint34";
+			clocks = <&pll0_auxclk>;
+		};
+		wdt: wdt@21000 {
+			compatible = "ti,davinci-wdt";
+			reg = <0x21000 0x1000>;
+			clocks = <&pll0_auxclk>;
+			status = "disabled";
+		};
+		spi0: spi@41000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "ti,da830-spi";
+			reg = <0x41000 0x1000>;
+			num-cs = <6>;
+			ti,davinci-spi-intr-line = <1>;
+			interrupts = <20>;
+			clocks = <&psc0 4>;
+			power-domains = <&psc0 4>;
+			status = "disabled";
+		};
+		serial0: serial@42000 {
+			compatible = "ti,da830-uart", "ns16550a";
+			reg = <0x42000 0x100>;
+			reg-io-width = <4>;
+			reg-shift = <2>;
+			interrupts = <25>;
+			clocks = <&psc0 9>;
+			power-domains = <&psc0 9>;
+			status = "disabled";
+		};
+		serial1: serial@10c000 {
+			compatible = "ti,da830-uart", "ns16550a";
+			reg = <0x10c000 0x100>;
+			reg-io-width = <4>;
+			reg-shift = <2>;
+			interrupts = <53>;
+			clocks = <&psc1 12>;
+			power-domains = <&psc1 12>;
+			status = "disabled";
+		};
+		serial2: serial@10d000 {
+			compatible = "ti,da830-uart", "ns16550a";
+			reg = <0x10d000 0x100>;
+			reg-io-width = <4>;
+			reg-shift = <2>;
+			interrupts = <61>;
+			clocks = <&psc1 13>;
+			power-domains = <&psc1 13>;
+			status = "disabled";
+		};
+		usb0: usb@200000 {
+			compatible = "ti,da830-musb";
+			reg = <0x200000 0x1000>;
+			ranges;
+			interrupts = <58>;
+			interrupt-names = "mc";
+			dr_mode = "otg";
+			phys = <&usb_phy 0>;
+			phy-names = "usb-phy";
+			clocks = <&psc1 1>;
+			clock-ranges;
+			status = "disabled";
+
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			dmas = <&cppi41dma 0 0 &cppi41dma 1 0
+				&cppi41dma 2 0 &cppi41dma 3 0
+				&cppi41dma 0 1 &cppi41dma 1 1
+				&cppi41dma 2 1 &cppi41dma 3 1>;
+			dma-names =
+				"rx1", "rx2", "rx3", "rx4",
+				"tx1", "tx2", "tx3", "tx4";
+
+			cppi41dma: dma-controller@201000 {
+				compatible = "ti,da830-cppi41";
+				reg = <0x201000 0x1000
+					0x202000 0x1000
+					0x204000 0x4000>;
+				reg-names = "controller",
+					    "scheduler", "queuemgr";
+				interrupts = <58>;
+				#dma-cells = <2>;
+				#dma-channels = <4>;
+				dma-channels = <4>;
+				power-domains = <&psc1 1>;
+				status = "okay";
+			};
+		};
+		eth0: ethernet@220000 {
+			compatible = "ti,davinci-dm6467-emac";
+			reg = <0x220000 0x4000>;
+			ti,davinci-ctrl-reg-offset = <0x3000>;
+			ti,davinci-ctrl-mod-reg-offset = <0x2000>;
+			ti,davinci-ctrl-ram-offset = <0>;
+			ti,davinci-ctrl-ram-size = <0x2000>;
+			local-mac-address = [ 00 00 00 00 00 00 ];
+			interrupts = <33>, <34>, <35>, <36>;
+			clocks = <&psc1 5>;
+			power-domains = <&psc1 5>;
+			status = "disabled";
+		};
+		mdio: mdio@224000 {
+			compatible = "ti,davinci_mdio";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x224000 0x1000>;
+			clocks = <&psc1 5>;
+			clock-names = "fck";
+			power-domains = <&psc1 5>;
+			status = "disabled";
+		};
+		usb1: usb@225000 {
+			compatible = "ti,da830-ohci";
+			reg = <0x225000 0x1000>;
+			interrupts = <59>;
+			phys = <&usb_phy 1>;
+			phy-names = "usb-phy";
+			clocks = <&psc1 2>;
+			status = "disabled";
+		};
+		gpio: gpio@226000 {
+			compatible = "ti,dm6441-gpio";
+			gpio-controller;
+			#gpio-cells = <2>;
+			reg = <0x226000 0x1000>;
+			interrupts = <42>, <43>, <44>, <45>, <46>, <47>, <48>, <49>;
+			ti,ngpio = <128>;
+			ti,davinci-gpio-unbanked = <0>;
+			clocks = <&psc1 3>;
+			clock-names = "gpio";
+			status = "disabled";
+			interrupt-controller;
+			#interrupt-cells = <2>;
+		};
+		psc1: clock-controller@227000 {
+			compatible = "ti,da830-psc1";
+			reg = <0x227000 0x1000>;
+			#clock-cells = <1>;
+			#power-domain-cells = <1>;
+			clocks = <&pll0_sysclk 2>, <&pll0_sysclk 4>,
+				 <&pll0_sysclk 5>;
+			clock-names = "pll0_sysclk2", "pll0_sysclk4",
+				      "pll0_sysclk5";
+		};
+	};
+
+	aemif: aemif@68000000 {
+		compatible = "ti,da850-aemif";
+		#address-cells = <2>;
+		#size-cells = <1>;
+
+		reg = <0x68000000 0x00008000>;
+		ranges = <0 0 0x60000000 0x08000000
+			  1 0 0x68000000 0x00008000>;
+		clocks = <&psc0 3>;
+		clock-names = "aemif";
+		clock-ranges;
+		status = "disabled";
+	};
+};

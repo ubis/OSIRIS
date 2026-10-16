@@ -185,7 +185,7 @@ state, counters and levels.
 
 ## Software versions
 
-U-Boot is mainline U-Boot 2026.07 with a board of its own for these
-receivers, built by Buildroot 2026.02 with its GCC together with the root
-file system. dspboot and dspaudio are built with a current GCC for the
-C6000 DSP.
+U-Boot is mainline U-Boot 2026.07 and the kernel Linux 6.18, both with
+the DA830 support and a board of their own for these receivers, built by
+Buildroot 2026.02 with its GCC together with the root file system.
+dspboot and dspaudio are built with a current GCC for the C6000 DSP.

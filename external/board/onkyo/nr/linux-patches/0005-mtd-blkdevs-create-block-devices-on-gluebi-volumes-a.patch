@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Fri, 16 Oct 2026 17:52:36 +0300
+Subject: [PATCH 6/6] mtd: blkdevs: create block devices on gluebi volumes
+ again
+
+UBI volumes that gluebi exposes as MTD devices get no mtdblock device
+since mtd_blkdevs started skipping MTD_UBIVOLUME; ubiblock is the way
+mainline offers. Boot loaders that already pass root=/dev/mtdblockN for
+a squashfs in a gluebi volume, as on the Onkyo receivers, then cannot
+boot this kernel at all. Give gluebi volumes their block devices again;
+they are read-only users of a static volume.
+---
+ drivers/mtd/mtd_blkdevs.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mtd/mtd_blkdevs.c b/drivers/mtd/mtd_blkdevs.c
+index 28e09d080..472d6f4fb 100644
+--- a/drivers/mtd/mtd_blkdevs.c
++++ b/drivers/mtd/mtd_blkdevs.c
+@@ -457,7 +457,7 @@ static void blktrans_notify_add(struct mtd_info *mtd)
+ {
+ 	struct mtd_blktrans_ops *tr;
+ 
+-	if (mtd->type == MTD_ABSENT || mtd->type == MTD_UBIVOLUME)
++	if (mtd->type == MTD_ABSENT)
+ 		return;
+ 
+ 	list_for_each_entry(tr, &blktrans_majors, list)
+@@ -497,7 +497,7 @@ int register_mtd_blktrans(struct mtd_blktrans_ops *tr)
+ 	mutex_lock(&mtd_table_mutex);
+ 	list_add(&tr->list, &blktrans_majors);
+ 	mtd_for_each_device(mtd)
+-		if (mtd->type != MTD_ABSENT && mtd->type != MTD_UBIVOLUME)
++		if (mtd->type != MTD_ABSENT)
+ 			tr->add_mtd(tr, mtd);
+ 	mutex_unlock(&mtd_table_mutex);
+ 	return 0;
