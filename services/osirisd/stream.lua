@@ -51,6 +51,24 @@ end
 -- the MCU's last input report, to go back to.
 local ac3_ca, ac3_now, c1_interface, c1_channels
 
+-- The MCU leaves muting the NET input to us (MCU_NET_MUTE): the DSP is
+-- silent while it is on and the input is NET.
+local net_mute, mute_now = false, nil
+
+local function set_mute()
+	local m = net_mute and source.input_now == "network"
+
+	if m ~= mute_now then
+		mute_now = m
+		call("dsp", "set", { mute = m })
+	end
+end
+
+function M.set_net_mute(on)
+	net_mute = on == true or on == 1
+	set_mute()
+end
+
 -- the source by the MCU's C1 interface: 1 analog, 2 multichannel PCM from
 -- HDMI, 5 the NET input (audio from Linux), else digital
 function M.set_input(interface, fs, channels)
@@ -81,6 +99,7 @@ function M.set_input(interface, fs, channels)
 		end
 	end
 	audio.set_back_fill()
+	set_mute()
 	if input == was then
 		return
 	end
@@ -135,8 +154,10 @@ local function bitstream(msg)
 	end
 end
 
--- a restarted dspd decodes nothing yet: no Dolby left over
+-- a restarted dspd decodes nothing yet: no Dolby left over, and not muted
 function M.dsp_lost()
+	mute_now = nil
+	set_mute()
 	if ac3_now then
 		ac3_ca, ac3_now, stream_now = nil, nil, nil
 		if c1_interface then
@@ -156,6 +177,7 @@ events.on("mcu.ready", function()
 end)
 
 events.on("dsp.bitstream", bitstream)
+events.on("mcu.net_mute", function(msg) M.set_net_mute(msg.mute) end)
 events.on("mcu.input", function(msg)
 	if msg.interface then
 		M.set_input(msg.interface, msg.fs, msg.channels)

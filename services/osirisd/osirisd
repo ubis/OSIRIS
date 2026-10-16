@@ -92,6 +92,7 @@ end
 audio.start_levels(st, saved)
 audio.set_eq(audio.saved_eq(saved))
 audio.set_eq(st and st.equalizer)
+stream.set_net_mute(st and st.net_mute)
 if st and st.interface then
 	stream.set_input(st.interface, st.fs, st.channels)
 end

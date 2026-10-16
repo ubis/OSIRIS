@@ -54,7 +54,7 @@ enum mcu_cmd {
 	MCU_HEADPHONE		= 0xd4,
 	MCU_CH_LAYOUT		= 0xd5,	/* [1] what the surround back amplifiers drive */
 	MCU_SPECIAL_MODE	= 0xd6,
-	MCU_NET_MUTE		= 0xdb,
+	MCU_NET_MUTE		= 0xdb,	/* [0] 1 mute the NET input, 0 not */
 	MCU_NETAUDIO_INFO	= 0xdc,
 	MCU_SPDIF_UPDATE	= 0xdd,
 	MCU_AUDYSSEY		= 0xde,
