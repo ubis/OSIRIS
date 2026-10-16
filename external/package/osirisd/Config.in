@@ -1,0 +1,11 @@
+config BR2_PACKAGE_OSIRISD
+	bool "osirisd"
+	depends on BR2_PACKAGE_LUAJIT
+	select BR2_PACKAGE_UBUS
+	help
+	  The receiver's policy in Lua: it listens to the events mcud
+	  reports and tells dspd and the system what to do
+	  (services/osirisd).
+
+comment "osirisd needs LuaJIT"
+	depends on !BR2_PACKAGE_LUAJIT

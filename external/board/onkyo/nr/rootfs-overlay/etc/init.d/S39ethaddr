@@ -1,0 +1,25 @@
+#!/bin/sh
+#
+# Give eth0 the board's MAC address from the U-Boot environment (ethaddr),
+# as the stock firmware does: the EMAC has no address of its own and Linux
+# would otherwise pick a random one on every boot.
+#
+
+start() {
+	mac=$(osiris-ethaddr)
+	[ -n "$mac" ] || { echo "eth0: no ethaddr in the U-Boot environment"; return 0; }
+	[ "$mac" = "$(cat /sys/class/net/eth0/address 2>/dev/null)" ] && return 0
+	# an address set by the kernel (ip=, installer) survives the restart, its default route does not
+	gw=$(ip route | sed -n 's/^default via \([0-9.]*\).*/\1/p')
+	ip link set eth0 down
+	ip link set eth0 address "$mac"
+	ip link set eth0 up
+	[ -n "$gw" ] && ip route add default via "$gw" 2>/dev/null
+	echo "eth0: MAC $mac from the U-Boot environment"
+}
+
+case "$1" in
+start)	start ;;
+stop|restart|reload)	;;
+*)	echo "Usage: $0 {start}"; exit 1 ;;
+esac

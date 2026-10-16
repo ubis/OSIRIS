@@ -1,0 +1,8 @@
+config BR2_PACKAGE_MCUD
+	bool "mcud"
+	depends on !BR2_PREFER_STATIC_LIB
+	select BR2_PACKAGE_UBUS
+	help
+	  The link to the receiver's main MCU on the ubus: the SPI
+	  protocol, the start-up handshake and events for everything
+	  the MCU reports (services/mcud).

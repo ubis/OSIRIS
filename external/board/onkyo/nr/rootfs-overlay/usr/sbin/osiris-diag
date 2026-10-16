@@ -1,0 +1,62 @@
+#!/bin/sh
+#
+# osiris-diag: collect what is needed to look into a problem - versions,
+# boot and flash state, the services' status, logs, network - into one
+# .tar.gz file to attach to an issue.
+#
+#   osiris-diag [-e seconds]      -e: also record the MCU events for a while
+#
+# The file contains the board's MAC and IP addresses.
+#
+set -e
+
+events=0
+[ "$1" = "-e" ] && events=${2:-30}
+
+name=osiris-diag-$(hostname)-$(date +%Y%m%d-%H%M%S)
+dir=/tmp/$name
+rm -rf $dir
+mkdir -p $dir
+
+# run <file> <command...>: its output (and errors) into <file>
+run() {
+	local f=$1
+
+	shift
+	{ echo "# $*"; "$@"; } > $dir/$f 2>&1 || true
+}
+
+run version.txt cat /etc/osiris-version
+run uname.txt uname -a
+run uptime.txt uptime
+run date.txt date
+run cmdline.txt cat /proc/cmdline
+run dmesg.txt dmesg
+run log.txt logread
+run ubus-objects.txt ubus list -v
+run mcu-status.txt ubus call mcu status
+run dsp-status.txt ubus call dsp status
+run ps.txt ps
+run memory.txt free
+run df.txt df
+run interrupts.txt cat /proc/interrupts
+run mtd.txt cat /proc/mtd
+run ubi.txt ubinfo -a
+run u-boot-env.txt fw_printenv
+run network.txt ifconfig -a
+run net-dev.txt cat /proc/net/dev
+run route.txt route -n
+run state.txt cat /data/osiris/state
+run data.txt ls -la /data /data/osiris
+
+if [ $events -gt 0 ]; then
+	echo "recording MCU events for $events s - use the receiver now"
+	ubus listen > $dir/events.txt 2>&1 &
+	pid=$!
+	sleep $events
+	kill $pid 2> /dev/null || true
+fi
+
+tar -cf - -C /tmp $name | gzip > $dir.tar.gz
+rm -rf $dir
+echo "$dir.tar.gz"

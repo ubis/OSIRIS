@@ -1,0 +1,23 @@
+From f4057be53a6f8fc60772be63c15eb222b12b7f29 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Sun, 11 Oct 2026 17:52:44 +0300
+Subject: [PATCH] cli: flush each event that listen prints
+
+Without it, events reach a file or a pipe in 4 KiB chunks, late or not
+at all.
+---
+ cli.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/cli.c b/cli.c
+index 6bfb44e..18b6b21 100644
+--- a/cli.c
++++ b/cli.c
+@@ -86,6 +86,7 @@ static void receive_event(struct ubus_context *ctx, struct ubus_event_handler *e
+ 
+ 	str = blobmsg_format_json(msg, true);
+ 	printf("{ \"%s\": %s }\n", type, str);
++	fflush(stdout);
+ 	free(str);
+ }
+ 

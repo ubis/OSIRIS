@@ -52,22 +52,25 @@ dspaudio:
 		make O=$(BUILD)/dspaudio VERSION=$(shell sh tools/version.sh) \
 		$(if $(DMA),DMA=$(DMA)) $(if $(AC3),AC3=$(AC3)))
 
-# Buildroot: its own target toolchain, U-Boot, the kernel and the root file
-# system in one build; the sources it downloads are kept in buildroot/dl.
-# Buildroot copies local sources only once, so this repository's own
-# packages are rebuilt every time.
+# Buildroot (the buildroot/ submodule) with the OSIRIS tree in external/:
+# its own target toolchain, U-Boot, the kernel and the root file system in
+# one build; the sources it downloads are kept in dl/. Buildroot copies
+# local sources only once, so this repository's own packages, those the
+# defconfig enables, are rebuilt every time.
 
 BUILDROOT_IMAGE := $(call image_tag,buildroot,toolchain/buildroot/Dockerfile)
 BUILDROOT_OUT   := $(BUILD)/buildroot
-BUILDROOT_MAKE  := make O=$(BUILDROOT_OUT)
+BUILDROOT_MAKE  := make O=$(BUILDROOT_OUT) BR2_EXTERNAL=$(TOP)/external
 BUILDROOT_LOCAL := mcud dspd dspaudio osirisd pcmd
 
 buildroot: dspaudio
+	@test -f buildroot/Makefile || git submodule update --init buildroot
 	@$(call ensure_image,$(BUILDROOT_IMAGE),toolchain/buildroot)
 	mkdir -p $(BUILDROOT_OUT)
 	$(call docker_run,$(BUILDROOT_IMAGE),$(TOP)/buildroot,sh -c \
 		"$(BUILDROOT_MAKE) onkyo_nr_defconfig > /dev/null && \
-		 $(BUILDROOT_MAKE) $(addsuffix -rebuild,$(BUILDROOT_LOCAL)) && \
+		 $(BUILDROOT_MAKE) \$$(cd $(BUILDROOT_OUT) && for p in $(BUILDROOT_LOCAL); do \
+			grep -qix BR2_PACKAGE_\$$p=y .config && echo \$$p-rebuild; done) && \
 		 $(BUILDROOT_MAKE)")
 	mkdir -p $(DIST)
 	ln -sfn $(BUILDROOT_OUT)/images $(DIST)/images

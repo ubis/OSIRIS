@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# Until NTP syncs, start from the firmware build time, so time never runs
+# backwards to 2000.
+#
+
+case "$1" in
+start)
+	t=$(cat /etc/osiris-build-time 2> /dev/null)
+	if [ "${t:-0}" -gt "$(date +%s)" ] 2> /dev/null; then
+		date -s @$t > /dev/null
+		echo "clock: set to $(date) (no time source yet)"
+	fi
+	;;
+stop|restart|reload)	;;
+*)	echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac
+exit 0

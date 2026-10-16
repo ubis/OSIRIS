@@ -1,0 +1,11 @@
+#!/bin/sh
+#
+# udhcpc hook: the stock Buildroot script configures the address, routes and
+# resolv.conf; once there is a lease, make sure ntpd runs.
+#
+
+/usr/share/udhcpc/default.script "$@"
+case "$1" in
+bound|renew)	/etc/init.d/S41ntp start > /dev/null 2>&1 ;;
+esac
+exit 0

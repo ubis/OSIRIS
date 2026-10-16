@@ -1,0 +1,34 @@
+#!/bin/sh
+#
+# Network: eth0 by DHCP (udhcpc, sends the hostname, takes DNS from the
+# lease and starts ntpd once bound). udhcpc runs in the background from the
+# start, so the rest of the boot never waits for a lease or a cable.
+# Skipped when the kernel already configured eth0 from ip= (installer
+# booted over TFTP).
+#
+
+PIDFILE=/var/run/udhcpc.eth0.pid
+
+start() {
+	echo "Starting network..."
+	ifup lo
+	if grep -q " ip=" /proc/cmdline; then
+		echo "eth0: configured by the kernel (ip=)"
+		return 0
+	fi
+	start-stop-daemon -b -S -q -m -p $PIDFILE -x /sbin/udhcpc -- \
+		-f -S -i eth0 -x hostname:$(hostname) -s /usr/share/osiris/udhcpc.script
+}
+
+stop() {
+	start-stop-daemon -K -q -p $PIDFILE
+	ifdown lo
+}
+
+case "$1" in
+start)	start ;;
+stop)	stop ;;
+restart|reload)	stop; start ;;
+*)	echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac
+exit 0

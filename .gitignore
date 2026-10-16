@@ -8,3 +8,5 @@ __pycache__/
 /dist/
 # build output
 /build/
+# downloaded sources
+/dl/

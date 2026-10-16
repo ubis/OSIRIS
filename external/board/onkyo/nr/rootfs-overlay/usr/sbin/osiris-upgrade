@@ -1,0 +1,66 @@
+#!/bin/sh
+#
+# osiris-upgrade: install an OSIRIS update bundle into the inactive slot and
+# boot it once. If the new system comes up, S99confirm makes it the default
+# slot; if it does not (panic, watchdog reset), the next boot is the old slot.
+#
+#   osiris-upgrade [-n] bundle.tar      -n: do not reboot afterwards
+#
+# A bundle (tools/mkbundle.sh) is a tar file with VERSION, md5sums, uImage,
+# rootfs.squashfs and optionally u-boot.dbi. The running slot is not touched.
+#
+set -e
+
+die() { echo "osiris-upgrade: $*" >&2; exit 1; }
+mtd() { sed -n "s/^mtd\([0-9]*\): .* \"$1\"\$/\1/p" /proc/mtd; }
+vol() { ubinfo -d 0 -N $1 2> /dev/null | sed -n 's/^Volume ID: *\([0-9]*\).*/\1/p'; }
+md5() { md5sum | cut -d' ' -f1; }
+# same DEV FILE: the first size-of-FILE bytes of DEV match FILE
+same() { [ "$(head -c $(wc -c < $2) $1 | md5)" = "$(md5 < $2)" ]; }
+
+reboot=1
+[ "$1" = "-n" ] && { reboot=0; shift; }
+[ -f "$1" ] || die "usage: osiris-upgrade [-n] bundle.tar"
+bundle=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
+
+cur=$(sed -n 's/.*osiris\.slot=\([ab]\).*/\1/p' /proc/cmdline)
+[ -n "$cur" ] || die "not running from NAND (no osiris.slot= on the kernel command line)"
+if [ $cur = a ]; then new=b; else new=a; fi
+
+work=/tmp/osiris-upgrade
+rm -rf $work
+mkdir -p $work
+cd $work
+tar -xf "$bundle" || die "cannot unpack $bundle"
+[ -f md5sums ] && [ -f uImage ] && [ -f rootfs.squashfs ] || die "not an OSIRIS bundle"
+md5sum -c md5sums > /dev/null 2>&1 || die "checksum mismatch, the bundle is damaged"
+echo "running $(cat /etc/osiris-version 2>/dev/null) in slot $cur, installing $(cat VERSION) into slot $new"
+
+for p in kernel:uImage rootfs:rootfs.squashfs; do
+	name=${p%%:*}_$new
+	file=${p#*:}
+	v=$(vol $name)
+	[ -n "$v" ] || die "no UBI volume $name"
+	echo "writing $file to $name"
+	ubiupdatevol /dev/ubi0_$v $file
+	same /dev/ubi0_$v $file || die "$name read-back differs"
+done
+if [ -f u-boot.dbi ]; then
+	m=$(mtd uboot_$new)
+	[ -n "$m" ] || die "no uboot_$new partition"
+	[ "$(head -c 4 u-boot.dbi)" = "DBI1" ] || die "u-boot.dbi is not a dspboot image"
+	echo "writing u-boot.dbi to uboot_$new"
+	flash_erase -q /dev/mtd$m 0 0
+	nandwrite -q -p /dev/mtd$m u-boot.dbi
+	nanddump -q -l $(wc -c < u-boot.dbi) -f check /dev/mtd$m
+	same check u-boot.dbi || die "uboot_$new read-back differs"
+fi
+
+fw_setenv upgrade_slot $new
+cd /
+rm -rf $work
+echo "slot $new will be tried once on the next boot"
+if [ $reboot = 1 ]; then
+	echo "rebooting"
+	reboot
+fi

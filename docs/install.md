@@ -27,8 +27,9 @@ make dspboot      # the first boot stage -> dist/dspboot/
 make buildroot    # U-Boot, Linux, the services and the root file system -> dist/images/
 ```
 
-The first `make buildroot` downloads the sources Buildroot needs (kept in
-`buildroot/dl/`) and takes a while; later builds only redo what changed.
+The first `make buildroot` checks out Buildroot (a git submodule),
+downloads the sources it needs (kept in `dl/`) and takes a while; later
+builds only redo what changed.
 
 | file | what |
 |---|---|

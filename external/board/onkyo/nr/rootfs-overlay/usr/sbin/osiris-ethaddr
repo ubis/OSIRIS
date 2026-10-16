@@ -1,0 +1,12 @@
+#!/bin/sh
+#
+# Print the board's MAC address (ethaddr) from the U-Boot environment.
+# fw_printenv checks the CRC, but a stock Onkyo environment (one copy, no
+# flag byte) fails that check with our two-copy fw_env.config; then take it
+# from the raw first copy and accept it only if it looks like a MAC address.
+#
+mac=$(fw_printenv -n ethaddr 2> /dev/null)
+[ -n "$mac" ] || mac=$(dd if=/dev/mtd0 bs=16384 count=1 2> /dev/null |
+	tr '\000' '\n' | sed -n 's/^ethaddr=//p' | head -n 1)
+echo "$mac" | grep -qiE '^([0-9a-f]{2}:){5}[0-9a-f]{2}$' || exit 1
+echo "$mac" | tr A-F a-f

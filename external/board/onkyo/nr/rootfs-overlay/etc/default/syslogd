@@ -1,0 +1,2 @@
+# syslogd logs to a 64 KiB ring buffer in RAM (logread); nothing goes to the flash
+SYSLOGD_ARGS="-C64"

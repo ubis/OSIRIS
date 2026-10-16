@@ -1,0 +1,46 @@
+#!/bin/sh
+#
+# osiris-hotplug: run by mdev for USB storage. FAT storage is mounted
+# read-only on /media/<partition> and unmounted when it goes, announced as
+# the ubus event osiris.media. An OSIRIS update bundle in its top directory
+# is announced as osiris.update with its version and path.
+#
+[ "$SUBSYSTEM" = block ] || exit 0
+DEVNAME=${DEVNAME:-$MDEV}
+case "$DEVNAME" in
+sd[a-z]|sd[a-z][0-9]*)	;;
+*)	exit 0 ;;
+esac
+
+dir=/media/$DEVNAME
+
+case "$ACTION" in
+add)
+	# a whole disk only when it has no partitions
+	if [ "$DEVTYPE" = disk ] && ls -d /sys/block/$DEVNAME/$DEVNAME* > /dev/null 2>&1; then
+		exit 0
+	fi
+
+	mkdir -p $dir
+	if ! mount -t vfat -o ro,noatime /dev/$DEVNAME $dir 2> /dev/null; then
+		rmdir $dir
+		exit 0
+	fi
+
+	logger -t usb "$DEVNAME mounted on $dir"
+	ubus send osiris.media "{\"dir\": \"$dir\", \"present\": true}"
+	for f in $dir/osiris-*.tar; do
+		[ -f "$f" ] || continue
+		v=$(tar -xOf "$f" VERSION 2> /dev/null)
+		[ -n "$v" ] || continue
+		logger -t usb "update bundle $f ($v)"
+		ubus send osiris.update "{\"version\": \"$v\", \"path\": \"$f\"}"
+	done
+	;;
+remove)
+	grep -q " $dir " /proc/mounts || exit 0
+	umount -l $dir
+	rmdir $dir 2> /dev/null
+	ubus send osiris.media "{\"dir\": \"$dir\", \"present\": false}"
+	;;
+esac
