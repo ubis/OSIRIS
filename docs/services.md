@@ -175,7 +175,8 @@ What it does today:
   back, front high or front wide)
 - passes the speaker distances to the DSP and keeps them in the state file
 - passes the equalizer, A/V sync, Dynamic EQ (from the volume) and Dynamic
-  Volume to the DSP
+  Volume to the DSP, and keeps the equalizer and the two Audyssey settings
+  in the state file
 - tells the DSP the input and the source's sample rate, and the LFE level
   for multichannel PCM
 - with 5.1 and surround back speakers, has them repeat the surrounds (not
