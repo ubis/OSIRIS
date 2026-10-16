@@ -19,8 +19,12 @@ BUILD  := $(TOP)/build
 DOCKER ?= docker
 
 # docker_run <image>, <workdir>, <command>: as the calling user, repo mounted at
-# the same path; --init so that Ctrl-C reaches make inside the container
-docker_run = $(DOCKER) run --rm --init -u $(shell id -u):$(shell id -g) -v $(TOP):$(TOP) -w $(2) $(1) $(3)
+# the same path; --init so that Ctrl-C reaches make inside the container. The
+# user has no passwd entry there, so the kernel gets its name for its version
+# string, and the host name is this host's rather than the container's.
+docker_run = $(DOCKER) run --rm --init -u $(shell id -u):$(shell id -g) \
+	-e KBUILD_BUILD_USER=$(shell id -un) -h $(shell hostname -s) \
+	-v $(TOP):$(TOP) -w $(2) $(1) $(3)
 
 # image_tag <name>, <Dockerfile>
 image_tag = osiris-$(1):$(shell sha256sum $(2) | cut -c1-12)
