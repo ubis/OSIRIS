@@ -85,7 +85,7 @@ state and input levels there, dspd writes the gains, filters and delays it
 works out from the `dsp set` values below.
 
 ```sh
-ubus call dsp status                              # state, counters, input peaks, all settings
+ubus call dsp status                              # state, counters, DSP load, input peaks, all settings
 ubus call dsp set '{"mute": true}'
 ubus call dsp set '{"volume": -600}'              # gain in 0.01 dB, 0 = unity
 ubus call dsp set '{"outputs": "all"}'            # "front", "all" (stereo everywhere), "mono" or "multichannel"

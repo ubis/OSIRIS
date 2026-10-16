@@ -131,6 +131,17 @@ static void dma_restart(void)
 	SH->state = DSPAUDIO_RUNNING;
 }
 
+/* the DSP's cycle counter, started by the first write */
+static uint32_t tsc(void)
+{
+	uint32_t t;
+
+	__asm__ volatile ("mvc .s2 TSCL, %0" : "=b"(t));
+	return t;
+}
+
+#define LOAD_BLOCKS	(48000 / DMA_FRAMES)	/* about a second at 48 kHz */
+
 #define DMA_STALL_LOOPS	2000000		/* several blocks without a received one */
 
 /*
@@ -140,9 +151,11 @@ static void dma_restart(void)
  */
 void dma_loop(void)
 {
-	unsigned int half = 0;
-	uint32_t done, n, err;
+	unsigned int half = 0, blocks = 0;
+	uint32_t done, n, err, t0, t1, last = 0;
+	float busy = 0.0f, total = 0.0f, peak = 0.0f;
 
+	__asm__ volatile ("mvc .s2 %0, TSCL" : : "b"(0));
 	for (;;) {
 		rx_follow_rate();
 		done = 1u << (TCC_RX + half);
@@ -152,8 +165,11 @@ void dma_loop(void)
 		err = (REG(RSTAT) | REG(XSTAT)) & (STAT_UNDERRUN | STAT_SYNC_ERR | STAT_DMA_ERR);
 		if (n == DMA_STALL_LOOPS || err) {
 			SH->underruns++;
+			SH->load = 0;
 			dma_restart();
-			half = 0;
+			half = blocks = 0;
+			last = 0;
+			busy = total = peak = 0.0f;
 			continue;
 		}
 
@@ -163,10 +179,31 @@ void dma_loop(void)
 		}
 
 		REG(EDMA_ICR) = done | 3u << TCC_TX;
+		t0 = tsc();
 		dma_block(half, tx_free());
 		half ^= 1;
 #ifdef DSPAUDIO_AC3
 		ac3_work();
 #endif
+
+		/* busy: from a block's arrival until the wait for the next one */
+		t1 = tsc();
+		if (last && t1 - last) {
+			float p = (float)(t1 - t0) / (float)(t1 - last);
+
+			peak = p > peak ? p : peak;
+			busy += (float)(t1 - t0);
+			total += (float)(t1 - last);
+		}
+		last = t1;
+
+		if (++blocks == LOAD_BLOCKS) {
+			uint32_t avg = total > 0.0f ? (uint32_t)(busy / total * 10000.0f) : 0;
+			uint32_t top = (uint32_t)(peak * 10000.0f);
+
+			SH->load = (avg > 0xffff ? 0xffff : avg) | (top > 0xffff ? 0xffff : top) << 16;
+			blocks = 0;
+			busy = total = peak = 0.0f;
+		}
 	}
 }
