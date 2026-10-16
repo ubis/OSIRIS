@@ -12,6 +12,9 @@ OSIRISD_DEPENDENCIES = luajit ubus
 
 define OSIRISD_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 0755 $(@D)/osirisd $(TARGET_DIR)/usr/sbin/osirisd
+	for f in $(@D)/*.lua; do \
+		$(INSTALL) -D -m 0644 $$f $(TARGET_DIR)/usr/share/osirisd/$${f##*/} || exit 1; \
+	done
 endef
 
 $(eval $(generic-package))
