@@ -119,8 +119,6 @@ static void dma_restart(void)
 
 	REG(EDMA_EECR) = 1u << CH_RX | 1u << CH_TX;
 	REG(GBLCTL) = 0;
-	while (REG(GBLCTL)) {
-	}
 
 	for (n = 0; n < sizeof(dma_tx) / 4; n++) {
 		((int32_t *)dma_tx)[n] = 0;

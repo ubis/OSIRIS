@@ -87,7 +87,6 @@ enum dspaudio_state {
 	DSPAUDIO_POWER		= 1,	/* enabling McASP1 */
 	DSPAUDIO_RUNNING	= 3,
 	DSPAUDIO_INIT		= 10,	/* 10..15: McASP init steps */
-	DSPAUDIO_STUCK		= 100,	/* + the init step that timed out */
 };
 
 /* y = b0 x + b1 x[-1] + b2 x[-2] - a1 y[-1] - a2 y[-2] */
