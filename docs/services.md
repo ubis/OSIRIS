@@ -149,7 +149,7 @@ What it does today:
 - names the system after the receiver model the MCU reports (host name and
   `/data/osiris/state`, unless `/data/etc/hostname` exists)
 - makes the receiver show "OSIRIS <build>" as its DSP version
-- picks the speakers from the listening mode (by the name of its ISCP code,
+- picks the speakers from the listening mode (by the name mcud gives it,
   tables `MODE_OUTPUTS`, `MODE_SURROUND`, `MODE_REVERB` in `audio.lua`):
   - All Ch Stereo plays stereo on every speaker, Full Mono mono on every
     speaker

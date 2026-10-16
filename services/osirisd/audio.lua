@@ -12,12 +12,6 @@ local call, log, save_state = util.call, util.log, util.save_state
 
 local M = {}
 
--- listening modes (D2), with the ISCP name the MCU reports alongside
-local LM_STEREO = 0x04				-- LMD00
-local LM_ALL_CH_STEREO = 0x0A			-- LMD0C
-local LM_FULL_MONO = 0x0B			-- LMD13
-local LM_TESTTONE = 0xF1			-- level calibration (C_LM_TESTTONE)
-
 -- calibration channel -> DSP output; front high and wide share the
 -- surround back pair
 local TESTTONE_OUT = {
@@ -26,12 +20,9 @@ local TESTTONE_OUT = {
 }
 local TESTTONE_LEVEL = -70		-- dBFS RMS, at the MCU's reference volume
 
--- speakers per listening mode, by the MCU's byte until it names the mode;
--- anything else (stereo, direct, the modes the DSP cannot do yet) plays on
--- the front pair
+-- speakers per listening mode; anything else (stereo, direct, the modes
+-- the DSP cannot do yet) plays on the front pair
 local MODE_OUTPUTS = {
-	[LM_ALL_CH_STEREO] = "all",
-	[LM_FULL_MONO] = "mono",
 	all_ch_stereo = "all",
 	full_mono = "mono",
 }
@@ -159,7 +150,7 @@ end
 
 -- noise only during level calibration, on the channel the MCU picked
 local function set_testtone()
-	local out = source.mode_now == LM_TESTTONE and TESTTONE_OUT[testtone_ch] or "off"
+	local out = source.mode_name == "testtone" and TESTTONE_OUT[testtone_ch] or "off"
 
 	call("dsp", "set", { testtone = out, testtone_level = TESTTONE_LEVEL })
 end
@@ -185,26 +176,26 @@ function M.set_back_fill()
 	end
 end
 
--- by the name of the mode's ISCP code, the MCU's byte only where there is
--- no name yet; either can be missing
+-- by the mode's name, as mcud reports it; the MCU's byte is kept for the
+-- next start, and either can be missing
 function M.set_mode(mode, name)
 	if not mode and not name then
 		return
 	end
 
 	-- not the test tone: a restart must not come back into calibration
-	if mode ~= LM_TESTTONE then
+	if name ~= "testtone" then
 		save_state({ listening_mode = mode or "", listening_mode_name = name or "" })
 	end
 
 	source.mode_now, source.mode_name = mode, name
-	local surround = mode ~= LM_TESTTONE and MODE_SURROUND[name] or "off"
-	local outputs = MODE_OUTPUTS[name] or MODE_OUTPUTS[mode] or "front"
+	local surround = MODE_SURROUND[name] or "off"
+	local outputs = MODE_OUTPUTS[name] or "front"
 
 	-- multichannel already has its channels: Stereo folds them down
 	if source.input_now == "multichannel" then
 		surround = "off"
-		if outputs == "front" and name ~= "stereo" and (name or mode ~= LM_STEREO) then
+		if outputs == "front" and name ~= "stereo" then
 			outputs = "multichannel"
 		end
 	end
