@@ -260,6 +260,15 @@ local LOUDNESS_MAX = 10
 local av_now = 0
 local volume_now, adsy_now, loudness_now = 0, {}, nil
 
+-- Late Night, the MCU's setting for Dolby Digital
+local LATE_NIGHT = { off = 0, low = 1, high = 2 }
+local late_now = 0
+
+local function set_late_night(name)
+	late_now = LATE_NIGHT[name] or 0
+	call("dsp", "set", { late_night = late_now })
+end
+
 local function set_av_sync(ms)
 	av_now = ms > 0 and ms + AV_STOCK_MS or 0
 	call("dsp", "set", { av_sync = av_now })
@@ -958,7 +967,7 @@ local handlers = {
 		set_speakers(call("mcu", "status"))
 		set_distances(distances_now or saved_distances(saved))
 		call("dsp", "set", { input = input_now, fs = fs_now, lfe_level = lfe_pcm, av_sync = av_now,
-				     loudness = loudness_now, dynamic_volume = adsy_now.dynamic_volume or 0,
+				     late_night = late_now, loudness = loudness_now, dynamic_volume = adsy_now.dynamic_volume or 0,
 				     meter = input_now == "network" })
 		set_eq()
 	end,
@@ -1039,6 +1048,9 @@ local handlers = {
 		adsy_now = msg
 		set_loudness()
 		set_dynamic_volume()
+	end,
+	["mcu.late_night"] = function(msg)
+		set_late_night(msg.dolby)
 	end,
 	["mcu.av_sync"] = function(msg)
 		if msg.ms then
@@ -1137,6 +1149,9 @@ end
 set_speakers(st)
 set_distances(st and st.distances or saved_distances(saved))
 set_lfe("multichannel_pcm", tonumber(saved.lfe_multichannel_pcm or "") or 0)
+if st and st.late_night then
+	set_late_night(st.late_night)
+end
 if st and st.av_sync then
 	set_av_sync(st.av_sync)
 end

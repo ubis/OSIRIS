@@ -1154,6 +1154,13 @@ static void ac3_init(void)
 	a52_out = a52 ? a52_samples(a52) : 0;
 }
 
+/* Late Night: the stream's own range compression, by half its dB or all */
+static level_t ac3_drc(level_t range, void *data)
+{
+	(void)data;
+	return SH->late_night == 1 ? range * rsqrt(range) : range;
+}
+
 /* a bad frame now and then keeps the layout: the policy must not flap */
 static void ac3_fail(void)
 {
@@ -1232,7 +1239,7 @@ static void ac3_work(void)
 
 		ac3_bad = 0;
 
-		a52_dynrng(a52, 0, 0);
+		a52_dynrng(a52, SH->late_night ? ac3_drc : 0, 0);
 		ac3_blk = 0;
 		SH->bitstream = (SH->bitstream & 0xff) |
 				(uint32_t)(ac3_flags & (A52_CHANNEL_MASK | A52_LFE_FLAG)) << 8;

@@ -172,6 +172,7 @@ static int loudness = -1;		/* dB of bass boost, -1 off */
 static int dynamic_volume;		/* 0 off, 1 light, 2 medium, 3 heavy */
 static int back_fill;			/* multichannel without surround back: fill it */
 static int meter;			/* send dsp.meter events */
+static int late_night;			/* 0 off, 1 low, 2 high */
 static void meter_tick(struct uloop_timeout *t);
 static struct uloop_timeout meter_timer = { .cb = meter_tick };
 static void bitstream_tick(struct uloop_timeout *t);
@@ -646,6 +647,7 @@ static void apply(void)
 	sh->inputs = multi ? 0xff : 0x03;
 	sh->decim = sample_hz > SAMPLE_HZ ? 2 : 1;
 	sh->ring_on = input == INPUT_NETWORK;
+	sh->late_night = late_night;
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
 		for (in = 0; in < DSPAUDIO_IN; in++) {
 			/* the decoder makes the outputs; [0] only scales them */
@@ -968,6 +970,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	}
 	blobmsg_add_u32(&b, "lfe_level", (uint32_t)lfe_level);
 	blobmsg_add_u32(&b, "av_sync", (uint32_t)av_sync);
+	blobmsg_add_u32(&b, "late_night", (uint32_t)late_night);
 	blobmsg_add_u32(&b, "loudness", (uint32_t)loudness);
 	blobmsg_add_u32(&b, "fs", (uint32_t)sample_hz);
 	blobmsg_add_u8(&b, "back_fill", back_fill);
@@ -991,7 +994,7 @@ enum { SET_VOLUME, SET_MUTE, SET_OUTPUTS, SET_BASS, SET_TREBLE, SET_TESTTONE,
 	SET_TESTTONE_LEVEL, SET_DISTANCES, SET_SURROUND, SET_CROSSOVER, SET_SUBWOOFER,
 	SET_SUB_LOWPASS, SET_REVERB, SET_DOUBLE_BASS, SET_ABSENT, SET_INPUT,
 	SET_LFE_LEVEL, SET_EQ, SET_AV_SYNC, SET_LOUDNESS,
-	SET_DYNAMIC_VOLUME, SET_FS, SET_BACK_FILL, SET_METER, __SET_MAX };
+	SET_DYNAMIC_VOLUME, SET_FS, SET_BACK_FILL, SET_METER, SET_LATE_NIGHT, __SET_MAX };
 
 static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_VOLUME] = { .name = "volume", .type = BLOBMSG_TYPE_INT32 },
@@ -1018,6 +1021,7 @@ static const struct blobmsg_policy set_policy[__SET_MAX] = {
 	[SET_FS] = { .name = "fs", .type = BLOBMSG_TYPE_INT32 },
 	[SET_BACK_FILL] = { .name = "back_fill", .type = BLOBMSG_TYPE_BOOL },
 	[SET_METER] = { .name = "meter", .type = BLOBMSG_TYPE_BOOL },
+	[SET_LATE_NIGHT] = { .name = "late_night", .type = BLOBMSG_TYPE_INT32 },
 };
 
 static int out_index(const char *name)
@@ -1311,6 +1315,12 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 		av_sync = (int32_t)blobmsg_get_u32(tb[SET_AV_SYNC]);
 		av_sync = av_sync < 0 ? 0 : av_sync;
 		apply_av_sync();
+	}
+
+	if (tb[SET_LATE_NIGHT]) {
+		late_night = (int32_t)blobmsg_get_u32(tb[SET_LATE_NIGHT]);
+		late_night = late_night < 0 ? 0 : late_night > 2 ? 2 : late_night;
+		sh->late_night = late_night;
 	}
 
 	if (tb[SET_LFE_LEVEL]) {
