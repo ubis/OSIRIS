@@ -77,7 +77,7 @@ protocol: framing, timing, the start-up sequence and every command.
 
 ## dspd and dspaudio
 
-dspd copies the DSP firmware (`/usr/lib/osiris/dspaudio.bin`) into the DSP's
+dspd copies the DSP firmware (`/lib/firmware/dspaudio.bin`) into the DSP's
 memory, starts it and releases the mute lines once it runs. The two share a
 block of DSP memory ([dspaudio.h](../services/dspd/dspaudio.h)): the DSP reports its
 state and input levels there, dspd writes the gains, filters and delays it
