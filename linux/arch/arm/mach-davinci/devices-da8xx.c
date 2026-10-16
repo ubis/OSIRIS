@@ -990,11 +990,11 @@ static int da8xx_usb_phy_config(struct device *dev, u8 mode, int is_on)
 		if (cfgchip2 & CFGCHIP2_PHY_PLLON)
 			return 0;
 
+		/* REFFREQ is set by the board */
 		cfgchip2 &= ~(CFGCHIP2_RESET | CFGCHIP2_PHYPWRDN |
-				CFGCHIP2_OTGPWRDN | CFGCHIP2_OTGMODE |
-				CFGCHIP2_REFFREQ);
+				CFGCHIP2_OTGPWRDN | CFGCHIP2_OTGMODE);
 		cfgchip2 |= CFGCHIP2_SESENDEN | CFGCHIP2_VBDTCTEN |
-				CFGCHIP2_PHY_PLLON | CFGCHIP2_REFFREQ_24MHZ;
+				CFGCHIP2_PHY_PLLON;
 		switch (mode) {
 		case MUSB_OTG:
 		case MUSB_DUAL_ROLE:
