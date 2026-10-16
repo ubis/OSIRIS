@@ -124,7 +124,7 @@ static const char *const distance_ch[] = {
 	"fl", "c", "fr", "sl", "sr", "sbl", "sbr", "fhl", "fhr", "fwl", "fwr", "sw",
 };
 
-static int distance_known, distance_unit = -1, distance[ARRAY_SIZE(distance_ch)];
+static int distance_known, distance[ARRAY_SIZE(distance_ch)];	/* cm */
 
 /* MCU_SPEAKERS [2..7]: 0 no speaker, 1 large, else small with that crossover */
 static const char *const speaker_name[] = {
@@ -204,20 +204,14 @@ static void add_distances(void)
 	blobmsg_close_table(&b, t);
 }
 
-/* unit: the byte before them in MCU_DISTANCE; d: the 13 values */
-static void set_distances(uint8_t unit, const uint8_t *d)
+/* the 13 values, in the receiver's steps of 0.1 ft, shown as 0.03 m */
+static void set_distances(const uint8_t *d)
 {
 	size_t i;
 
 	distance_known = 1;
-	/* not known yet, perhaps the unit the menu shows: logged, not reported */
-	if (unit != distance_unit) {
-		log_msg(LOG_INFO, "distance byte 0: %u", unit);
-		distance_unit = unit;
-	}
-
 	for (i = 0; i < ARRAY_SIZE(distance_ch); i++) {
-		distance[i] = d[2 * i] | (d[1 + 2 * i] << 8);
+		distance[i] = 3 * (d[2 * i] | (d[1 + 2 * i] << 8));
 	}
 }
 
@@ -382,7 +376,7 @@ void on_frame(const struct link_frame *f, const char *name)
 		return;
 	case MCU_DISTANCE:
 		if (f->len >= 1 + 2 * ARRAY_SIZE(distance_ch)) {
-			set_distances(d[0], d + 1);
+			set_distances(d + 1);
 			add_distances();
 			event("mcu.distance");
 			return;
@@ -399,7 +393,7 @@ void on_frame(const struct link_frame *f, const char *name)
 			add_speakers();
 			event("mcu.speakers");
 			blob_buf_init(&b, 0);
-			set_distances(d[11], d + 13);
+			set_distances(d + 11);
 			add_distances();
 			event("mcu.distance");
 			blob_buf_init(&b, 0);
