@@ -4,7 +4,7 @@
  * the ubus. Volume comes in the unit the MCU reports it in (0.01 dB); dspd
  * turns it into the 8.24 gains the DSP multiplies with.
  *
- *   dspd [-f image]    default /usr/lib/osiris/dspaudio.bin
+ *   dspd [-f image]    default /lib/firmware/dspaudio.bin
  */
 #include <errno.h>
 #include <signal.h>
@@ -17,7 +17,7 @@
 #include "dspd.h"
 #include "log.h"
 
-#define DEFAULT_IMAGE	"/usr/lib/osiris/dspaudio.bin"
+#define DEFAULT_IMAGE	"/lib/firmware/dspaudio.bin"
 
 struct ubus_context *ctx;
 static struct blob_buf b;
