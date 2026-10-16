@@ -135,7 +135,11 @@ static const double downmix[2][DSPAUDIO_IN] = {
 	{ 0, 1, M_SQRT1_2, 0, 0, M_SQRT1_2, 0, M_SQRT1_2 },
 };
 
-/* the bands that are not flat, the largest first when there are too many */
+/*
+ * The bands that are not flat, the largest when there are too many, in
+ * the order of their frequencies: a band changing its level keeps the
+ * others in their filters.
+ */
 static unsigned int apply_eq(volatile struct dspaudio_bass *bm, unsigned int out)
 {
 	int used[EQ_BANDS] = { 0 };
@@ -155,7 +159,12 @@ static unsigned int apply_eq(volatile struct dspaudio_bass *bm, unsigned int out
 		}
 
 		used[best] = 1;
-		peak(&bm->eq[out][n], eq_hz[best], eq[out][best]);
+	}
+
+	for (n = 0, k = 0; k < EQ_BANDS; k++) {
+		if (used[k]) {
+			peak(&bm->eq[out][n++], eq_hz[k], eq[out][k]);
+		}
 	}
 
 	return n;
