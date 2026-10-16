@@ -296,6 +296,7 @@ Events (`ubus listen mcu`):
 | `mcu.speakers` | C0, C2, D5 | `speakers` (crossover in Hz by speaker, 0 large, missing ones left out), `subwoofers`, `surround_back_channels`, `lfe_lowpass` (0 bypass), `double_bass`, `layout`; also in `mcu status` |
 | `mcu.lfe_level` | C9 | `format`, `level` (dB, -100 off) |
 | `mcu.av_sync` | CA | `ms`, as the MCU sends it; also in `mcu status` |
+| `mcu.late_night` | CF | `dolby`: off, low or high (Dolby Digital's; TrueHD's is left out); also in `mcu status` |
 | `mcu.equalizer` | C4 | `equalizer`: `eq_on` and a list of band levels in dB for each speaker; also in `mcu status` |
 | `mcu.listening_mode` | D2, F3 !1LMD | `mode` (the D2 byte), `name` (from the ISCP code); also in `mcu status` as `listening_mode` and `listening_mode_name` |
 | `mcu.testtone` | D0 | `channel` |

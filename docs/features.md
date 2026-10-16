@@ -56,7 +56,8 @@ What works with OSIRIS, tested on the TX-NR717.
 | Dynamic EQ, Dynamic Volume | ✅ ¹ |
 | Surround from stereo in the Surround, PLII, Neo:6, Neural and THX Cinema/Music/Games modes | ✅ ¹ |
 | Sound field modes (Orchestra, Unplugged, Studio-Mix, TV Logic, ...) | ✅ ¹ |
-| Late Night, Re-EQ, Music Optimizer, headphone downmix | ❌ not yet |
+| Late Night | ❓ for Dolby Digital: the setting reaches the decoder, not heard yet |
+| Re-EQ, Music Optimizer, headphone downmix | ❌ not yet |
 
 ¹ OSIRIS's own processing: it does what these features are for, but it
 is not Dolby's, DTS's, THX's, Audyssey's or Onkyo's algorithm, so it

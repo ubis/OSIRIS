@@ -54,6 +54,7 @@ mcud -v                           # (with S10osiris stopped) log every frame
 | `mcu.equalizer` | manual equalizer on or off, and the band levels |
 | `mcu.audyssey` | Dynamic EQ, its reference offset, Dynamic Volume |
 | `mcu.av_sync` | A/V sync, in ms |
+| `mcu.late_night` | Late Night for Dolby Digital: off, low, high |
 | `mcu.distance` | speaker distances changed, in cm per speaker (also in `mcu status`) |
 | `mcu.network` | the network menu asks for the settings; answer with `ubus call mcu network` |
 | `mcu.power` | the receiver goes to standby (`off`) or resets (`reset`); confirm with `ubus call mcu power` |
@@ -98,6 +99,7 @@ ubus call dsp set '{"input": "digital"}'           # "analog", "digital", "multi
 ubus call dsp set '{"lfe_level": -10}'            # dB on top of the LFE channel's +10, -100 = off
 ubus call dsp set '{"eq": {"fl": [0, 0, 3], "sw": [5]}}'  # dB per band from 25 Hz up (25, 40, 63 ... 16k), at most 6 bands per output
 ubus call dsp set '{"av_sync": 200}'              # ms every output is held back, in SDRAM above Linux (mem=56M)
+ubus call dsp set '{"late_night": 1}'             # decoded AC-3's own range compression: 0 off, 1 half, 2 full
 ubus call dsp set '{"loudness": 6}'               # dB of bass boost on every output (Dynamic EQ), -1 = off
 ubus call dsp set '{"dynamic_volume": 2}'         # Dynamic Volume: 0 off, 1 light, 2 medium, 3 heavy
 ubus call dsp set '{"fs": 44100}'                 # the source's sample rate, Hz: filters, delays and times are worked out for it

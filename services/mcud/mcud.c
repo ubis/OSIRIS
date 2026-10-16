@@ -89,6 +89,8 @@ static int input_interface = -1;	/* MCU_INPUT [2], -1 not known */
 static int input_fs;			/* MCU_INPUT [3], sample rate code */
 static int input_channels;		/* MCU_INPUT [6], channel allocation */
 static int av_sync = -1;		/* MCU_AV_SYNC, ms, -1 not known */
+static int late_night = -1;		/* MCU_LATE_NIGHT for Dolby Digital, -1 not known */
+static const char *const late_night_name[] = { "off", "low", "high" };
 static int volume_known, volume;	/* MCU_VOLUME, 0.01 dB */
 
 /* MCU_DD_DTS: one setting per subcommand, each -1 until the MCU sends it */
@@ -492,6 +494,16 @@ static void on_frame(const struct link_frame *f, const char *name)
 		blobmsg_add_u32(&b, "ms", (uint32_t)av_sync);
 		event("mcu.av_sync");
 		return;
+	case MCU_LATE_NIGHT:
+		/* [0] 0 is Dolby Digital's; TrueHD's (1) does not concern us */
+		if (f->len < 2 || d[0] != 0 || d[1] >= ARRAY_SIZE(late_night_name)) {
+			break;
+		}
+
+		late_night = d[1];
+		blobmsg_add_string(&b, "dolby", late_night_name[late_night]);
+		event("mcu.late_night");
+		return;
 	case MCU_LFE_LEVEL:
 		if (f->len < 2 || d[0] >= ARRAY_SIZE(lfe_format) || d[1] >= ARRAY_SIZE(lfe_level_db)) {
 			break;
@@ -625,6 +637,10 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 
 	if (av_sync >= 0) {
 		blobmsg_add_u32(&b, "av_sync", (uint32_t)av_sync);
+	}
+
+	if (late_night >= 0) {
+		blobmsg_add_string(&b, "late_night", late_night_name[late_night]);
 	}
 
 	if (volume_known) {
