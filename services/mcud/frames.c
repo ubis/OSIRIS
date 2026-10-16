@@ -1,0 +1,647 @@
+// SPDX-License-Identifier: BSD-2-Clause
+/* What the MCU's frames say: kept for mcu status, sent on as events */
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "cmd.h"
+#include "display.h"
+#include "log.h"
+#include "mcud.h"
+
+static int listening_mode = -1;		/* the last one the MCU sent */
+static int lmd = -1;			/* its ISCP code (LMDxx) */
+
+/* ISCP listening mode codes, as the MCU reports them (!1LMDxx) */
+static const struct {
+	uint8_t code;
+	const char *name;
+} lmd_names[] = {
+	{ 0x00, "stereo" }, { 0x01, "direct" }, { 0x02, "surround" },
+	{ 0x03, "film" }, { 0x04, "thx" }, { 0x05, "action" }, { 0x06, "musical" },
+	{ 0x07, "mono_movie" }, { 0x08, "orchestra" }, { 0x09, "unplugged" },
+	{ 0x0a, "studio_mix" }, { 0x0b, "tv_logic" }, { 0x0c, "all_ch_stereo" },
+	{ 0x0d, "theater_dimensional" }, { 0x0e, "enhanced" }, { 0x0f, "mono" },
+	{ 0x11, "pure_audio" }, { 0x12, "multiplex" }, { 0x13, "full_mono" },
+	{ 0x14, "dolby_virtual" }, { 0x15, "dts_surround_sensation" },
+	{ 0x16, "audyssey_dsx" }, { 0x40, "straight_decode" }, { 0x41, "dolby_ex" },
+	{ 0x42, "thx_cinema" }, { 0x43, "thx_surround_ex" }, { 0x44, "thx_music" },
+	{ 0x45, "thx_games" }, { 0x50, "thx_u2_cinema" }, { 0x51, "thx_u2_music" },
+	{ 0x52, "thx_u2_games" }, { 0x80, "plii_movie" }, { 0x81, "plii_music" },
+	{ 0x82, "neo6_cinema" }, { 0x83, "neo6_music" }, { 0x84, "plii_thx_cinema" },
+	{ 0x85, "neo6_thx_cinema" }, { 0x86, "plii_game" }, { 0x87, "neural_surround" },
+	{ 0x88, "neural_thx" }, { 0x89, "plii_thx_games" }, { 0x8a, "neo6_thx_games" },
+	{ 0x8b, "plii_thx_music" }, { 0x8c, "neo6_thx_music" },
+	{ 0x90, "pliiz_height" }, { 0x94, "pliiz_height_thx_cinema" },
+	{ 0x95, "pliiz_height_thx_music" }, { 0x96, "pliiz_height_thx_games" },
+	{ 0xa0, "plii_movie_dsx" }, { 0xa1, "plii_music_dsx" }, { 0xa2, "plii_game_dsx" },
+	{ 0xa3, "neo6_cinema_dsx" }, { 0xa4, "neo6_music_dsx" },
+	{ 0xa5, "neural_surround_dsx" }, { 0xa7, "dolby_ex_dsx" },
+};
+
+static const char *lmd_name(int code)
+{
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(lmd_names); i++) {
+		if (lmd_names[i].code == code) {
+			return lmd_names[i].name;
+		}
+	}
+
+	return NULL;
+}
+
+/* the mode as the MCU's own byte and, once it reported it, by name */
+static void add_listening_mode(void)
+{
+	const char *n = lmd_name(lmd);
+
+	if (listening_mode >= 0) {
+		blobmsg_add_u32(&b, "mode", listening_mode);
+	}
+
+	if (n) {
+		blobmsg_add_string(&b, "name", n);
+	}
+}
+static int tone_known, bass, treble;	/* front tone, dB */
+static int input_interface = -1;	/* MCU_INPUT [2], -1 not known */
+static int input_fs;			/* MCU_INPUT [3], sample rate code */
+static int input_channels;		/* MCU_INPUT [6], channel allocation */
+static int av_sync = -1;		/* MCU_AV_SYNC, ms, -1 not known */
+static int late_night = -1;		/* MCU_LATE_NIGHT for Dolby Digital, -1 not known */
+static const char *const late_night_name[] = { "off", "low", "high" };
+static int volume_known, volume;	/* MCU_VOLUME, 0.01 dB */
+
+/* MCU_DD_DTS: one setting per subcommand, each -1 until the MCU sends it */
+enum { ADSY_DEQ = 0x07, ADSY_DVOL = 0x08, ADSY_DEQ_OFFSET = 0x0a };
+static struct {
+	int deq, deq_offset, dvol;
+} adsy = { -1, -1, -1 };
+
+static void add_audyssey(void)
+{
+	if (adsy.deq >= 0) {
+		blobmsg_add_u8(&b, "dynamic_eq", adsy.deq);
+	}
+
+	if (adsy.deq_offset >= 0) {
+		blobmsg_add_u32(&b, "dynamic_eq_offset", (uint32_t)adsy.deq_offset);
+	}
+
+	if (adsy.dvol >= 0) {
+		blobmsg_add_u32(&b, "dynamic_volume", (uint32_t)adsy.dvol);
+	}
+}
+
+/* MCU_DISTANCE, in the receiver's order; the 13th value is not a speaker */
+static const char *const distance_ch[] = {
+	"fl", "c", "fr", "sl", "sr", "sbl", "sbr", "fhl", "fhr", "fwl", "fwr", "sw",
+};
+
+static int distance_known, distance_unit = -1, distance[ARRAY_SIZE(distance_ch)];
+
+/* MCU_SPEAKERS [2..7]: 0 no speaker, 1 large, else small with that crossover */
+static const char *const speaker_name[] = {
+	"front", "center", "surround", "surround_back", "front_high", "front_wide",
+};
+
+/*
+ * Their DSP_STREAM mask bits, which light the indicators and close the relays.
+ * No front wide bit closes the surround back relay; 0x0020 does, and lights
+ * the single surround back indicator too.
+ */
+static const uint16_t speaker_bit[] = { 0x0001, 0x0002, 0x0008, 0x0010, 0x0200, 0x1020 };
+#define SB_SINGLE_BIT	0x0020
+#define SUBWOOFER_BIT	0x4000
+
+static const uint8_t crossover_hz[16] = {
+	0, 0, 40, 45, 50, 55, 60, 70, 80, 90, 100, 110, 120, 130, 150, 200,
+};
+
+static const uint8_t lfe_lowpass_hz[] = { 80, 90, 100, 110, 120 };	/* 5: bypass */
+
+/* MCU_CH_LAYOUT: front high, front wide or surround back, then pre-outs */
+static const char *const layout_name[] = {
+	"none", "sb", "fh", "fw", "sb_fh", "sb_fw", "fh_fw", "fh_sb_pre", "fw_sb_pre",
+	"fw_fh_pre", "sb_pre", "fh_pre", "fw_pre", "sb_fh_fw_pre",
+};
+
+static const char *const lfe_format[] = {
+	"dd", "dts", "aac", "multichannel_pcm", "truehd", "dts_hd_ma", "dsd",
+};
+
+static const int lfe_level_db[] = { -100, -20, -10, 0 };	/* -100: off */
+
+/* MCU_EQUALIZER: 15 bands for each speaker, 25 Hz to 16 kHz, 5 for the subwoofer */
+#define EQ_BANDS	15
+#define EQ_SUB_BANDS	5
+
+static struct {
+	int on, on_known, known;
+	int8_t db[6 * EQ_BANDS + EQ_SUB_BANDS];
+} eq;
+
+static struct {
+	int known;
+	uint8_t setup[10];		/* MCU_SPEAKERS [1..10] */
+	int layout;			/* -1 not known */
+} speakers = { .layout = -1 };
+
+/* MCU_TESTTONE_CH channel codes, in the receiver's own order */
+static const char *const testtone_ch[] = {
+	"fl", "c", "fr", "sr", "sbr", "sbl", "sl", "sw", "fhl", "fhr", "fwl", "fwr",
+};
+
+void add_hex(const char *name, const uint8_t *d, size_t len)
+{
+	char *s;
+	size_t i;
+
+	s = blobmsg_alloc_string_buffer(&b, name, 2 * len + 1);
+	for (i = 0; i < len; i++) {
+		sprintf(s + 2 * i, "%02x", d[i]);
+	}
+
+	s[2 * len] = 0;
+	blobmsg_add_string_buffer(&b);
+}
+
+static void add_distances(void)
+{
+	void *t = blobmsg_open_table(&b, "distances");
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(distance_ch); i++) {
+		blobmsg_add_u32(&b, distance_ch[i], distance[i]);
+	}
+
+	blobmsg_close_table(&b, t);
+}
+
+/* unit: the byte before them in MCU_DISTANCE; d: the 13 values */
+static void set_distances(uint8_t unit, const uint8_t *d)
+{
+	size_t i;
+
+	distance_known = 1;
+	/* not known yet, perhaps the unit the menu shows: logged, not reported */
+	if (unit != distance_unit) {
+		log_msg(LOG_INFO, "distance byte 0: %u", unit);
+		distance_unit = unit;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(distance_ch); i++) {
+		distance[i] = d[2 * i] | (d[1 + 2 * i] << 8);
+	}
+}
+
+/*
+ * The speakers there are, each with its crossover in Hz, 0 for a large one;
+ * the subwoofers, the LFE low pass (0 bypass), double bass and what the
+ * surround back amplifiers drive.
+ */
+static void add_speakers(void)
+{
+	const uint8_t *s = speakers.setup;
+	void *t = blobmsg_open_table(&b, "speakers");
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(speaker_name); i++) {
+		if (s[1 + i]) {
+			blobmsg_add_u32(&b, speaker_name[i], crossover_hz[s[1 + i] & 15]);
+		}
+	}
+
+	blobmsg_close_table(&b, t);
+	blobmsg_add_u32(&b, "subwoofers", s[0]);
+	blobmsg_add_u32(&b, "surround_back_channels", s[7] ? 2 : 1);
+	blobmsg_add_u32(&b, "lfe_lowpass", s[8] < ARRAY_SIZE(lfe_lowpass_hz) ? lfe_lowpass_hz[s[8]] : 0);
+	blobmsg_add_u8(&b, "double_bass", s[9] == 1);
+	if (speakers.layout >= 0 && speakers.layout < (int)ARRAY_SIZE(layout_name)) {
+		blobmsg_add_string(&b, "layout", layout_name[speakers.layout]);
+	}
+}
+
+/* the speakers the DSP plays on; the surround back amplifiers drive the first in the layout */
+static void set_stream_speakers(void)
+{
+	const uint8_t *s = speakers.setup;
+	const char *l = speakers.layout >= 0 && speakers.layout < (int)ARRAY_SIZE(layout_name) ?
+			layout_name[speakers.layout] : "sb";
+	uint8_t st[STREAM_LEN];
+	uint16_t mask = s[0] ? SUBWOOFER_BIT : 0;
+	size_t i;
+
+	for (i = 0; i < 3; i++) {
+		if (s[1 + i]) {
+			mask |= speaker_bit[i];
+		}
+	}
+
+	i = !strncmp(l, "sb", 2) ? 3 : !strncmp(l, "fh", 2) ? 4 : !strncmp(l, "fw", 2) ? 5 : 0;
+	if (i && s[1 + i]) {
+		mask |= i == 3 && !s[7] ? SB_SINGLE_BIT : speaker_bit[i];
+	}
+
+	proto_get_stream(st);
+	st[STREAM_MASK] = mask & 0xff;
+	st[STREAM_MASK + 1] = mask >> 8;
+	proto_set_stream(st);
+}
+
+/* manual EQ on or off, and each speaker's bands in dB, as far as known */
+static void add_equalizer(void)
+{
+	void *a;
+	size_t i, k;
+
+	if (eq.on_known) {
+		blobmsg_add_u8(&b, "eq_on", eq.on);
+	}
+
+	for (i = 0; eq.known && i <= ARRAY_SIZE(speaker_name); i++) {
+		a = blobmsg_open_array(&b, i < ARRAY_SIZE(speaker_name) ?
+				       speaker_name[i] : "subwoofer");
+		for (k = 0; k < (i < ARRAY_SIZE(speaker_name) ? EQ_BANDS : EQ_SUB_BANDS); k++) {
+			blobmsg_add_u32(&b, NULL, (uint32_t)eq.db[i * EQ_BANDS + k]);
+		}
+
+		blobmsg_close_array(&b, a);
+	}
+}
+
+void add_model(const struct mcu_model *m)
+{
+	blobmsg_add_string(&b, "make", m->make);
+	blobmsg_add_string(&b, "model", m->name);
+	blobmsg_add_string(&b, "code", m->code);
+}
+
+/* Events */
+
+static void event(const char *id)
+{
+	ubus_send_event(ctx, id, b.head);
+}
+
+void on_display_mode(const char *mode)
+{
+	blob_buf_init(&b, 0);
+	blobmsg_add_string(&b, "mode", mode);
+	event("mcu.display");
+}
+
+void on_ready(const struct mcu_model *m)
+{
+	blob_buf_init(&b, 0);
+	add_model(m);
+	event("mcu.ready");
+}
+
+static const char *const power_names[] = {
+	[POWER_ON] = "on", [POWER_OFF] = "off", [POWER_RESET] = "reset",
+};
+
+static const char *power_name(uint8_t state)
+{
+	return state < ARRAY_SIZE(power_names) ? power_names[state] : "unknown";
+}
+
+static const char *const update_stages[] = {
+	[UPDATE_VERSIONS] = "check", [UPDATE_MODE] = "download",
+	[UPDATE_START] = "install", [UPDATE_UPLOAD] = "upload",
+};
+
+static int update_usb;			/* the MCU looks on USB, not the network */
+
+void on_frame(const struct link_frame *f, const char *name)
+{
+	const uint8_t *d = f->data;
+
+	blob_buf_init(&b, 0);
+	switch (f->cmd) {
+	case MCU_INPUT:
+		if (f->len >= 6) {
+			blobmsg_add_u32(&b, "decode", d[1]);
+			blobmsg_add_u32(&b, "interface", d[2]);
+			input_interface = d[2];
+			input_fs = d[3];
+			blobmsg_add_u32(&b, "fs", d[3]);
+			blobmsg_add_u32(&b, "mclk", d[4]);
+			blobmsg_add_u32(&b, "status", d[5]);
+		}
+
+		/* the source's channels, as HDMI codes them (CEA-861 allocation) */
+		if (f->len >= 7) {
+			input_channels = d[6];
+			blobmsg_add_u32(&b, "channels", d[6]);
+		}
+
+		add_hex("data", d, f->len);
+		event("mcu.input");
+		return;
+	case MCU_INPUT_SELECT:
+		add_hex("data", d, f->len);
+		event("mcu.input");
+		return;
+	case MCU_VOLUME:
+		/* s16 LE in 0.01 dB */
+		if (f->len >= 3) {
+			volume = (int16_t)(d[1] | (d[2] << 8));
+			volume_known = 1;
+			blobmsg_add_u32(&b, "volume", (uint32_t)volume);
+		}
+
+		event("mcu.volume");
+		return;
+	case MCU_DISTANCE:
+		if (f->len >= 1 + 2 * ARRAY_SIZE(distance_ch)) {
+			set_distances(d[0], d + 1);
+			add_distances();
+			event("mcu.distance");
+			return;
+		}
+
+		break;
+	case MCU_INITIAL:
+		/* everything at start-up: the speakers, the distances, the layout */
+		if (f->len > 0xc6) {
+			memcpy(speakers.setup, d + 1, sizeof(speakers.setup));
+			speakers.known = 1;
+			speakers.layout = d[0xc6];
+			set_stream_speakers();
+			add_speakers();
+			event("mcu.speakers");
+			blob_buf_init(&b, 0);
+			set_distances(d[11], d + 13);
+			add_distances();
+			event("mcu.distance");
+			blob_buf_init(&b, 0);
+		}
+
+		break;
+	case MCU_SPEAKERS:
+		if (f->len >= 1 + sizeof(speakers.setup)) {
+			memcpy(speakers.setup, d + 1, sizeof(speakers.setup));
+			speakers.known = 1;
+			set_stream_speakers();
+			add_speakers();
+			event("mcu.speakers");
+			return;
+		}
+
+		break;
+	case MCU_CH_LAYOUT:
+		if (f->len >= 2) {
+			speakers.layout = d[1];
+			if (speakers.known) {
+				set_stream_speakers();
+				add_speakers();
+				event("mcu.speakers");
+				return;
+			}
+		}
+
+		break;
+	case MCU_EQUALIZER:
+		/* the MCU sends either only when it changes, not at start-up */
+		if (f->len == 2 && d[0] == 0) {
+			eq.on = d[1] != 0;
+			eq.on_known = 1;
+		} else if (f->len >= 1 + sizeof(eq.db) && d[0] == 1) {
+			memcpy(eq.db, d + 1, sizeof(eq.db));
+			eq.known = 1;
+		} else {
+			break;
+		}
+
+		{
+			void *t = blobmsg_open_table(&b, "equalizer");
+
+			add_equalizer();
+			blobmsg_close_table(&b, t);
+			event("mcu.equalizer");
+		}
+
+		return;
+	case MCU_DD_DTS:
+		/* the others are reported as mcu.frame */
+		if (f->len < 2 || (d[0] != ADSY_DEQ && d[0] != ADSY_DEQ_OFFSET && d[0] != ADSY_DVOL)) {
+			break;
+		}
+
+		if (d[0] == ADSY_DEQ) {
+			adsy.deq = d[1] != 0;
+		} else if (d[0] == ADSY_DEQ_OFFSET) {
+			/* reference level offset in 5 dB steps */
+			adsy.deq_offset = 5 * d[1];
+		} else {
+			/* 0 off, then light, medium, heavy */
+			adsy.dvol = d[1];
+		}
+
+		add_audyssey();
+		event("mcu.audyssey");
+		return;
+	case MCU_AV_SYNC:
+		/* the menu's value less 22 ms, what the stock DSP delayed anyway */
+		if (f->len < 3) {
+			break;
+		}
+
+		av_sync = d[1] | (d[2] << 8);
+		blobmsg_add_u32(&b, "ms", (uint32_t)av_sync);
+		event("mcu.av_sync");
+		return;
+	case MCU_LATE_NIGHT:
+		/* [0] 0 is Dolby Digital's; TrueHD's (1) does not concern us */
+		if (f->len < 2 || d[0] != 0 || d[1] >= ARRAY_SIZE(late_night_name)) {
+			break;
+		}
+
+		late_night = d[1];
+		blobmsg_add_string(&b, "dolby", late_night_name[late_night]);
+		event("mcu.late_night");
+		return;
+	case MCU_LFE_LEVEL:
+		if (f->len < 2 || d[0] >= ARRAY_SIZE(lfe_format) || d[1] >= ARRAY_SIZE(lfe_level_db)) {
+			break;
+		}
+
+		blobmsg_add_string(&b, "format", lfe_format[d[0]]);
+		blobmsg_add_u32(&b, "level", (uint32_t)lfe_level_db[d[1]]);
+		event("mcu.lfe_level");
+		return;
+	case MCU_LISTENING_MODE:
+		if (f->len < 2) {
+			break;
+		}
+
+		/*
+		 * The ISCP code comes only when it changes, and may come before or
+		 * after this: ask for it, the name follows if it is a new one.
+		 */
+		if (d[1] != listening_mode) {
+			proto_ask_listening_mode();
+		}
+
+		listening_mode = d[1];
+		add_listening_mode();
+		event("mcu.listening_mode");
+		return;
+	case MCU_BASS_TREBLE:
+		if (f->len >= 9 && d[0] == 0) {
+			tone_known = 1;
+			bass = (int8_t)d[1];
+			treble = (int8_t)d[8];
+			blobmsg_add_u32(&b, "bass", (uint32_t)bass);
+			blobmsg_add_u32(&b, "treble", (uint32_t)treble);
+		}
+
+		event("mcu.tone");
+		return;
+	case MCU_TESTTONE_CH:
+		if (f->len >= 2 && d[1] < ARRAY_SIZE(testtone_ch)) {
+			blobmsg_add_string(&b, "channel", testtone_ch[d[1]]);
+			event("mcu.testtone");
+			return;
+		}
+
+		break;
+	case MCU_POWER:
+		if (f->len) {
+			blobmsg_add_string(&b, "state", power_name(d[0]));
+		}
+
+		event("mcu.power");
+		return;
+	case MCU_NETWORK:
+		if (f->len) {
+			blobmsg_add_u32(&b, "item", d[0]);
+		}
+
+		add_hex("data", d, f->len);
+		event("mcu.network");
+		return;
+	case MCU_UPDATE:
+		if (!f->len) {
+			break;
+		}
+
+		if (d[0] == UPDATE_SOURCE) {
+			update_usb = f->len > 1 && d[1] == 1;
+			return;
+		}
+
+		if (d[0] >= ARRAY_SIZE(update_stages) || !update_stages[d[0]]) {
+			break;
+		}
+
+		blobmsg_add_string(&b, "stage", update_stages[d[0]]);
+		blobmsg_add_string(&b, "source", update_usb ? "usb" : "network");
+		event("mcu.update");
+		return;
+	case MCU_ISCP:
+		if (f->len >= 8 && !memcmp(d + 1, "!1LMD", 5) && isxdigit(d[6]) && isxdigit(d[7])) {
+			char hex[3] = { d[6], d[7], 0 };
+			long v = strtol(hex, NULL, 16);
+
+			if (v != lmd) {
+				lmd = v;
+				add_listening_mode();
+				event("mcu.listening_mode");
+				blob_buf_init(&b, 0);
+			}
+		}
+
+		if (f->len > 1) {
+			char *s = blobmsg_alloc_string_buffer(&b, "command", f->len);
+
+			memcpy(s, d + 1, f->len - 1);
+			s[f->len - 1] = 0;
+			blobmsg_add_string_buffer(&b);
+		}
+
+		event("mcu.iscp");
+		return;
+	default:
+		break;
+	}
+
+	blobmsg_add_u32(&b, "cmd", f->cmd);
+	blobmsg_add_string(&b, "name", name);
+	add_hex("data", d, f->len);
+	event("mcu.frame");
+}
+
+/* what the MCU has told, for mcu status */
+void add_status(void)
+{
+	if (eq.known || eq.on_known) {
+		void *t = blobmsg_open_table(&b, "equalizer");
+
+		add_equalizer();
+		blobmsg_close_table(&b, t);
+	}
+
+	if (av_sync >= 0) {
+		blobmsg_add_u32(&b, "av_sync", (uint32_t)av_sync);
+	}
+
+	if (late_night >= 0) {
+		blobmsg_add_string(&b, "late_night", late_night_name[late_night]);
+	}
+
+	if (volume_known) {
+		blobmsg_add_u32(&b, "volume", (uint32_t)volume);
+	}
+
+	add_audyssey();
+
+	if (input_interface >= 0) {
+		blobmsg_add_u32(&b, "interface", (uint32_t)input_interface);
+		blobmsg_add_u32(&b, "fs", (uint32_t)input_fs);
+		blobmsg_add_u32(&b, "channels", (uint32_t)input_channels);
+	}
+
+	blobmsg_add_string(&b, "display", display_mode_name());
+
+	if (tone_known) {
+		blobmsg_add_u32(&b, "bass", (uint32_t)bass);
+		blobmsg_add_u32(&b, "treble", (uint32_t)treble);
+	}
+
+	if (listening_mode >= 0) {
+		blobmsg_add_u32(&b, "listening_mode", listening_mode);
+	}
+
+	if (lmd_name(lmd)) {
+		blobmsg_add_string(&b, "listening_mode_name", lmd_name(lmd));
+	}
+
+	if (distance_known) {
+		add_distances();
+	}
+
+	if (speakers.known) {
+		add_speakers();
+	}
+}
+
+/* the state a power method names, -1 for none */
+int power_state(const char *name)
+{
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(power_names); i++) {
+		if (!strcmp(name, power_names[i])) {
+			return i;
+		}
+	}
+
+	return -1;
+}
+
