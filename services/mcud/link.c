@@ -12,6 +12,7 @@
 #include <sys/ioctl.h>
 #include <time.h>
 #include <unistd.h>
+#include <linux/gpio.h>
 #include <linux/spi/spidev.h>
 
 #include <libubox/uloop.h>
@@ -19,17 +20,7 @@
 #include "log.h"
 #include "link.h"
 
-/* /dev/gpiodev, the kernel's drivers/char/gpiodev */
-struct gpio_cmd {
-	unsigned int pin;
-	unsigned int value;
-};
-
-#define GPIO_IOC_MAGIC	'G'
-#define GPIO_SET_CMD	_IOW(GPIO_IOC_MAGIC, 1, int)
-#define GPIO_GET_CMD	_IOR(GPIO_IOC_MAGIC, 2, int)
-#define GPIO_DIR_CMD	_IOR(GPIO_IOC_MAGIC, 3, int)
-
+#define GPIO_CHIP	"/dev/gpiochip0"
 #define ARM_CS_PIN	30	/* GPIO1_14, out, low = select / want a slot */
 #define ARM_RDY_PIN	34	/* GPIO2_2, in, low = MCU ready */
 
@@ -41,7 +32,7 @@ struct gpio_cmd {
 #define GAP_MS		2	/* pause after a transfer */
 #define ASK_MS		1	/* re-check RDY while asking for a slot */
 
-static int gpio_fd = -1, spi_fd = -1;
+static int cs_fd = -1, rdy_fd = -1, spi_fd = -1;
 static uint32_t speed;
 static link_rx_fn rx_cb;
 int link_trace;
@@ -49,29 +40,52 @@ static uint8_t queue[QUEUE_LEN][LINK_XFER_LEN];
 static unsigned int q_head, q_count;
 static struct uloop_timeout poll_timer;
 
-static int gpio_dir(int pin, int in)
+/* one line of the GPIO character device, as an output or an input */
+static int gpio_request(int pin, int out, int value)
 {
-	struct gpio_cmd c = { pin, in };
+	struct gpio_v2_line_request req;
+	int fd, ret;
 
-	return ioctl(gpio_fd, GPIO_DIR_CMD, &c);
-}
-
-static void gpio_set(int pin, int value)
-{
-	struct gpio_cmd c = { pin, value };
-
-	ioctl(gpio_fd, GPIO_SET_CMD, &c);
-}
-
-static int gpio_get(int pin)
-{
-	struct gpio_cmd c = { pin, 0 };
-
-	if (ioctl(gpio_fd, GPIO_GET_CMD, &c) < 0) {
+	fd = open(GPIO_CHIP, O_RDWR);
+	if (fd < 0) {
 		return -errno;
 	}
 
-	return c.value;
+	memset(&req, 0, sizeof(req));
+	req.offsets[0] = pin;
+	req.num_lines = 1;
+	strcpy(req.consumer, "mcud");
+	if (out) {
+		req.config.flags = GPIO_V2_LINE_FLAG_OUTPUT;
+		req.config.num_attrs = 1;
+		req.config.attrs[0].attr.id = GPIO_V2_LINE_ATTR_ID_OUTPUT_VALUES;
+		req.config.attrs[0].attr.values = value;
+		req.config.attrs[0].mask = 1;
+	} else {
+		req.config.flags = GPIO_V2_LINE_FLAG_INPUT;
+	}
+
+	ret = ioctl(fd, GPIO_V2_GET_LINE_IOCTL, &req) < 0 ? -errno : req.fd;
+	close(fd);
+	return ret;
+}
+
+static void gpio_set(int fd, int value)
+{
+	struct gpio_v2_line_values v = { .bits = value, .mask = 1 };
+
+	ioctl(fd, GPIO_V2_LINE_SET_VALUES_IOCTL, &v);
+}
+
+static int gpio_get(int fd)
+{
+	struct gpio_v2_line_values v = { .mask = 1 };
+
+	if (ioctl(fd, GPIO_V2_LINE_GET_VALUES_IOCTL, &v) < 0) {
+		return -errno;
+	}
+
+	return v.bits & 1;
 }
 
 int link_send(uint8_t cmd, const void *data, uint16_t len)
@@ -170,7 +184,7 @@ static void transfer(void)
 	const uint8_t *tx = q_count ? queue[q_head] : idle;
 	struct spi_ioc_transfer x;
 
-	gpio_set(ARM_CS_PIN, 0);
+	gpio_set(cs_fd, 0);
 	usleep(1000);
 	memset(&x, 0, sizeof(x));
 	memset(rx, 0, sizeof(rx));
@@ -184,7 +198,7 @@ static void transfer(void)
 	}
 
 	usleep(500);
-	gpio_set(ARM_CS_PIN, 1);
+	gpio_set(cs_fd, 1);
 	if (q_count) {
 		if (link_trace) {
 			trace("tx", tx);
@@ -199,10 +213,10 @@ static void transfer(void)
 
 static void poll_cb(struct uloop_timeout *t)
 {
-	if (gpio_get(ARM_RDY_PIN) != 0) {
+	if (gpio_get(rdy_fd) != 0) {
 		/* MCU busy; holding ARM_CS low asks it for a slot */
 		if (q_count) {
-			gpio_set(ARM_CS_PIN, 0);
+			gpio_set(cs_fd, 0);
 			uloop_timeout_set(t, ASK_MS);
 		} else {
 			uloop_timeout_set(t, IDLE_MS);
@@ -219,23 +233,33 @@ int link_open(uint32_t spi_hz, link_rx_fn rx)
 {
 	uint8_t mode = SPI_MODE_0, bits = 8;
 
-	gpio_fd = open("/dev/gpiodev", O_RDWR);
-	if (gpio_fd < 0) {
-		return -errno;
+	/* CS high: not selected, no slot wanted */
+	cs_fd = gpio_request(ARM_CS_PIN, 1, 1);
+	if (cs_fd < 0) {
+		return cs_fd;
+	}
+
+	rdy_fd = gpio_request(ARM_RDY_PIN, 0, 0);
+	if (rdy_fd < 0) {
+		close(cs_fd);
+		cs_fd = -1;
+		return rdy_fd;
 	}
 
 	spi_fd = open("/dev/spidev0.0", O_RDWR);
 	if (spi_fd < 0) {
-		return -errno;
+		int err = -errno;
+
+		close(rdy_fd);
+		close(cs_fd);
+		rdy_fd = cs_fd = -1;
+		return err;
 	}
 
 	speed = spi_hz;
 	ioctl(spi_fd, SPI_IOC_WR_MODE, &mode);
 	ioctl(spi_fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
 	ioctl(spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
-	gpio_dir(ARM_CS_PIN, 0);
-	gpio_set(ARM_CS_PIN, 1);
-	gpio_dir(ARM_RDY_PIN, 1);
 	rx_cb = rx;
 	poll_timer.cb = poll_cb;
 	uloop_timeout_set(&poll_timer, 0);
@@ -245,9 +269,13 @@ int link_open(uint32_t spi_hz, link_rx_fn rx)
 void link_close(void)
 {
 	uloop_timeout_cancel(&poll_timer);
-	if (gpio_fd >= 0) {
-		gpio_set(ARM_CS_PIN, 1);
-		close(gpio_fd);
+	if (cs_fd >= 0) {
+		gpio_set(cs_fd, 1);
+		close(cs_fd);
+	}
+
+	if (rdy_fd >= 0) {
+		close(rdy_fd);
 	}
 
 	if (spi_fd >= 0) {

@@ -8,6 +8,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <linux/gpio.h>
 
 #include "dspd.h"
 #include "log.h"
@@ -29,15 +30,7 @@
 #define L2_BASE		0x11800000u
 #define L2_SIZE		0x40000u
 
-/* /dev/gpiodev, the kernel's drivers/char/gpiodev */
-struct gpio_cmd {
-	unsigned int pin;
-	unsigned int value;
-};
-
-#define GPIO_IOC_MAGIC	'G'
-#define GPIO_SET_CMD	_IOW(GPIO_IOC_MAGIC, 1, int)
-#define GPIO_DIR_CMD	_IOR(GPIO_IOC_MAGIC, 3, int)
+#define GPIO_CHIP	"/dev/gpiochip0"
 #define DIGMUT_PIN	16	/* GPIO1_0, high = outputs muted */
 #define ARMZ2MUT_PIN	24	/* GPIO1_8, zone 2 */
 
@@ -56,23 +49,42 @@ static volatile uint32_t *map(int fd, uint32_t phys, uint32_t len)
 	return p == MAP_FAILED ? NULL : p;
 }
 
+/* both mute lines as outputs of the GPIO character device, muted */
+static int mute_request(void)
+{
+	struct gpio_v2_line_request req;
+	int fd, ret;
+
+	fd = open(GPIO_CHIP, O_RDWR);
+	if (fd < 0) {
+		return -1;
+	}
+
+	memset(&req, 0, sizeof(req));
+	req.offsets[0] = DIGMUT_PIN;
+	req.offsets[1] = ARMZ2MUT_PIN;
+	req.num_lines = 2;
+	strcpy(req.consumer, "dspd");
+	req.config.flags = GPIO_V2_LINE_FLAG_OUTPUT;
+	req.config.num_attrs = 1;
+	req.config.attrs[0].attr.id = GPIO_V2_LINE_ATTR_ID_OUTPUT_VALUES;
+	req.config.attrs[0].attr.values = 3;
+	req.config.attrs[0].mask = 3;
+
+	ret = ioctl(fd, GPIO_V2_GET_LINE_IOCTL, &req);
+	close(fd);
+	return ret < 0 ? -1 : req.fd;
+}
+
 void mute_lines(int on)
 {
-	struct gpio_cmd c;
-	const unsigned int pins[] = { DIGMUT_PIN, ARMZ2MUT_PIN };
-	size_t i;
+	struct gpio_v2_line_values v = { .bits = on ? 3 : 0, .mask = 3 };
 
 	if (gpio_fd < 0) {
 		return;
 	}
 
-	for (i = 0; i < ARRAY_SIZE(pins); i++) {
-		c.pin = pins[i];
-		c.value = 0;			/* output */
-		ioctl(gpio_fd, GPIO_DIR_CMD, &c);
-		c.value = on;
-		ioctl(gpio_fd, GPIO_SET_CMD, &c);
-	}
+	ioctl(gpio_fd, GPIO_V2_LINE_SET_VALUES_IOCTL, &v);
 }
 
 /*
@@ -239,7 +251,7 @@ int dsp_open(void)
 	}
 
 	sh = (volatile struct dspaudio_shared *)(l2 + DSPAUDIO_SHARED - L2_BASE);
-	gpio_fd = open("/dev/gpiodev", O_RDWR);
+	gpio_fd = mute_request();
 	return 0;
 }
 
