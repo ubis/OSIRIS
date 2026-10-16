@@ -88,23 +88,30 @@ void bass_reset(void)
 	}
 }
 
-/* the same filters in the same places: their state still fits */
+/* the same crossovers in the same places: their state still fits */
 static int bass_same_layout(const struct dspaudio_bass *a, const struct dspaudio_bass *b)
 {
-	unsigned int out;
+	return a->small == b->small && a->copy == b->copy && a->subwoofer == b->subwoofer &&
+	       a->loud_on == b->loud_on;
+}
 
-	if (a->small != b->small || a->copy != b->copy || a->subwoofer != b->subwoofer ||
-	    a->loud_on != b->loud_on) {
-		return 0;
-	}
+/*
+ * An output with more or fewer equalizer bands starts them from silence;
+ * the crossovers keep theirs, clearing them is what clicks.
+ */
+static void eq_follow(const struct dspaudio_bass *a, const struct dspaudio_bass *b)
+{
+	unsigned int out, i;
 
 	for (out = 0; out < DSPAUDIO_OUT; out++) {
-		if (a->eq_n[out] != b->eq_n[out]) {
-			return 0;
+		if (a->eq_n[out] == b->eq_n[out]) {
+			continue;
+		}
+
+		for (i = 0; i < sizeof(eq_z[out]) / sizeof(float); i++) {
+			((float *)eq_z[out])[i] = 0.0f;
 		}
 	}
-
-	return 1;
 }
 
 void bass_follow(void)
@@ -143,6 +150,8 @@ void bass_follow(void)
 	/* other filters: the old state does not fit them, clear it */
 	if (!bass_same_layout(bm, spare)) {
 		bass_reset();
+	} else {
+		eq_follow(bm, spare);
 	}
 
 	bm = spare;
