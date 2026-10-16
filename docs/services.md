@@ -26,7 +26,8 @@ All decisions are in osirisd, a LuaJIT script you can edit on the receiver
 itself; mcud and dspd carry out its calls and report events, and pcmd plays
 what comes down its pipe.
 
-`/etc/init.d/S10osiris` starts them at boot, before the network. They log to syslog (`logread`);
+`/etc/init.d/S10osiris` starts them at boot, before the network, after ubus
+(`S01ubus`). They log to syslog, which logd keeps in RAM (`logread`);
 started by hand from a terminal, they log there instead.
 
 ## mcud

@@ -1,0 +1,12 @@
+config BR2_PACKAGE_UBOX
+	bool "ubox"
+	depends on BR2_TOOLCHAIN_HAS_SYNC_4 # ubus
+	depends on !BR2_STATIC_LIBS # ubus
+	select BR2_PACKAGE_UBUS
+	select BR2_PACKAGE_UDEBUG # logd
+	help
+	  logd and logread from OpenWrt's ubox: the system log in a RAM
+	  ring buffer, kernel messages included, read and followed over
+	  ubus.
+
+	  https://git.openwrt.org/project/ubox.git

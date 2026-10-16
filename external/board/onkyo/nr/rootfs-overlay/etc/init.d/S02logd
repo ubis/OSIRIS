@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# The system log, kernel messages included, in a 64 KiB ring buffer in RAM
+# (logread); nothing goes to the flash.
+#
+
+case "$1" in
+start)
+	echo -n "Starting logd: "
+	start-stop-daemon -b -S -q -m -p /var/run/logd.pid -x /sbin/logd -- -S 64
+	echo "OK"
+	;;
+stop)
+	start-stop-daemon -K -q -p /var/run/logd.pid
+	;;
+restart|reload)	;;
+*)	echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac

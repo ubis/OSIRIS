@@ -1,0 +1,10 @@
+config BR2_PACKAGE_UDEBUG
+	bool "udebug"
+	depends on BR2_TOOLCHAIN_HAS_SYNC_4 # ubus
+	depends on !BR2_STATIC_LIBS # ubus
+	select BR2_PACKAGE_UBUS
+	help
+	  The library of OpenWrt's udebug, debug ring buffers over ubus,
+	  which logd links against.
+
+	  https://git.openwrt.org/project/udebug.git

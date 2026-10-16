@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# The ubus daemon, first: logd and the OSIRIS services talk over it.
+#
+
+case "$1" in
+start)
+	echo -n "Starting ubus: "
+	mkdir -p /var/run/ubus
+	start-stop-daemon -b -S -q -m -p /var/run/ubusd.pid -x /usr/sbin/ubusd
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		[ -S /var/run/ubus/ubus.sock ] && break
+		usleep 100000
+	done
+	echo "OK"
+	;;
+stop)
+	start-stop-daemon -K -q -p /var/run/ubusd.pid
+	;;
+restart|reload)	;;
+*)	echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac
