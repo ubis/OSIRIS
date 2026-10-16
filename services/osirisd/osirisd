@@ -89,10 +89,7 @@ end
 if st and st.av_sync then
 	audio.set_av_sync(st.av_sync)
 end
-if st then
-	audio.start_levels(st.volume, { dynamic_eq = st.dynamic_eq, dynamic_eq_offset = st.dynamic_eq_offset,
-				       dynamic_volume = st.dynamic_volume })
-end
+audio.start_levels(st, saved)
 audio.set_eq(audio.saved_eq(saved))
 audio.set_eq(st and st.equalizer)
 if st and st.interface then

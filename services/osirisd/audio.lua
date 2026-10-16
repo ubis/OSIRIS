@@ -124,16 +124,35 @@ function M.set_volume(volume)
 end
 
 -- Dynamic EQ, its reference offset and Dynamic Volume, as mcu.audyssey
+-- the ones given, over what is known; kept in the state file, as the MCU
+-- sends them only when they change
 function M.set_audyssey(a)
-	adsy_now = a
+	local save = {}
+
+	for _, k in ipairs({ "dynamic_eq", "dynamic_eq_offset", "dynamic_volume" }) do
+		if a[k] ~= nil then
+			adsy_now[k] = a[k]
+			save[k] = k == "dynamic_eq" and (a[k] and 1 or 0) or a[k]
+		end
+	end
+
+	save_state(save)
 	set_loudness()
 	set_dynamic_volume()
 end
 
--- both from mcu status at start
-function M.start_levels(volume, a)
-	volume_now = volume or volume_now
-	M.set_audyssey(a)
+-- at start: from mcu status, what it does not know yet as saved
+function M.start_levels(st, saved)
+	st = st or {}
+	volume_now = st.volume or volume_now
+	local deq = st.dynamic_eq
+
+	if deq == nil and (saved.dynamic_eq == "1" or saved.dynamic_eq == "0") then
+		deq = saved.dynamic_eq == "1"
+	end
+	M.set_audyssey({ dynamic_eq = deq,
+			 dynamic_eq_offset = st.dynamic_eq_offset or tonumber(saved.dynamic_eq_offset or ""),
+			 dynamic_volume = st.dynamic_volume or tonumber(saved.dynamic_volume or "") })
 end
 
 -- how much of the LFE channel multichannel PCM plays; the receiver has one
