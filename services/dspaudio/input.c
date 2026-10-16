@@ -158,10 +158,12 @@ unsigned int rx_slot(unsigned int odd, const int32_t *rx)
 	}
 #endif
 
+	/* the front pair after tone(), TONE_SHIFT up again */
 	for (in = 0; ready && in < 2; in++) {
-		float x = input[in] / FULL_SCALE;
+		float x = input[in] * TONE_GAIN / FULL_SCALE;
+		uint64_t m = (uint64_t)(input[in] < 0 ? -(int64_t)input[in] : input[in]) << TONE_SHIFT;
 
-		mag = input[in] < 0 ? -(uint32_t)input[in] : (uint32_t)input[in];
+		mag = m > UINT32_MAX ? UINT32_MAX : (uint32_t)m;
 		if (mag > SH->meter[in]) {
 			SH->meter[in] = mag;
 		}

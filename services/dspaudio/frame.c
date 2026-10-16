@@ -49,9 +49,9 @@ static float mix(unsigned int out)
 		return upmixed[out] * (g[0] / (float)DSPAUDIO_GAIN_ONE);
 	}
 
-	/* unused inputs are 0 */
+	/* unused inputs are 0; the front pair comes TONE_SHIFT down */
 	for (i = 0; i < DSPAUDIO_IN; i++) {
-		v += (int64_t)input[i] * g[i];
+		v += ((int64_t)input[i] * g[i]) << (i < 2 ? TONE_SHIFT : 0);
 	}
 
 	v >>= 27;

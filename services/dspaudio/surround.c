@@ -94,7 +94,7 @@ static void reverb(float m)
 void upmix(int32_t li, int32_t ri)
 {
 	const volatile struct dspaudio_surround *s = &SH->surround;
-	float l = li / FULL_SCALE, r = ri / FULL_SCALE, a = s->smooth;
+	float l = li * TONE_GAIN / FULL_SCALE, r = ri * TONE_GAIN / FULL_SCALE, a = s->smooth;
 	float rho, c, m, diff, sl, sr, x, ap;
 	unsigned int d = s->delay, bd = d + s->back_delay;
 
