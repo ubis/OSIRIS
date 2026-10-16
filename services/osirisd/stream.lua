@@ -12,8 +12,8 @@ local call = util.call
 
 local M = {}
 
--- C1 sample rate codes
-local FS_HZ = { [8] = 44100, [9] = 48000, [12] = 96000 }
+-- C1 sample rate codes; Dolby Digital Plus over ARC comes as 14
+local FS_HZ = { [8] = 44100, [9] = 48000, [12] = 96000, [14] = 192000 }
 
 -- multichannel PCM from HDMI as AudioApp tells the MCU (type 0E, format 70):
 -- from the CEA-861 allocation below 0x14 (bit 0 LFE, 1 centre, 2-3 the rear:
@@ -78,9 +78,10 @@ function M.set_input(interface, fs, channels)
 		      interface == 2 and "multichannel" or interface == 5 and "network" or "digital"
 	local was = source.input_now
 
-	-- the DSP works out its filters and delays for the rate the MCU reports
-	-- a code not known yet above 48 kHz: at least process every other frame
-	local hz = FS_HZ[fs] or fs and fs > 9 and 96000
+	-- the DSP works out its filters and delays for the rate the MCU reports;
+	-- a code not known yet counts as 48, 96 or (above 96 kHz's) 192 kHz,
+	-- which the DSP leaves silent
+	local hz = FS_HZ[fs] or fs and (fs < 10 and 48000 or fs < 12 and 96000 or 192000)
 
 	if hz and hz ~= source.fs_now then
 		source.fs_now = hz

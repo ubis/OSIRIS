@@ -401,10 +401,9 @@ static int m_set(struct ubus_context *c, struct ubus_object *obj,
 		}
 	}
 
-	/* above 96 kHz even every other frame is too much for the DSP */
 	if (tb[SET_FS]) {
 		new_hz = blobmsg_get_u32(tb[SET_FS]);
-		if (new_hz < 32000 || new_hz > 96000) {
+		if (new_hz < 32000 || new_hz > 192000) {
 			return UBUS_STATUS_INVALID_ARGUMENT;
 		}
 	}

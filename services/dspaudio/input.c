@@ -69,7 +69,7 @@ static void burst_find(uint32_t first, uint32_t second)
 }
 
 static uint32_t used, front[2];
-uint32_t decim = 1;			/* 2: every other frame is processed */
+uint32_t decim = 1;			/* frames processed: 1 every, 2 every other, 0 none */
 static unsigned int rx_odd;
 
 /* a new rate: no filtered frame carries over; says whether it changed */
@@ -77,20 +77,26 @@ unsigned int rx_follow_rate(void)
 {
 	unsigned int was = decim;
 
-	decim = SH->decim == 2 ? 2 : 1;
+	decim = SH->decim <= 2 ? SH->decim : 1;
 	if (decim == was) {
 		return 0;
 	}
 
 	rx_odd = 0;
 	hb_reset();
+	/* nothing went through the delay lines meanwhile: no stale sound */
+	if (was == 0) {
+		delay_clear();
+		reverb_clear();
+	}
+
 	return 1;
 }
 
 /*
  * One receive slot: rx holds the RX_SERS serializers' samples of the slot,
  * odd says it is the second of the frame. Returns whether a frame is in:
- * every frame, or every other one above 48 kHz.
+ * every frame, every other one at 88.2 and 96 kHz, none above.
  */
 unsigned int rx_slot(unsigned int odd, const int32_t *rx)
 {
@@ -116,7 +122,9 @@ unsigned int rx_slot(unsigned int odd, const int32_t *rx)
 		}
 
 		/* the receiver's tone controls are for the front pair */
-		if (decim == 2) {
+		if (decim == 0) {
+			/* not processed */
+		} else if (decim == 2) {
 			if (i == 0 && !odd) {
 				hb_down_step();
 			}
@@ -133,7 +141,7 @@ unsigned int rx_slot(unsigned int odd, const int32_t *rx)
 	}
 
 	/* a frame in: every frame, or every other one through the half-band filter */
-	ready = odd && (decim == 1 || (rx_odd ^= 1) == 0);
+	ready = odd && (decim == 1 || (decim == 2 && (rx_odd ^= 1) == 0));
 	if (ready && decim == 2) {
 		int32_t down[DSPAUDIO_IN] = { 0 };
 

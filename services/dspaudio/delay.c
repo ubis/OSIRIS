@@ -21,18 +21,30 @@ static unsigned int delay_pos[DSPAUDIO_OUT];
 static int32_t (*const av_buf)[DSPAUDIO_OUT] = (int32_t (*)[DSPAUDIO_OUT])DSPAUDIO_AV_BUF;
 static unsigned int av_pos;
 
-void av_clear(void)
+/* the A/V sync line and the speakers' delay lines, silent */
+void delay_clear(void)
 {
 	unsigned int i, out;
 
-	REG(L2CFG) = (REG(L2CFG) & ~7u) | L2CFG_64K;
-	(void)REG(L2CFG);
-	REG(MAR(DSPAUDIO_AV_BUF >> 24)) = 1;
 	for (i = 0; i < DSPAUDIO_AV_LEN; i++) {
 		for (out = 0; out < DSPAUDIO_OUT; out++) {
 			av_buf[i][out] = 0;
 		}
 	}
+
+	for (out = 0; out < DSPAUDIO_OUT; out++) {
+		for (i = 0; i < DELAY_LEN; i++) {
+			delay_buf[out][i] = 0;
+		}
+	}
+}
+
+void av_clear(void)
+{
+	REG(L2CFG) = (REG(L2CFG) & ~7u) | L2CFG_64K;
+	(void)REG(L2CFG);
+	REG(MAR(DSPAUDIO_AV_BUF >> 24)) = 1;
+	delay_clear();
 }
 
 static int32_t delayed(unsigned int out, int32_t v)

@@ -105,8 +105,8 @@ static void dma_block(unsigned int half, unsigned int to)
 		/* at half the rate: the filtered frame, then the one it follows */
 		out = decim == 2 ? hb_out[!ready] : frame;
 		for (i = 0; i < TX_SERS; i++) {
-			dma_tx[to][f][0][i] = out[2 * i];
-			dma_tx[to][f][1][i] = out[2 * i + 1];
+			dma_tx[to][f][0][i] = decim ? out[2 * i] : 0;
+			dma_tx[to][f][1][i] = decim ? out[2 * i + 1] : 0;
 		}
 	}
 }
@@ -158,20 +158,21 @@ static uint32_t tsc(void)
  */
 void dma_loop(void)
 {
-	unsigned int half = 0, blocks = 0;
+	unsigned int half = 0, blocks = 0, again;
 	uint32_t done, n, err, t0, t1, last = 0;
 	float busy = 0.0f, total = 0.0f, peak = 0.0f;
 
 	__asm__ volatile ("mvc .s2 %0, TSCL" : : "b"(0));
 	for (;;) {
-		rx_follow_rate();
+		/* a new rate starts over too: its delay lines took many blocks to clear */
+		again = rx_follow_rate();
 		done = 1u << (TCC_RX + half);
-		for (n = 0; !(REG(EDMA_IPR) & done) && n < DMA_STALL_LOOPS; n++) {
+		for (n = 0; !again && !(REG(EDMA_IPR) & done) && n < DMA_STALL_LOOPS; n++) {
 		}
 
 		err = (REG(RSTAT) | REG(XSTAT)) & (STAT_UNDERRUN | STAT_SYNC_ERR | STAT_DMA_ERR);
-		if (n == DMA_STALL_LOOPS || err) {
-			SH->underruns++;
+		if (again || n == DMA_STALL_LOOPS || err) {
+			SH->underruns += !again;
 			SH->load = 0;
 			dma_restart();
 			half = blocks = 0;

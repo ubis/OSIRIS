@@ -15,7 +15,7 @@
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image goes around it */
 #define DSPAUDIO_L2_END		0x11830000u	/* the image's end at most: L2 cache above */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		23
+#define DSPAUDIO_ABI		24
 
 #define DSPAUDIO_IN		8	/* 4 serializers x 2 slots, as the outputs */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
@@ -197,7 +197,9 @@ struct dspaudio_shared {
 	uint32_t bass_gen;
 	uint32_t inputs;		/* one bit per input the source has */
 	uint32_t av_delay;		/* frames every output is held back for A/V sync */
-	uint32_t decim;			/* 2: process every other frame (above 48 kHz), else 1 */
+	uint32_t decim;			/* 1: process every frame; 2: every other one
+					 * (88.2, 96 kHz); 0: none, silence (176.4,
+					 * 192 kHz) */
 	uint32_t ring_on;		/* the front pair comes from the ring, not the McASP */
 	uint32_t late_night;		/* decoded AC-3's range compression: 0 off, 1 half, 2 full */
 	/* written by the DSP */
