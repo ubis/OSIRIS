@@ -79,7 +79,8 @@ end
 local function airplay_volume(data)
 	-- "airplay,volume,lowest,highest": the slider -30..0 dB, -144 muted
 	local slider = tonumber(data:match("^([^,]+)"))
-	if not slider then
+	-- calibration holds the reference level
+	if not slider or source.mode_name == "testtone" then
 		return
 	end
 
@@ -118,8 +119,10 @@ local function meta_item(kind, code, data)
 		if code == "pfls" or code == "pend" then
 			pcmd_flush()
 		end
-		-- a phone starts or resumes playing: the receiver goes to NET
-		if META_STATES[code] == "play" and source.input_now ~= "network" then
+		-- a phone starts or resumes playing: the receiver goes to NET, but
+		-- not out of calibration, whose volume is the reference level
+		if META_STATES[code] == "play" and source.input_now ~= "network" and
+		   source.mode_name ~= "testtone" then
 			call("mcu", "input", { input = "net" })
 		end
 		if code == "pend" then
