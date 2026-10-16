@@ -58,7 +58,8 @@ $(O)/%.o: %.S | $(O)
 $(O)/dspaudio.elf: $(OBJS) dspaudio.ld
 	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) -lgcc -o $@
 
-# raw image from 0x11800000; bss and stack are not part of it
+# raw image from 0x11800000 to the end of .text_hi; bss, stack and the
+# shared block in between are zeros
 $(O)/dspaudio.bin: $(O)/dspaudio.elf
 	$(OBJCOPY) -O binary -R .ddr -R .ddr_bss $< $@
 ifeq ($(AC3),1)

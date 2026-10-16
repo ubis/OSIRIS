@@ -12,7 +12,8 @@
 #include <stdint.h>
 
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
-#define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
+#define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image goes around it */
+#define DSPAUDIO_L2_END		0x11830000u	/* the image's end at most: L2 cache above */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
 #define DSPAUDIO_ABI		23
 

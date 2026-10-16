@@ -13,8 +13,8 @@ static unsigned int delay_pos[DSPAUDIO_OUT];
 /*
  * The A/V sync delay line, in SDRAM, cached (MAR195 covers 0xC3000000 to
  * 0xC3FFFFFF). L1D does not keep writes: the top 64 KiB of L2, which the
- * image and the shared block below 0x11820000 leave alone, become cache,
- * so writes land there and go out to SDRAM a line at a time.
+ * image (below 0x11830000) leaves alone, become cache, so writes land
+ * there and go out to SDRAM a line at a time.
  */
 #define AV_MASK		(DSPAUDIO_AV_LEN - 1)
 

@@ -164,7 +164,7 @@ int dsp_start(const char *image)
 	fseek(f, 0, SEEK_END);
 	size = ftell(f);
 	rewind(f);
-	if (size <= 0 || DSPAUDIO_LOAD + size > DSPAUDIO_SHARED) {
+	if (size <= 0 || DSPAUDIO_LOAD + size > DSPAUDIO_L2_END) {
 		fclose(f);
 		return -EFBIG;
 	}
