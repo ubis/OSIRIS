@@ -150,7 +150,7 @@ What it does today:
   `/data/osiris/state`, unless `/data/etc/hostname` exists)
 - makes the receiver show "OSIRIS <build>" as its DSP version
 - picks the speakers from the listening mode (by the name of its ISCP code,
-  tables `MODE_OUTPUTS`, `MODE_SURROUND`, `MODE_REVERB`):
+  tables `MODE_OUTPUTS`, `MODE_SURROUND`, `MODE_REVERB` in `audio.lua`):
   - All Ch Stereo plays stereo on every speaker, Full Mono mono on every
     speaker
   - Surround, Dolby PLII (also PLIIz Height and the THX and Audyssey DSX
@@ -199,12 +199,16 @@ What it does today:
 - syncs before the receiver switches the board off; a factory reset from the
   receiver's menu wipes `/data` and reboots
 
-To try a change, copy the script to `/tmp`, stop the running one and start
-the copy from the terminal:
+The script is `/usr/sbin/osirisd`; its modules (`audio.lua`, `stream.lua`,
+`airplay.lua`, `update.lua`, `system.lua`, `events.lua`, `util.lua`,
+`source.lua`) are in `/usr/share/osirisd`, and a copy of the script uses
+the modules beside it first. To try a change, copy them all to a directory
+in `/tmp`, stop the running one and start the copy from the terminal:
 
 ```sh
+mkdir /tmp/osd && cp /usr/sbin/osirisd /usr/share/osirisd/*.lua /tmp/osd
 start-stop-daemon -K -p /var/run/osirisd.pid
-/tmp/osirisd
+/tmp/osd/osirisd
 ```
 
 ## Building
