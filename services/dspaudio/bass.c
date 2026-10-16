@@ -6,11 +6,14 @@
 
 static float tone_z[2][DSPAUDIO_TONE][2];
 
-/* the biquads in transposed direct form II, on one input sample */
+/*
+ * The biquads in transposed direct form II, on one input sample, made
+ * TONE_SHIFT smaller first: a boost on a full scale source must not clip.
+ */
 int32_t tone(unsigned int in, int32_t smp)
 {
 	const volatile struct dspaudio_biquad *q = SH->tone[SH->tone_sel & 1];
-	float x = (float)smp, y;
+	float x = (float)smp * (1.0f / TONE_GAIN), y;
 	unsigned int k;
 
 	for (k = 0; k < DSPAUDIO_TONE; k++) {

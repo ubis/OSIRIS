@@ -10,6 +10,9 @@
 #define SH		((volatile struct dspaudio_shared *)DSPAUDIO_SHARED)
 #define RING		((volatile struct dspaudio_ring *)DSPAUDIO_RING)
 #define FULL_SCALE	2147483648.0f
+/* the front pair after tone() is 12 dB down, as much as the controls boost */
+#define TONE_SHIFT	2
+#define TONE_GAIN	((float)(1 << TONE_SHIFT))
 
 #define RX_SERS		4
 #define TX_SERS		4		/* AXR1_0..3: PCM1690 */
