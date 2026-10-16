@@ -167,6 +167,7 @@ values are the ones the board's stock first stage gives the boot ROM;
 | board | crystal | DSP/ARM | SDRAM | EMIFA (NAND) | console |
 |---|---|---|---|---|---|
 | `onkyo-tx-nr` | 20 MHz | 400 MHz | 133 MHz | 89 MHz | UART1 |
+| `onkyo-tx-nr-100` | 20 MHz | 400 MHz | 100 MHz | 89 MHz | UART1 |
 
 ### Boot flow and flash layout
 
