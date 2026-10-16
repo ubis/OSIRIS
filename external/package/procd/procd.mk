@@ -46,8 +46,6 @@ define PROCD_INSTALL_TARGET_CMDS
 		$(PROCD_DL_DIR)/hotplug-preinit.json $(TARGET_DIR)/etc/
 	mkdir -p $(TARGET_DIR)/etc/rc.d $(TARGET_DIR)/etc/hotplug.json.d \
 		$(TARGET_DIR)/etc/hotplug-preinit.json.d
-	# procd starts ubusd from /sbin
-	ln -sf ../usr/sbin/ubusd $(TARGET_DIR)/sbin/ubusd
 endef
 
 $(eval $(cmake-package))
