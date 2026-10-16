@@ -4,10 +4,12 @@ CFLAGS	?= -Os
 override CFLAGS += -Wall -Wextra -Wno-unused-parameter -std=gnu99
 LDLIBS	+= -lubus -lubox -lm
 
-dspd: dspd.o
+OBJS	:= dspd.o dsp.o apply.o filters.o ubus.o
+
+dspd: $(OBJS)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-dspd.o: dspd.c dspaudio.h log.h
+%.o: %.c dspd.h dspaudio.h log.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 install: dspd
