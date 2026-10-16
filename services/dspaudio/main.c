@@ -65,15 +65,15 @@ void dspaudio_main(void)
 #endif
 	RING->read = RING->write = 0;
 	psc1_enable(LPSC_MCASP1);
-	if (mcasp_init()) {
-		/* leave the step that timed out for dspd to report */
-		SH->state += DSPAUDIO_STUCK;
-		for (;;) {
-		}
+	/*
+	 * Running from here on, for dspd: an input without a source gives the
+	 * McASP no clock, and it starts once one comes; state shows the step.
+	 */
+	SH->magic = DSPAUDIO_MAGIC;
+	while (mcasp_init()) {
 	}
 
 	SH->state = DSPAUDIO_RUNNING;
-	SH->magic = DSPAUDIO_MAGIC;
 #ifdef DSPAUDIO_DMA
 	dma_loop();
 #endif

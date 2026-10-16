@@ -71,8 +71,12 @@ int mcasp_init(void)
 	int i;
 
 	SH->state = DSPAUDIO_INIT;
+	/* GBLCTL changes on the McASP's clocks: without them it never reads 0 */
 	REG(GBLCTL) = 0;
-	while (REG(GBLCTL)) {
+	for (i = 0; REG(GBLCTL); i++) {
+		if (i == GBL_TIMEOUT) {
+			return -ETIMEDOUT;
+		}
 	}
 
 	REG(WFIFOCTL) = 0;		/* XBUF/RBUF directly, no AFIFO */
