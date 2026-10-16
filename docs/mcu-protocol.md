@@ -301,6 +301,7 @@ Events (`ubus listen mcu`):
 | `mcu.listening_mode` | D2, F3 !1LMD | `mode` (the D2 byte), `name` (from the D2 byte for stereo, all_ch_stereo, full_mono and testtone, else from the ISCP code); also in `mcu status` as `listening_mode` and `listening_mode_name` |
 | `mcu.testtone` | D0 | `channel` |
 | `mcu.distance` | C0, C3 | `distances` (cm by speaker, 3 cm a step) |
+| `mcu.headphone` | D4 | `plugged`; also in `mcu status` as `headphone` |
 | `mcu.iscp` | F3 | `command` |
 | `mcu.net_mute` | DB | `mute`; also in `mcu status` as `net_mute` |
 | `mcu.update` | E8 | `stage` (`check`, `download`, `install`, `upload`), `source` (`network`, `usb`) |

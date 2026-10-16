@@ -70,6 +70,8 @@ local back = BACK.sb		-- what the surround back outputs play
 local distances_now		-- the MCU's distances by speaker
 local testtone_ch = "fl"
 local eq_now = {}		-- the receiver's equalizer: eq_on and bands by speaker
+local speakers_now		-- mcu status, the speaker setup last sent
+local headphone = false		-- headphones plugged in: the speakers are off
 local back_fill_now		-- the surround back outputs repeat the surrounds
 local lfe_pcm = 0		-- dB, the LFE level for multichannel PCM; -100 off
 
@@ -100,7 +102,8 @@ end
 local function set_loudness()
 	local db = -1
 
-	if adsy_now.dynamic_eq then
+	-- Dynamic EQ is for the room's speakers, not for headphones
+	if adsy_now.dynamic_eq and not headphone then
 		local below = -volume_now / 100 - (adsy_now.dynamic_eq_offset or 0)
 
 		db = math.floor(math.max(0, math.min(LOUDNESS_MAX, below / LOUDNESS_DB_PER)) + 0.5)
@@ -211,6 +214,11 @@ function M.set_mode(mode, name)
 	local surround = MODE_SURROUND[name] or "off"
 	local outputs = MODE_OUTPUTS[name] or "front"
 
+	-- the upmix has outputs of its own: headphones get the source folded
+	if headphone then
+		surround = "off"
+	end
+
 	-- multichannel already has its channels: Stereo folds them down
 	if source.input_now == "multichannel" then
 		surround = "off"
@@ -258,6 +266,10 @@ function M.set_distances(d)
 
 		out[o] = tonumber(cm) or 0
 		save["distance_" .. o] = out[o]
+		-- both ears are as far
+		if headphone then
+			out[o] = 0
+		end
 	end
 
 	save_state(save)
@@ -279,7 +291,7 @@ function M.set_eq(e)
 	for _, sp in ipairs(EQ_SPEAKERS) do
 		local b = type(e[sp]) == "table" and e[sp] or {}
 
-		bands[sp] = e.eq_on and b or {}
+		bands[sp] = e.eq_on and not headphone and b or {}
 		save["eq_" .. sp] = table.concat(b, ",")
 	end
 
@@ -311,10 +323,40 @@ function M.saved_eq(saved)
 	return e
 end
 
--- the speakers there are, small ones' bass to the subwoofer
+function M.set_headphone(on)
+	headphone = on == true or on == 1
+	if speakers_now then
+		speakers_now.headphone = headphone
+		M.set_speakers(speakers_now)
+	else
+		M.set_distances(distances_now)
+	end
+	if next(eq_now) then
+		M.set_eq()
+	end
+	M.set_mode(source.mode_now, source.mode_name)
+	set_loudness()
+end
+
+-- the speakers there are, small ones' bass to the subwoofer; headphones
+-- are a large front pair alone, the rest folds into it
 function M.set_speakers(m)
-	if not m or not m.speakers then
+	if not m then
 		return
+	end
+
+	-- mcu status has it too: after a restart of osirisd
+	if m.headphone ~= nil then
+		headphone = m.headphone == true or m.headphone == 1
+	end
+
+	if not m.speakers then
+		return
+	end
+
+	speakers_now = m
+	if headphone then
+		m = { speakers = { front = 0 }, layout = "no", subwoofers = 0 }
 	end
 
 	local sp, crossover, absent = m.speakers, {}, {}
@@ -409,5 +451,6 @@ events.on("mcu.tone", function(msg) M.set_tone(msg.bass, msg.treble) end)
 events.on("mcu.distance", function(msg) M.set_distances(msg.distances) end)
 events.on("mcu.speakers", function(msg) M.set_speakers(msg) end)
 events.on("mcu.equalizer", function(msg) M.set_eq(msg.equalizer) end)
+events.on("mcu.headphone", function(msg) M.set_headphone(msg.plugged) end)
 
 return M

@@ -62,6 +62,7 @@ mcud -v                           # (with S10osiris stopped) log every frame
 | `mcu.lfe_level` | LFE level per source format, in dB |
 | `mcu.testtone` | level calibration picked a channel (`fl`, `c`, `fr`, `sr`, `sbr`, `sbl`, `sl`, `sw`, `fhl`, `fhr`, `fwl`, `fwr`) |
 | `mcu.update` | the receiver's update screens: `check` for an update, `download` it, `install` it; answer with `ubus call mcu update` |
+| `mcu.headphone` | headphones plugged in or out: `plugged` (the MCU switches the speakers itself) |
 | `mcu.iscp` | ISCP text commands, e.g. `!1MVL21` |
 | `mcu.net_mute` | the MCU mutes or unmutes the NET input: `mute` |
 | `mcu.frame` | anything not decoded yet, as raw bytes |
@@ -183,6 +184,9 @@ What it does today:
   for multichannel PCM
 - with 5.1 and surround back speakers, has them repeat the surrounds (not
   in Direct and Pure Audio)
+- while headphones are in, folds all channels into the front pair at full
+  range, without speaker distances, the equalizer and Dynamic EQ; the
+  surround modes play as Stereo
 - plays the ring (pcmd, AirPlay) on the NET input, with the level meter on,
   and mutes it while the MCU says so
 - reads shairport-sync's metadata pipe: the track and the play state go to
