@@ -31,10 +31,10 @@ enum mcu_cmd {
 	NET_ISCP		= 0x73,	/* 00 or 01, "!1...", CR */
 
 	/* MCU -> DSP */
-	MCU_INITIAL		= 0xc0,	/* [1..10] as MCU_SPEAKERS, [11] and [13..38] as MCU_DISTANCE, [0xc6] as MCU_CH_LAYOUT [1] */
+	MCU_INITIAL		= 0xc0,	/* [1..10] as MCU_SPEAKERS, [11..36] as MCU_DISTANCE [1..26], [0xc6] as MCU_CH_LAYOUT [1] */
 	MCU_INPUT		= 0xc1,	/* [1] decode [2] interface [3] fs [4] MCLK [5] status */
 	MCU_SPEAKERS		= 0xc2,	/* [1] subwoofers, [2..7] SPEAKER_* crossover codes, [8] SB channels, [9] LFE low pass, [10] double bass */
-	MCU_DISTANCE		= 0xc3,	/* [0] ?, [1..26] 13 x u16 LE cm, DISTANCE_ORDER */
+	MCU_DISTANCE		= 0xc3,	/* [0] 0, [1..26] 13 x u16 LE in 0.1 ft (0.03 m) steps */
 	MCU_EQUALIZER		= 0xc4,	/* [2] 00, then on; [96] 01, then dB per band */
 	MCU_THX			= 0xc5,
 	MCU_MULTIPLEX_MONO	= 0xc6,
