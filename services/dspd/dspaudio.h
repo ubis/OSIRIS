@@ -14,7 +14,7 @@
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		22
+#define DSPAUDIO_ABI		23
 
 #define DSPAUDIO_IN		8	/* 4 serializers x 2 slots, as the outputs */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
@@ -203,6 +203,9 @@ struct dspaudio_shared {
 	uint32_t bitstream;		/* IEC 61937 data type while one plays, else 0;
 					 * decoded AC-3: | its layout << 8 (acmod | 0x10 LFE) */
 	float dvol_gain;		/* dB Dynamic Volume applies now */
+	uint32_t load;			/* DMA builds while playing: time busy, 0.01 %
+					 * over 48000 frames' worth of blocks,
+					 * | the busiest block's << 16 */
 };
 
 _Static_assert(sizeof(struct dspaudio_shared) <= 0x1000, "the shared block is 4 KiB");

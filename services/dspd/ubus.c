@@ -125,6 +125,7 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 		    struct blob_attr *msg)
 {
 	char version[sizeof(sh->version) + 1];
+	uint32_t load;
 	void *a;
 	int i;
 
@@ -137,6 +138,11 @@ static int m_status(struct ubus_context *c, struct ubus_object *obj,
 	blobmsg_add_u64(&b, "samples", sh->samples);	/* a u32 would print as signed */
 	blobmsg_add_u32(&b, "underruns", sh->underruns);
 	blobmsg_add_u32(&b, "overruns", sh->overruns);
+	load = sh->load;	/* once: the two halves belong together */
+	if (load) {
+		blobmsg_add_u32(&b, "load", ((load & 0xffff) + 50) / 100);	/* % */
+		blobmsg_add_u32(&b, "load_peak", ((load >> 16) + 50) / 100);
+	}
 	a = blobmsg_open_array(&b, "peak_db");
 	for (i = 0; i < DSPAUDIO_IN; i++) {
 		blobmsg_add_u32(&b, NULL, (uint32_t)peak_db(sh->peak[i]));
