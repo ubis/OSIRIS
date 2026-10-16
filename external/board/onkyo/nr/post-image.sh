@@ -12,6 +12,8 @@ NAME="u-boot $VERSION"
 
 python3 $TOOLS/mkimage.py $IMAGES/u-boot.bin $IMAGES/u-boot.dbi --name "$NAME" > /dev/null
 
+[ -f $IMAGES/uImage ] || exit 0
+
 rm -f $IMAGES/osiris-*.tar
 sh $TOP/tools/mkbundle.sh -k $IMAGES/uImage -r $IMAGES/rootfs.squashfs -u $IMAGES/u-boot.dbi \
 	-v $VERSION -o $IMAGES/osiris-$VERSION.tar

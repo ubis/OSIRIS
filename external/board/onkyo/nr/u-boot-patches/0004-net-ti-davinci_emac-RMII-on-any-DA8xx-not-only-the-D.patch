@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Fri, 16 Oct 2026 15:25:26 +0300
+Subject: [PATCH] net: ti: davinci_emac: use RMII on any DA8xx, not only the
+ DA850 EVM
+
+The RMII parts of the driver (wrapper set-up, MACCONTROL from the link
+partner, auto-negotiation at probe) depend on the DA850 EVM board, so
+other DA8xx boards with an RMII PHY ran the EMAC without them. Make
+them depend on the SoC.
+
+The auto-negotiation loop passed the index of the PHY where its MDIO
+address belongs; pass the address.
+---
+ drivers/net/ti/davinci_emac.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/net/ti/davinci_emac.c b/drivers/net/ti/davinci_emac.c
+index cc6a6766..b436c14d 100644
+--- a/drivers/net/ti/davinci_emac.c
++++ b/drivers/net/ti/davinci_emac.c
+@@ -310,7 +310,7 @@ static int gen_get_link_speed(int phy_addr)
+ 	if (davinci_eth_phy_read(phy_addr, MII_STATUS_REG, &tmp) &&
+ 			(tmp & 0x04)) {
+ #if defined(CONFIG_DRIVER_TI_EMAC_USE_RMII) && \
+-		defined(CONFIG_MACH_DAVINCI_DA850_EVM)
++		defined(CONFIG_SOC_DA8XX)
+ 		davinci_eth_phy_read(phy_addr, MII_LPA, &tmp);
+ 
+ 		/* Speed doesn't matter, there is no setting for it in EMAC. */
+@@ -459,7 +459,7 @@ static int davinci_emac_start(struct udevice *dev)
+ #endif
+ 
+ #if defined(CONFIG_DRIVER_TI_EMAC_USE_RMII) && \
+-	defined(CONFIG_MACH_DAVINCI_DA850_EVM)
++	defined(CONFIG_SOC_DA8XX)
+ 	adap_ewrap->c0rxen = adap_ewrap->c1rxen = adap_ewrap->c2rxen = 0;
+ 	adap_ewrap->c0txen = adap_ewrap->c1txen = adap_ewrap->c2txen = 0;
+ 	adap_ewrap->c0miscen = adap_ewrap->c1miscen = adap_ewrap->c2miscen = 0;
+@@ -627,7 +627,7 @@ static void davinci_emac_stop(struct udevice *dev)
+ #endif
+ 
+ #if defined(CONFIG_DRIVER_TI_EMAC_USE_RMII) && \
+-	defined(CONFIG_MACH_DAVINCI_DA850_EVM)
++	defined(CONFIG_SOC_DA8XX)
+ 	adap_ewrap->c0rxen = adap_ewrap->c1rxen = adap_ewrap->c2rxen = 0;
+ 	adap_ewrap->c0txen = adap_ewrap->c1txen = adap_ewrap->c2txen = 0;
+ 	adap_ewrap->c0miscen = adap_ewrap->c1miscen = adap_ewrap->c2miscen = 0;
+@@ -852,11 +852,11 @@ static int davinci_emac_probe(struct udevice *dev)
+ 	}
+ 
+ #if defined(CONFIG_DRIVER_TI_EMAC_USE_RMII) && \
+-		defined(CONFIG_MACH_DAVINCI_DA850_EVM) && \
++		defined(CONFIG_SOC_DA8XX) && \
+ 			!defined(CONFIG_DRIVER_TI_EMAC_RMII_NO_NEGOTIATE)
+ 	for (i = 0; i < num_phy; i++) {
+-		if (phy[i].is_phy_connected(i))
+-			phy[i].auto_negotiate(i);
++		if (phy[i].is_phy_connected(active_phy_addr[i]))
++			phy[i].auto_negotiate(active_phy_addr[i]);
+ 	}
+ #endif
+ 	return 0;

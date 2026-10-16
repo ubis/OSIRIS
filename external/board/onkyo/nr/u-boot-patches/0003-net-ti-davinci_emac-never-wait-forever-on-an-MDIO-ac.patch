@@ -1,0 +1,98 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Fri, 16 Oct 2026 15:25:26 +0300
+Subject: [PATCH] net: ti: davinci_emac: never wait forever on an MDIO access
+
+The PHY accessors spin on the GO bit of USERACCESS0 without a limit.
+Stopping the EMAC resets it and its wrapper, which can leave the MDIO
+module disabled; GO then never clears and "mii info" after a transfer
+hangs U-Boot for good.
+
+Wait at most 10 ms (an access takes about 32 us at 2 MHz), turn the
+MDIO module back on if it has been disabled, and report a failure
+instead of hanging.
+---
+ drivers/net/ti/davinci_emac.c | 43 ++++++++++++++++++++++++++---------
+ 1 file changed, 32 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/net/ti/davinci_emac.c b/drivers/net/ti/davinci_emac.c
+index d8085193..cc6a6766 100644
+--- a/drivers/net/ti/davinci_emac.c
++++ b/drivers/net/ti/davinci_emac.c
+@@ -204,13 +204,37 @@ static int davinci_eth_phy_detect(void)
+ 	return count;
+ }
+ 
++/*
++ * Wait for the MDIO user access to go idle; one takes ~32 us at 2 MHz.
++ * Stopping the EMAC resets it and its wrapper, which can leave the MDIO
++ * module disabled, and then GO never clears: turn it back on instead of
++ * waiting forever.
++ */
++#define MDIO_TIMEOUT_US		10000
++
++static int davinci_mdio_wait(void)
++{
++	int	cnt;
++
++	if (!(readl(&adap_mdio->CONTROL) & MDIO_CONTROL_ENABLE))
++		davinci_eth_mdio_enable();
++
++	for (cnt = 0; cnt < MDIO_TIMEOUT_US; cnt++) {
++		if (!(readl(&adap_mdio->USERACCESS0) & MDIO_USERACCESS0_GO))
++			return 1;
++		udelay(1);
++	}
++	printf("davinci_emac: MDIO access timed out\n");
++	return 0;
++}
++
+ /* Read a PHY register via MDIO inteface. Returns 1 on success, 0 otherwise */
+ int davinci_eth_phy_read(u_int8_t phy_addr, u_int8_t reg_num, u_int16_t *data)
+ {
+ 	int	tmp;
+ 
+-	while (readl(&adap_mdio->USERACCESS0) & MDIO_USERACCESS0_GO)
+-		;
++	if (!davinci_mdio_wait())
++		return 0;
+ 
+ 	writel(MDIO_USERACCESS0_GO |
+ 	       MDIO_USERACCESS0_WRITE_READ |
+@@ -219,9 +243,10 @@ int davinci_eth_phy_read(u_int8_t phy_addr, u_int8_t reg_num, u_int16_t *data)
+ 	       &adap_mdio->USERACCESS0);
+ 
+ 	/* Wait for command to complete */
+-	while ((tmp = readl(&adap_mdio->USERACCESS0)) & MDIO_USERACCESS0_GO)
+-		;
++	if (!davinci_mdio_wait())
++		return 0;
+ 
++	tmp = readl(&adap_mdio->USERACCESS0);
+ 	if (tmp & MDIO_USERACCESS0_ACK) {
+ 		*data = tmp & 0xffff;
+ 		return 1;
+@@ -233,9 +258,8 @@ int davinci_eth_phy_read(u_int8_t phy_addr, u_int8_t reg_num, u_int16_t *data)
+ /* Write to a PHY register via MDIO inteface. Blocks until operation is complete. */
+ int davinci_eth_phy_write(u_int8_t phy_addr, u_int8_t reg_num, u_int16_t data)
+ {
+-
+-	while (readl(&adap_mdio->USERACCESS0) & MDIO_USERACCESS0_GO)
+-		;
++	if (!davinci_mdio_wait())
++		return 0;
+ 
+ 	writel(MDIO_USERACCESS0_GO |
+ 	       MDIO_USERACCESS0_WRITE_WRITE |
+@@ -245,10 +269,7 @@ int davinci_eth_phy_write(u_int8_t phy_addr, u_int8_t reg_num, u_int16_t data)
+ 	       &adap_mdio->USERACCESS0);
+ 
+ 	/* Wait for command to complete */
+-	while (readl(&adap_mdio->USERACCESS0) & MDIO_USERACCESS0_GO)
+-		;
+-
+-	return 1;
++	return davinci_mdio_wait();
+ }
+ 
+ /* PHY functions for a generic PHY */

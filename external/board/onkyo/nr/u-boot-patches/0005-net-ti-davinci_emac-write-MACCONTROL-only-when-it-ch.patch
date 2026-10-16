@@ -1,0 +1,61 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Fri, 16 Oct 2026 15:25:26 +0300
+Subject: [PATCH] net: ti: davinci_emac: write MACCONTROL only when it changes
+
+The link check runs for every packet sent and rewrote MACCONTROL each
+time in two steps, the first with the RMII speed bit clear. For that
+moment the RMII interface runs at 10 Mbit and corrupts frames being
+received. Compute the value and write it in one go, only when it
+differs.
+---
+ drivers/net/ti/davinci_emac.c | 32 ++++++++++++++------------------
+ 1 file changed, 14 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/net/ti/davinci_emac.c b/drivers/net/ti/davinci_emac.c
+index b436c14d..f1e640a9 100644
+--- a/drivers/net/ti/davinci_emac.c
++++ b/drivers/net/ti/davinci_emac.c
+@@ -311,28 +311,24 @@ static int gen_get_link_speed(int phy_addr)
+ 			(tmp & 0x04)) {
+ #if defined(CONFIG_DRIVER_TI_EMAC_USE_RMII) && \
+ 		defined(CONFIG_SOC_DA8XX)
++		u_int32_t mac = EMAC_MACCONTROL_MIIEN_ENABLE;
++
+ 		davinci_eth_phy_read(phy_addr, MII_LPA, &tmp);
+ 
+ 		/* Speed doesn't matter, there is no setting for it in EMAC. */
+-		if (tmp & (LPA_100FULL | LPA_10FULL)) {
+-			/* set EMAC for Full Duplex  */
+-			writel(EMAC_MACCONTROL_MIIEN_ENABLE |
+-					EMAC_MACCONTROL_FULLDUPLEX_ENABLE,
+-					&adap_emac->MACCONTROL);
+-		} else {
+-			/*set EMAC for Half Duplex  */
+-			writel(EMAC_MACCONTROL_MIIEN_ENABLE,
+-					&adap_emac->MACCONTROL);
+-		}
+-
++		if (tmp & (LPA_100FULL | LPA_10FULL))
++			mac |= EMAC_MACCONTROL_FULLDUPLEX_ENABLE;
+ 		if (tmp & (LPA_100FULL | LPA_100HALF))
+-			writel(readl(&adap_emac->MACCONTROL) |
+-					EMAC_MACCONTROL_RMIISPEED_100,
+-					 &adap_emac->MACCONTROL);
+-		else
+-			writel(readl(&adap_emac->MACCONTROL) &
+-					~EMAC_MACCONTROL_RMIISPEED_100,
+-					 &adap_emac->MACCONTROL);
++			mac |= EMAC_MACCONTROL_RMIISPEED_100;
++
++		/*
++		 * This runs for every packet sent. Rewriting MACCONTROL, with
++		 * the RMII speed bit clear in between, drops the interface to
++		 * 10 Mbit for a moment and corrupts frames being received:
++		 * write it only when it changes, in one go.
++		 */
++		if (readl(&adap_emac->MACCONTROL) != mac)
++			writel(mac, &adap_emac->MACCONTROL);
+ #endif
+ 		return(1);
+ 	}

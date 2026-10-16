@@ -1,0 +1,53 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Onkyo DSP board (DA830 / OMAP-L137), what U-Boot drives.
+ * Pin mux, clocks and power domains are set up by the board code.
+ */
+
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	compatible = "onkyo,tx-nr", "ti,da830";
+	model = "Onkyo DA830/OMAP-L137 DSP board";
+
+	aliases {
+		serial1 = &serial1;
+		ethernet0 = &eth0;
+	};
+
+	chosen {
+		stdout-path = &serial1;
+	};
+
+	memory@c0000000 {
+		device_type = "memory";
+		reg = <0xc0000000 0x04000000>;
+	};
+
+	soc@1c00000 {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0x0 0x01c00000 0x400000>;
+		bootph-all;
+
+		serial1: serial@10c000 {
+			compatible = "ti,da830-uart", "ns16550a";
+			reg = <0x10c000 0x100>;
+			reg-io-width = <4>;
+			reg-shift = <2>;
+			bootph-all;
+		};
+
+		eth0: ethernet@220000 {
+			compatible = "ti,davinci-dm6467-emac";
+			reg = <0x220000 0x4000>;
+		};
+	};
+
+	nand {
+		compatible = "ti,davinci-nand";
+	};
+};

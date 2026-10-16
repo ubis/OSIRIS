@@ -119,8 +119,9 @@ you made).
    ```
 
    The board keeps the MAC address the stock firmware stored (`ethaddr`).
-   On a new, empty flash set it first with `setenv ethaddr <address>`, from
-   the label on the receiver.
+   On a new, empty flash U-Boot makes up a random one; set the one on the
+   receiver's label with `setenv -f ethaddr <address>` and `saveenv`, so
+   that the installer finds it.
 
 4. **Install.** Log in as `root` (password `osiris`) and run
    `osiris-install`. It writes the bundle built into the installer: U-Boot

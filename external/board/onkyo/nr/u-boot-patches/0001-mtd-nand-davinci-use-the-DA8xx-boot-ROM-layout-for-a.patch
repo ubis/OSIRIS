@@ -1,0 +1,154 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Fri, 16 Oct 2026 14:11:29 +0300
+Subject: [PATCH] mtd: nand: davinci: use the DA8xx boot ROM layout for any
+ page size
+
+The DA830/DA850 boot ROM reads its boot images with the 4-bit ECC in
+bytes 6-15 of the 16 spare bytes of each 512-byte step, on 512-byte,
+2 KiB and 4 KiB pages alike. The OOB-first layouts here only cover
+2 KiB and 4 KiB pages, the latter with the ECC in one block at the end,
+and are chosen at build time.
+
+Add SYS_NAND_DA8XX_RBL: take the page size from the chip and use the
+ROM placement for it, so that what U-Boot writes stays readable by the
+ROM and the stages after it. Keep the flash BBT in spare bytes 0-4,
+where the Linux board files of these boards always had it; the generic
+small-page descriptors fall into the ECC bytes.
+
+---
+ drivers/mtd/nand/raw/Kconfig        | 11 ++++
+ drivers/mtd/nand/raw/davinci_nand.c | 90 +++++++++++++++++++++++++++++
+ 2 files changed, 101 insertions(+)
+
+diff --git a/drivers/mtd/nand/raw/Kconfig b/drivers/mtd/nand/raw/Kconfig
+index 2999e6b1..44072fdc 100644
+--- a/drivers/mtd/nand/raw/Kconfig
++++ b/drivers/mtd/nand/raw/Kconfig
+@@ -187,6 +187,17 @@ config SYS_NAND_PAGE_2K
+ config SYS_NAND_PAGE_4K
+ 	bool "Page size is 4K"
+ 
++config SYS_NAND_DA8XX_RBL
++	bool "Any page size, in the DA8xx boot ROM layout"
++	depends on SYS_NAND_4BIT_HW_ECC_OOBFIRST
++	help
++	  Place the 4-bit ECC where the DA830/DA850 boot ROM expects it:
++	  ten bytes at 6-15 of the 16 spare bytes of each 512-byte step,
++	  for 512-byte, 2 KiB and 4 KiB pages alike, so that the ROM and
++	  the boot stages after it can read what U-Boot writes. The page
++	  size is taken from the chip. The flash BBT is kept in spare bytes
++	  0-4, clear of the ECC.
++
+ endchoice
+ 
+ config KEYSTONE_RBL_NAND
+diff --git a/drivers/mtd/nand/raw/davinci_nand.c b/drivers/mtd/nand/raw/davinci_nand.c
+index d4daf06b..873131d1 100644
+--- a/drivers/mtd/nand/raw/davinci_nand.c
++++ b/drivers/mtd/nand/raw/davinci_nand.c
+@@ -307,6 +307,88 @@ static struct nand_ecclayout nand_davinci_4bit_layout_oobfirst = {
+ #endif
+ };
+ 
++#ifdef CONFIG_SYS_NAND_DA8XX_RBL
++/* the ROM layout for 512-byte step s: ECC in bytes 6-15 of its 16 */
++#define RBL_ECCPOS(s) \
++	16 * (s) + 6, 16 * (s) + 7, 16 * (s) + 8, 16 * (s) + 9, \
++	16 * (s) + 10, 16 * (s) + 11, 16 * (s) + 12, 16 * (s) + 13, \
++	16 * (s) + 14, 16 * (s) + 15
++
++/* small pages: byte 5 is the bad block marker, 0-4 hold the BBT pattern */
++static struct nand_ecclayout nand_davinci_rbl_layout_512 = {
++	.eccbytes = 10,
++	.eccpos = { RBL_ECCPOS(0) },
++	.oobfree = { { 0, 5 } },
++};
++
++static struct nand_ecclayout nand_davinci_rbl_layout_2k = {
++	.eccbytes = 40,
++	.eccpos = { RBL_ECCPOS(0), RBL_ECCPOS(1), RBL_ECCPOS(2), RBL_ECCPOS(3) },
++	.oobfree = { { 2, 4 }, { 16, 6 }, { 32, 6 }, { 48, 6 } },
++};
++
++static struct nand_ecclayout nand_davinci_rbl_layout_4k = {
++	.eccbytes = 80,
++	.eccpos = { RBL_ECCPOS(0), RBL_ECCPOS(1), RBL_ECCPOS(2), RBL_ECCPOS(3),
++		    RBL_ECCPOS(4), RBL_ECCPOS(5), RBL_ECCPOS(6), RBL_ECCPOS(7) },
++	.oobfree = { { 2, 4 }, { 16, 6 }, { 32, 6 }, { 48, 6 },
++		     { 64, 6 }, { 80, 6 }, { 96, 6 }, { 112, 6 } },
++};
++
++/*
++ * The generic descriptors put the pattern into the ECC bytes; these are
++ * the ones the Linux board files of these boards always used.
++ */
++static u8 davinci_nand_bbt_pattern[] = { 'B', 'b', 't', '0' };
++static u8 davinci_nand_mirror_pattern[] = { '1', 't', 'b', 'B' };
++
++static struct nand_bbt_descr davinci_nand_bbt_main_descr = {
++	.options	= NAND_BBT_LASTBLOCK | NAND_BBT_CREATE |
++			  NAND_BBT_WRITE | NAND_BBT_2BIT |
++			  NAND_BBT_VERSION | NAND_BBT_PERCHIP,
++	.offs		= 0,
++	.len		= 4,
++	.veroffs	= 4,
++	.maxblocks	= 4,
++	.pattern	= davinci_nand_bbt_pattern,
++};
++
++static struct nand_bbt_descr davinci_nand_bbt_mirror_descr = {
++	.options	= NAND_BBT_LASTBLOCK | NAND_BBT_CREATE |
++			  NAND_BBT_WRITE | NAND_BBT_2BIT |
++			  NAND_BBT_VERSION | NAND_BBT_PERCHIP,
++	.offs		= 0,
++	.len		= 4,
++	.veroffs	= 4,
++	.maxblocks	= 4,
++	.pattern	= davinci_nand_mirror_pattern,
++};
++
++static int davinci_nand_rbl_layout(struct mtd_info *mtd)
++{
++	struct nand_chip *nand = mtd_to_nand(mtd);
++
++	switch (mtd->writesize) {
++	case 512:
++		nand->ecc.layout = &nand_davinci_rbl_layout_512;
++		break;
++	case 2048:
++		nand->ecc.layout = &nand_davinci_rbl_layout_2k;
++		break;
++	case 4096:
++		nand->ecc.layout = &nand_davinci_rbl_layout_4k;
++		break;
++	default:
++		return -EINVAL;
++	}
++	if (mtd->oobsize < mtd->writesize / 32)
++		return -EINVAL;
++	nand->bbt_td = &davinci_nand_bbt_main_descr;
++	nand->bbt_md = &davinci_nand_bbt_mirror_descr;
++	return 0;
++}
++#endif /* CONFIG_SYS_NAND_DA8XX_RBL */
++
+ #if defined CONFIG_KEYSTONE_RBL_NAND
+ static struct nand_ecclayout nand_keystone_rbl_4bit_layout_oobfirst = {
+ #if defined(CONFIG_SYS_NAND_PAGE_2K)
+@@ -800,7 +882,15 @@ static int davinci_nand_probe(struct udevice *dev)
+ 
+ 	davinci_nand_init(nand);
+ 
++#ifdef CONFIG_SYS_NAND_DA8XX_RBL
++	ret = nand_scan_ident(mtd, CONFIG_SYS_NAND_MAX_CHIPS, NULL);
++	if (!ret)
++		ret = davinci_nand_rbl_layout(mtd);
++	if (!ret)
++		ret = nand_scan_tail(mtd);
++#else
+ 	ret = nand_scan(mtd, CONFIG_SYS_NAND_MAX_CHIPS);
++#endif
+ 	if (ret)
+ 		return ret;
+ 

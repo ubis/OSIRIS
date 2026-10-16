@@ -185,7 +185,7 @@ state, counters and levels.
 
 ## Software versions
 
-The kernel is Linux 2.6.33 and U-Boot is 2009.11, the TI DaVinci trees these
-chips were supported with, fixed and extended for these boards. Buildroot
-2014.05 builds them with GCC 4.7 together with the root file system. dspboot
-and dspaudio are built with a current GCC for the C6000 DSP.
+U-Boot is mainline U-Boot 2026.07 with a board of its own for these
+receivers, built by Buildroot 2026.02 with its GCC together with the root
+file system. dspboot and dspaudio are built with a current GCC for the
+C6000 DSP.

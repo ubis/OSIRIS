@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Fri, 16 Oct 2026 15:25:26 +0300
+Subject: [PATCH] net: ti: davinci_emac: let the board set up the PHY
+
+Add a weak davinci_eth_board_phy_init(), called for each PHY found,
+for boards whose PHY needs a register set that the generic PHY code
+does not know about.
+---
+ drivers/net/ti/davinci_emac.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/net/ti/davinci_emac.c b/drivers/net/ti/davinci_emac.c
+index f6c70076..329e4131 100644
+--- a/drivers/net/ti/davinci_emac.c
++++ b/drivers/net/ti/davinci_emac.c
+@@ -72,6 +72,12 @@ static inline unsigned long HW_TO_BD(unsigned long x)
+ 
+ static void davinci_eth_mdio_enable(void);
+ 
++/* board specific PHY set-up, once the PHY has been found */
++__weak void davinci_eth_board_phy_init(u8 phy_addr)
++{
++}
++
++
+ static int gen_init_phy(int phy_addr);
+ static int gen_is_phy_connected(int phy_addr);
+ static int gen_get_link_speed(int phy_addr);
+@@ -823,6 +829,8 @@ static int davinci_emac_probe(struct udevice *dev)
+ 
+ 		phy_id |= tmp & 0x0000ffff;
+ 
++		davinci_eth_board_phy_init(active_phy_addr[i]);
++
+ 		sprintf(phy[i].name, "GENERIC @ 0x%02x",
+ 			active_phy_addr[i]);
+ 		phy[i].init = gen_init_phy;

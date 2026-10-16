@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Fri, 16 Oct 2026 14:11:49 +0300
+Subject: [PATCH] arm: davinci: add the Onkyo DA830 DSP board
+
+The DSP board of the Onkyo receivers, such as the TX-NR515 and
+TX-NR717, carries a DA830 (OMAP-L137). Its first stage on the DSP sets
+up the PLL, the SDRAM and the NAND and starts U-Boot from RAM, so the
+board needs no SPL and no low-level init. Add the board to the DaVinci
+board choice and its device tree to the build; the board files are new
+files of their own.
+
+---
+ arch/arm/dts/Makefile         | 3 ++-
+ arch/arm/mach-davinci/Kconfig | 6 ++++++
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/dts/Makefile b/arch/arm/dts/Makefile
+index 2b65cd91..d93625ef 100644
+--- a/arch/arm/dts/Makefile
++++ b/arch/arm/dts/Makefile
+@@ -34,7 +34,8 @@ dtb-$(CONFIG_TARGET_A7Y17LTE) += exynos78x0-axy17lte.dtb
+ 
+ dtb-$(CONFIG_ARCH_DAVINCI) += \
+ 	da850-lcdk.dtb \
+-	da850-lego-ev3.dtb
++	da850-lego-ev3.dtb \
++	da830-onkyo-nr.dtb
+ 
+ dtb-$(CONFIG_ARCH_KIRKWOOD) += \
+ 	kirkwood-atl-sbx81lifkw.dtb \
+diff --git a/arch/arm/mach-davinci/Kconfig b/arch/arm/mach-davinci/Kconfig
+index 8fa2660a..a85e61ae 100644
+--- a/arch/arm/mach-davinci/Kconfig
++++ b/arch/arm/mach-davinci/Kconfig
+@@ -22,6 +22,11 @@ config TARGET_LEGOEV3
+ 	select MACH_DAVINCI_DA850_EVM
+ 	select SOC_DA850
+ 
++config TARGET_ONKYO_NR
++	bool "Onkyo DSP board (DA830 / OMAP-L137)"
++	select SOC_DA8XX
++	select SYS_NAND_SELF_INIT
++
+ endchoice
+ 
+ config SYS_SOC
+@@ -134,5 +139,6 @@ endif
+ 
+ source "board/davinci/da8xxevm/Kconfig"
+ source "board/lego/ev3/Kconfig"
++source "board/onkyo/nr/Kconfig"
+ 
+ endif

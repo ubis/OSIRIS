@@ -1,7 +1,6 @@
 bootcmd=ubi part ubi; if test "x${upgrade_slot}" != x; then setenv slot ${upgrade_slot}; setenv upgrade_slot; saveenv; echo Trying upgraded slot ${slot}; run bootslot_one; fi; setenv slot ${bootslot}; run bootslot_one; if test "${bootslot}" = b; then setenv slot a; else setenv slot b; fi; echo Slot ${bootslot} failed, trying slot ${slot}; run bootslot_one
 bootdelay=1
 baudrate=115200
-bootfile=uImage
 bootslot=a
 loadaddr=0xc0700000
 mtdids=nand0=davinci_nand.1

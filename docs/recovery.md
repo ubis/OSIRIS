@@ -71,7 +71,8 @@ reads them fine.
 - On a **2 KiB or 4 KiB page** chip only OSIRIS runs; the stock firmware
   expects 512-byte pages. Put dspboot on it and follow the
   [first install](install.md#first-install). On a blank chip there is no MAC
-  address yet; set `ethaddr` in U-Boot from the label on the receiver.
+  address yet; set it in U-Boot from the label on the receiver with
+  `setenv -f ethaddr <address>` and `saveenv`.
 
 ## Replace the D830
 

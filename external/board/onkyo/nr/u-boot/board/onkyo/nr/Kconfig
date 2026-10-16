@@ -1,0 +1,12 @@
+if TARGET_ONKYO_NR
+
+config SYS_BOARD
+	default "nr"
+
+config SYS_VENDOR
+	default "onkyo"
+
+config SYS_CONFIG_NAME
+	default "onkyo_nr"
+
+endif
