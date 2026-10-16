@@ -28,9 +28,12 @@ What works with OSIRIS, tested on the TX-NR717.
 | HDMI audio, PCM stereo and multichannel, up to 96 kHz | ✅ (7.1 tested at 48 kHz) |
 | Dolby Digital | ✅ |
 | DTS, Dolby Digital Plus, TrueHD | ❌ muted |
-| Digital inputs (optical, coax) and HDMI ARC, PCM | ❓ not tested |
+| Optical input, PCM and Dolby Digital | ✅ |
+| HDMI ARC from the TV, PCM | ✅ |
+| Coaxial input | ❓ not tested |
 | Phono input | ❓ not tested |
-| HDMI video switching, on-screen menu | ❓ not tested |
+| On-screen menu over HDMI, HDMI CEC (input and volume from the TV) | ✅ (the MCU's own) |
+| HDMI video switching | ❓ not tested |
 
 ## Speakers and room
 
@@ -57,7 +60,7 @@ What works with OSIRIS, tested on the TX-NR717.
 | Dynamic EQ, Dynamic Volume | ✅ ¹ |
 | Surround from stereo in the Surround, PLII, Neo:6, Neural and THX Cinema/Music/Games modes | ✅ ¹ |
 | Sound field modes (Orchestra, Unplugged, Studio-Mix, TV Logic, ...) | ✅ ¹ |
-| Late Night | ❓ for Dolby Digital: the setting reaches the decoder, not heard yet |
+| Late Night | ✅ for Dolby Digital (how much it does depends on the stream) |
 | Re-EQ, Music Optimizer | ❌ not yet |
 
 ¹ OSIRIS's own processing: it does what these features are for, but it
