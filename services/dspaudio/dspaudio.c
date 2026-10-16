@@ -1320,11 +1320,10 @@ static unsigned int rx_slot(unsigned int odd, const int32_t *rx)
 {
 	uint32_t mag, was;
 	int32_t smp;
-	unsigned int slot, in, i, j, ready;
+	unsigned int in, i, j, ready;
 
-	slot = odd ^ (SH->swap & 1);
 	for (i = 0; i < RX_SERS; i++) {
-		in = 2 * i + (slot ^ (RX_FLIP >> i & 1));
+		in = 2 * i + (odd ^ (RX_FLIP >> i & 1));
 		smp = rx[i];
 		if (i == 0) {
 			front[odd] = smp;

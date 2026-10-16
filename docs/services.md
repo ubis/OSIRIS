@@ -94,7 +94,7 @@ ubus call dsp set '{"surround": "movie"}'           # surround from stereo: "mov
 ubus call dsp set '{"reverb": "hall"}'              # with surround on: "hall", "theater", "club", "studio", "tv" or "off"
 ubus call dsp set '{"crossover": {"fl": 80, "c": 80}, "subwoofer": true, "sub_lowpass": 120}'  # Hz, 0 = large / no low pass
 ubus call dsp set '{"double_bass": true, "absent": ["sbl", "sbr"]}'  # large fronts' bass to the sub too; outputs without a speaker
-ubus call dsp set '{"input": "digital"}'           # "analog", "digital" (HDMI's left and right come swapped), "multichannel" (PCM from HDMI) or "network" (pcmd's ring)
+ubus call dsp set '{"input": "digital"}'           # "analog", "digital", "multichannel" (PCM from HDMI) or "network" (pcmd's ring)
 ubus call dsp set '{"lfe_level": -10}'            # dB on top of the LFE channel's +10, -100 = off
 ubus call dsp set '{"eq": {"fl": [0, 0, 3], "sw": [5]}}'  # dB per band from 25 Hz up (25, 40, 63 ... 16k), at most 6 bands per output
 ubus call dsp set '{"av_sync": 200}'              # ms every output is held back, in SDRAM above Linux (mem=56M)

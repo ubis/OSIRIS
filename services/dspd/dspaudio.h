@@ -14,7 +14,7 @@
 #define DSPAUDIO_LOAD		0x11800000u	/* image start, DSP boot address */
 #define DSPAUDIO_SHARED		0x1181F000u	/* this block; the image stays below */
 #define DSPAUDIO_MAGIC		0x41505344u	/* "DSPA" once running */
-#define DSPAUDIO_ABI		20
+#define DSPAUDIO_ABI		21
 
 #define DSPAUDIO_IN		8	/* 4 serializers x 2 slots, as the outputs */
 #define DSPAUDIO_OUT		8	/* PCM1690: 4 serializers x 2 slots */
@@ -195,7 +195,6 @@ struct dspaudio_shared {
 	 */
 	struct dspaudio_bass bass[2];
 	uint32_t bass_gen;
-	uint32_t swap;			/* 1: left comes in the right slot (HDMI) */
 	uint32_t inputs;		/* one bit per input the source has */
 	uint32_t av_delay;		/* frames every output is held back for A/V sync */
 	uint32_t decim;			/* 2: process every other frame (above 48 kHz), else 1 */
