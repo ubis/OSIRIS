@@ -70,13 +70,12 @@ static void burst_find(uint32_t first, uint32_t second)
 
 static uint32_t used, front[2];
 uint32_t decim = 1;			/* 2: every other frame is processed */
-static int32_t rx_acc[DSPAUDIO_IN];
 static unsigned int rx_odd;
 
-/* a new rate: no half-sum frame carries over; says whether it changed */
+/* a new rate: no filtered frame carries over; says whether it changed */
 unsigned int rx_follow_rate(void)
 {
-	unsigned int was = decim, in;
+	unsigned int was = decim;
 
 	decim = SH->decim == 2 ? 2 : 1;
 	if (decim == was) {
@@ -84,10 +83,7 @@ unsigned int rx_follow_rate(void)
 	}
 
 	rx_odd = 0;
-	for (in = 0; in < DSPAUDIO_IN; in++) {
-		rx_acc[in] = 0;
-	}
-
+	hb_reset();
 	return 1;
 }
 
@@ -121,7 +117,10 @@ unsigned int rx_slot(unsigned int odd, const int32_t *rx)
 
 		/* the receiver's tone controls are for the front pair */
 		if (decim == 2) {
-			rx_acc[in] += smp >> 1;
+			if (i == 0 && !odd) {
+				hb_down_step();
+			}
+			hb_down_put(in, smp);
 		} else if (in >= 2 || !SH->ring_on) {
 			/* the ring's frame goes in as a whole, below */
 			input[in] = !(used & (1u << in)) ? 0 : in < 2 ? tone(in, smp) : smp;
@@ -133,14 +132,18 @@ unsigned int rx_slot(unsigned int odd, const int32_t *rx)
 		}
 	}
 
-	/* a frame in: every frame, or every other one, the mean of two */
+	/* a frame in: every frame, or every other one through the half-band filter */
 	ready = odd && (decim == 1 || (rx_odd ^= 1) == 0);
-	for (in = 0; ready && decim == 2 && in < DSPAUDIO_IN; in++) {
-		if (in >= 2 || !SH->ring_on) {
-			input[in] = !(used & (1u << in)) ? 0 :
-				    in < 2 ? tone(in, rx_acc[in]) : rx_acc[in];
+	if (ready && decim == 2) {
+		int32_t down[DSPAUDIO_IN] = { 0 };
+
+		hb_down(down, used & ~3u);
+		for (in = 0; in < DSPAUDIO_IN; in++) {
+			if (in >= 2 || !SH->ring_on) {
+				input[in] = !(used & (1u << in)) ? 0 :
+					    in < 2 ? tone(in, down[in]) : down[in];
+			}
 		}
-		rx_acc[in] = 0;
 	}
 
 	/* the NET input: the front pair from Linux */

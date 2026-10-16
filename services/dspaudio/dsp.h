@@ -64,6 +64,14 @@ extern uint32_t decim;
 unsigned int rx_follow_rate(void);
 unsigned int rx_slot(unsigned int odd, const int32_t *rx);
 
+/* halfband.c */
+void hb_reset(void);
+void hb_down_step(void);
+void hb_down_put(unsigned int in, int32_t smp);
+void hb_down(int32_t *y, unsigned int more);
+extern int32_t hb_out[2][DSPAUDIO_OUT];
+void hb_up(const int32_t *frame);
+
 /* bass.c */
 int32_t tone(unsigned int in, int32_t smp);
 void bass_follow(void);
