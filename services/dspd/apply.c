@@ -433,8 +433,14 @@ static void discrete(double (*m)[DSPAUDIO_IN])
 
 void apply(void)
 {
-	/* the test noise plays alone */
-	int32_t g = noise_out < 0 ? gain_of(volume) : 0;
+	/*
+	 * The test noise plays alone. A boost of the tone controls comes off
+	 * every channel, the larger of the two, so that it has room below full
+	 * scale and the limiter stays out of it; the analog volume after the
+	 * DSP makes up the level.
+	 */
+	int boost = bass > treble ? bass : treble;
+	int32_t g = noise_out < 0 ? gain_of(volume - 100 * (boost > 0 ? boost : 0)) : 0;
 	double m[DSPAUDIO_OUT][DSPAUDIO_IN] = { { 0 } }, v;
 	unsigned int out, in, s;
 
