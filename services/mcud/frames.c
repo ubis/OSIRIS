@@ -334,6 +334,7 @@ static const char *const update_stages[] = {
 
 static int update_usb;			/* the MCU looks on USB, not the network */
 static int net_mute = -1;		/* MCU_NET_MUTE, -1 not known */
+static int headphone = -1;		/* MCU_HEADPHONE, -1 not known */
 
 void on_frame(const struct link_frame *f, const char *name)
 {
@@ -572,6 +573,16 @@ void on_frame(const struct link_frame *f, const char *name)
 		blobmsg_add_u8(&b, "mute", net_mute);
 		event("mcu.net_mute");
 		return;
+	case MCU_HEADPHONE:
+		/* the MCU switches the speakers off itself */
+		if (f->len < 2 || d[1] > 1) {
+			break;
+		}
+
+		headphone = d[1];
+		blobmsg_add_u8(&b, "plugged", headphone);
+		event("mcu.headphone");
+		return;
 	case MCU_ISCP:
 		if (f->len >= 8 && !memcmp(d + 1, "!1LMD", 5) && isxdigit(d[6]) && isxdigit(d[7])) {
 			char hex[3] = { d[6], d[7], 0 };
@@ -625,6 +636,10 @@ void add_status(void)
 
 	if (net_mute >= 0) {
 		blobmsg_add_u8(&b, "net_mute", net_mute);
+	}
+
+	if (headphone >= 0) {
+		blobmsg_add_u8(&b, "headphone", headphone);
 	}
 
 	if (volume_known) {

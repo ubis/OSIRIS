@@ -43,7 +43,8 @@ What works with OSIRIS, tested on the TX-NR717.
 | Bass management (crossovers, double bass), subwoofer pre-out | ✅ |
 | Surround back speakers from 5.1 sources | ✅ ¹ |
 | Zones, powered speakers (analog sources such as FM) | ✅ |
-| Zone line outputs, headphones, the other 7.2 pre-outs | ❓ not tested |
+| Headphones: all channels folded into them, no room EQ | ✅ |
+| Zone line outputs, the other 7.2 pre-outs | ❓ not tested |
 | Audyssey 2EQ | ❌ not yet |
 
 ## Sound modes and processing
@@ -57,7 +58,7 @@ What works with OSIRIS, tested on the TX-NR717.
 | Surround from stereo in the Surround, PLII, Neo:6, Neural and THX Cinema/Music/Games modes | ✅ ¹ |
 | Sound field modes (Orchestra, Unplugged, Studio-Mix, TV Logic, ...) | ✅ ¹ |
 | Late Night | ❓ for Dolby Digital: the setting reaches the decoder, not heard yet |
-| Re-EQ, Music Optimizer, headphone downmix | ❌ not yet |
+| Re-EQ, Music Optimizer | ❌ not yet |
 
 ¹ OSIRIS's own processing: it does what these features are for, but it
 is not Dolby's, DTS's, THX's, Audyssey's or Onkyo's algorithm, so it
