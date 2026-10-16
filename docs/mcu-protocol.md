@@ -130,7 +130,7 @@ the MCU's input sequence, and the NET input stays muted.
 | D4 | headphone | [1] 1 = headphones plugged in |
 | D5 | ch_layout | [1] what the surround back amplifiers drive: 0 nothing, 1 SB, 2 FH, 3 FW, 4 SB+FH, 5 SB+FW, 6 FH+FW, 7 FH+SB(pre), 8 FW+SB(pre), 9 FW+FH(pre), 10 SB(pre), 11 FH(pre), 12 FW(pre), 13 SB+FH+FW(pre) |
 | D6 | special_mode | |
-| DB | net_mute | |
+| DB | net_mute | [0] 1 mute the NET input, 0 unmute: the MCU leaves it to the DSP side (AudioApp mutes the DSP, "NETMUT ON") |
 | DC | netaudio_info | |
 | DD | spdifupdate_next | |
 | DE | audysseyautosp | |
@@ -302,5 +302,6 @@ Events (`ubus listen mcu`):
 | `mcu.testtone` | D0 | `channel` |
 | `mcu.distance` | C0, C3 | `distances` (cm by speaker, 3 cm a step) |
 | `mcu.iscp` | F3 | `command` |
+| `mcu.net_mute` | DB | `mute`; also in `mcu status` as `net_mute` |
 | `mcu.update` | E8 | `stage` (`check`, `download`, `install`, `upload`), `source` (`network`, `usb`) |
 | `mcu.frame` | everything else | `cmd`, `name`, `data` (hex) |

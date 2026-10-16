@@ -333,6 +333,7 @@ static const char *const update_stages[] = {
 };
 
 static int update_usb;			/* the MCU looks on USB, not the network */
+static int net_mute = -1;		/* MCU_NET_MUTE, -1 not known */
 
 void on_frame(const struct link_frame *f, const char *name)
 {
@@ -561,6 +562,16 @@ void on_frame(const struct link_frame *f, const char *name)
 		blobmsg_add_string(&b, "source", update_usb ? "usb" : "network");
 		event("mcu.update");
 		return;
+	case MCU_NET_MUTE:
+		/* the MCU leaves muting the NET input to us */
+		if (f->len < 1 || d[0] > 1) {
+			break;
+		}
+
+		net_mute = d[0];
+		blobmsg_add_u8(&b, "mute", net_mute);
+		event("mcu.net_mute");
+		return;
 	case MCU_ISCP:
 		if (f->len >= 8 && !memcmp(d + 1, "!1LMD", 5) && isxdigit(d[6]) && isxdigit(d[7])) {
 			char hex[3] = { d[6], d[7], 0 };
@@ -610,6 +621,10 @@ void add_status(void)
 
 	if (late_night >= 0) {
 		blobmsg_add_string(&b, "late_night", late_night_name[late_night]);
+	}
+
+	if (net_mute >= 0) {
+		blobmsg_add_u8(&b, "net_mute", net_mute);
 	}
 
 	if (volume_known) {
