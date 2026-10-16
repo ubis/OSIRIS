@@ -298,7 +298,7 @@ Events (`ubus listen mcu`):
 | `mcu.av_sync` | CA | `ms`, as the MCU sends it; also in `mcu status` |
 | `mcu.late_night` | CF | `dolby`: off, low or high (Dolby Digital's; TrueHD's is left out); also in `mcu status` |
 | `mcu.equalizer` | C4 | `equalizer`: `eq_on` and a list of band levels in dB for each speaker; also in `mcu status` |
-| `mcu.listening_mode` | D2, F3 !1LMD | `mode` (the D2 byte), `name` (from the ISCP code); also in `mcu status` as `listening_mode` and `listening_mode_name` |
+| `mcu.listening_mode` | D2, F3 !1LMD | `mode` (the D2 byte), `name` (from the D2 byte for stereo, all_ch_stereo, full_mono and testtone, else from the ISCP code); also in `mcu status` as `listening_mode` and `listening_mode_name` |
 | `mcu.testtone` | D0 | `channel` |
 | `mcu.distance` | C0, C3 | `distances` (cm by speaker); C3 [0] is only logged |
 | `mcu.iscp` | F3 | `command` |

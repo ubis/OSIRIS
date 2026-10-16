@@ -53,10 +53,33 @@ static const char *lmd_name(int code)
 	return NULL;
 }
 
-/* the mode as the MCU's own byte and, once it reported it, by name */
+/* the modes the policy needs before or without an ISCP code, by the D2 byte */
+static const struct {
+	uint8_t mode;
+	const char *name;
+} mode_names[] = {
+	{ 0x04, "stereo" }, { 0x0a, "all_ch_stereo" }, { 0x0b, "full_mono" },
+	{ 0xf1, "testtone" },			/* level calibration: no ISCP code */
+};
+
+/* the byte's name where it has one, else the ISCP code's */
+static const char *mode_name(void)
+{
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(mode_names); i++) {
+		if (mode_names[i].mode == listening_mode) {
+			return mode_names[i].name;
+		}
+	}
+
+	return lmd_name(lmd);
+}
+
+/* the mode as the MCU's own byte and, as far as known, by name */
 static void add_listening_mode(void)
 {
-	const char *n = lmd_name(lmd);
+	const char *n = mode_name();
 
 	if (listening_mode >= 0) {
 		blobmsg_add_u32(&b, "mode", listening_mode);
@@ -618,8 +641,8 @@ void add_status(void)
 		blobmsg_add_u32(&b, "listening_mode", listening_mode);
 	}
 
-	if (lmd_name(lmd)) {
-		blobmsg_add_string(&b, "listening_mode_name", lmd_name(lmd));
+	if (mode_name()) {
+		blobmsg_add_string(&b, "listening_mode_name", mode_name());
 	}
 
 	if (distance_known) {
