@@ -27,7 +27,7 @@ int subwoofer, double_bass;
 int lfe_level;			/* dB, the receiver's LFE level; -100 off */
 int av_sync;			/* ms */
 double sample_hz = SAMPLE_HZ;	/* the source's */
-double proc_hz = SAMPLE_HZ;	/* the DSP's: above 48 kHz it processes every other frame */
+double proc_hz = SAMPLE_HZ;	/* the DSP's: above 48 kHz it processes every other frame, at most */
 int loudness = -1;		/* dB of bass boost, -1 off */
 int dynamic_volume;		/* 0 off, 1 light, 2 medium, 3 heavy */
 int back_fill;			/* multichannel without surround back: fill it */
@@ -461,7 +461,8 @@ void apply(void)
 	}
 
 	sh->inputs = multi ? 0xff : 0x03;
-	sh->decim = sample_hz > SAMPLE_HZ ? 2 : 1;
+	/* above 96 kHz even every other frame is too much for the DSP */
+	sh->decim = sample_hz > 2 * SAMPLE_HZ ? 0 : sample_hz > SAMPLE_HZ ? 2 : 1;
 	sh->ring_on = input == INPUT_NETWORK;
 	sh->late_night = late_night;
 	for (out = 0; out < DSPAUDIO_OUT; out++) {

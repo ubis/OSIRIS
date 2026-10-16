@@ -84,7 +84,7 @@ extern int subwoofer, double_bass;
 extern int lfe_level;			/* dB, the receiver's LFE level; -100 off */
 extern int av_sync;			/* ms */
 extern double sample_hz;		/* the source's */
-extern double proc_hz;			/* the DSP's: above 48 kHz it processes every other frame */
+extern double proc_hz;			/* the DSP's: above 48 kHz it processes every other frame, at most */
 extern int loudness;			/* dB of bass boost, -1 off */
 extern int dynamic_volume;		/* 0 off, 1 light, 2 medium, 3 heavy */
 extern int back_fill;			/* multichannel without surround back: fill it */

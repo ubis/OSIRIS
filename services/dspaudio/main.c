@@ -108,10 +108,12 @@ void dspaudio_main(void)
 			/* XTDMSLOT is the slot going out now; XBUF is for the next one */
 			slot = (xs & STAT_ODD_SLOT) ? 0 : 1;
 			for (i = 0; i < TX_SERS; i++) {
-				REG(XBUF(i)) = (uint32_t)frame[2 * i + slot];
+				REG(XBUF(i)) = decim ? (uint32_t)frame[2 * i + slot] : 0;
 			}
 
-			if (decim != 2) {
+			if (decim == 0) {
+				/* too fast to process: silence */
+			} else if (decim != 2) {
 				if (slot == 0) {
 					frame_step1();
 					frame_step2();

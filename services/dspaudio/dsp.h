@@ -92,6 +92,7 @@ void dvol_apply(float *y);
 
 /* delay.c */
 void av_clear(void);
+void delay_clear(void);
 void delay_frame(const int32_t *in, int32_t *out);
 
 /* frame.c */
