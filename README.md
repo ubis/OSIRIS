@@ -111,7 +111,7 @@ doesn't start - keep your NAND backup.
 Everything written for OSIRIS (dspboot, the services, the tools and the
 build) is BSD-2-Clause, see `LICENSE`. U-Boot, Linux and Buildroot,
 including the changes and board files in them, stay GPL-2.0. liba52
-(`services/dspaudio/libs/liba52`) is GPL-2.0-or-later, and so is the
-dspaudio image built with it.
+(`services/dspaudio/libs/liba52`) is GPL-2.0-or-later, as are `ac3.c` and
+`lib.c` around it and the dspaudio image built with it.
 
 Not affiliated with Onkyo, Integra, Texas Instruments, Dolby or DTS.
