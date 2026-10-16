@@ -19,6 +19,9 @@ ROOT_HASH='$1$OSIRISv1$PF45S2vBsv1PTcWryHdqr.'
 sed "s,^root:[^:]*:,root:$ROOT_HASH:," $TARGET/etc/shadow > $TARGET/usr/share/osiris/shadow
 chmod 600 $TARGET/usr/share/osiris/shadow
 
+# S50airplay starts AirPlay after the network
+rm -f $TARGET/etc/init.d/S99shairport-sync
+
 # which build this is (osiris-upgrade shows it)
 sh $(dirname $0)/../../../../tools/version.sh > $TARGET/etc/osiris-version
 # the clock starts from here until NTP syncs (S02clock)

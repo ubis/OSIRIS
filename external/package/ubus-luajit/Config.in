@@ -1,0 +1,13 @@
+config BR2_PACKAGE_UBUS_LUAJIT
+	bool "ubus-luajit"
+	depends on BR2_PACKAGE_LUAJIT
+	depends on BR2_TOOLCHAIN_HAS_SYNC_4 # ubus
+	depends on !BR2_STATIC_LIBS # ubus
+	select BR2_PACKAGE_UBUS
+	help
+	  The ubus and uloop Lua modules of ubus and libubox, built for
+	  LuaJIT; Buildroot builds them only for Lua 5.1. osirisd uses
+	  them.
+
+comment "ubus-luajit needs LuaJIT"
+	depends on !BR2_PACKAGE_LUAJIT

@@ -4,4 +4,5 @@ source "$BR2_EXTERNAL_OSIRIS_PATH/package/dspd/Config.in"
 source "$BR2_EXTERNAL_OSIRIS_PATH/package/dspaudio/Config.in"
 source "$BR2_EXTERNAL_OSIRIS_PATH/package/osirisd/Config.in"
 source "$BR2_EXTERNAL_OSIRIS_PATH/package/pcmd/Config.in"
+source "$BR2_EXTERNAL_OSIRIS_PATH/package/ubus-luajit/Config.in"
 endmenu

@@ -17,12 +17,18 @@ start() {
 	echo -n "Starting OSIRIS: "
 	# hardware watchdog: reset the board if userspace stops for 30 s
 	[ -c /dev/watchdog ] && /sbin/watchdog -t 5 -T 30 /dev/watchdog && echo -n "watchdog "
+	mkdir -p /var/run/ubus
 	daemon /usr/sbin/ubusd
 	for i in 1 2 3 4 5 6 7 8 9 10; do
-		[ -S /var/run/ubus.sock ] && break
+		[ -S /var/run/ubus/ubus.sock ] && break
 		sleep 0.1 2> /dev/null || usleep 100000
 	done
 	echo -n "ubus "
+	# the MCU's SPI device has no driver of its own: give it spidev
+	if [ ! -e /sys/bus/spi/devices/spi0.0/driver ]; then
+		echo spidev > /sys/bus/spi/devices/spi0.0/driver_override
+		echo spi0.0 > /sys/bus/spi/drivers/spidev/bind
+	fi
 	daemon /usr/sbin/mcud && echo -n "mcud "
 	daemon /usr/sbin/dspd && echo -n "dspd "
 	daemon /usr/sbin/osirisd && echo -n "osirisd "
