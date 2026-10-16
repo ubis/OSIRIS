@@ -9,4 +9,5 @@ source "$BR2_EXTERNAL_OSIRIS_PATH/package/procd/Config.in"
 source "$BR2_EXTERNAL_OSIRIS_PATH/package/ubox/Config.in"
 source "$BR2_EXTERNAL_OSIRIS_PATH/package/ubus-luajit/Config.in"
 source "$BR2_EXTERNAL_OSIRIS_PATH/package/udebug/Config.in"
+source "$BR2_EXTERNAL_OSIRIS_PATH/package/umdns/Config.in"
 endmenu

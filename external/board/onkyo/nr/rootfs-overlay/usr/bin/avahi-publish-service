@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+# avahi-publish-service <name> <type> <port> <txt>...: what shairport-sync's
+# external mDNS backend runs. The service is announced through umdns until
+# this is killed.
+#
+. /usr/share/libubox/jshn.sh
+
+name=$1 type=$2 port=$3
+shift 3
+f=/run/umdns/${type#_}.json
+
+json_init
+json_add_object service
+json_add_string instance "$name"
+json_add_string service "$type.local"
+json_add_int port "$port"
+json_add_array txt
+for t; do
+	json_add_string "" "$t"
+done
+json_close_array
+json_close_object
+
+mkdir -p /run/umdns
+json_dump > $f
+ubus call umdns reload 2> /dev/null
+
+trap 'kill $! 2> /dev/null; rm -f $f; ubus call umdns reload 2> /dev/null; exit 0' TERM INT
+while :; do
+	sleep 3600 &
+	wait
+done

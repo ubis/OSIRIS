@@ -1,0 +1,12 @@
+config BR2_PACKAGE_UMDNS
+	bool "umdns"
+	depends on BR2_TOOLCHAIN_HAS_SYNC_4 # ubus
+	depends on !BR2_STATIC_LIBS # ubus
+	select BR2_PACKAGE_UBUS
+	select BR2_PACKAGE_UDEBUG
+	select BR2_PACKAGE_JSON_C
+	help
+	  OpenWrt's mDNS responder: announces services described in
+	  /etc/umdns/*.json and browses for others over ubus.
+
+	  https://git.openwrt.org/project/mdnsd.git

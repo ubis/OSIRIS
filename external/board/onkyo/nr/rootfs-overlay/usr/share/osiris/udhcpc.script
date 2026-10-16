@@ -1,11 +1,14 @@
 #!/bin/sh
-#
-# udhcpc hook: the stock Buildroot script configures the address, routes and
-# resolv.conf; once there is a lease, make sure ntpd runs.
-#
 
 /usr/share/udhcpc/default.script "$@"
+umdns() { ubus call umdns set_config '{ "interfaces": [ "eth0" ] }' > /dev/null 2>&1; }
 case "$1" in
-bound|renew)	/etc/init.d/ntpd start > /dev/null 2>&1 ;;
+bound|renew)
+	/etc/init.d/ntpd start > /dev/null 2>&1
+	umdns
+	;;
+deconfig)
+	umdns
+	;;
 esac
 exit 0

@@ -153,8 +153,11 @@ cat music.raw > /var/run/pcm
 ```
 
 AirPlay: shairport-sync (`/etc/init.d/airplay`, `/etc/shairport-sync.conf`)
-announces the receiver under its host name and writes into the same pipe.
-The AirPlay volume slider sets the receiver's volume (osirisd).
+writes into the same pipe, under the receiver's host name. umdns
+(`/etc/init.d/umdns`) announces it: shairport-sync's external mDNS backend
+runs `avahi-publish-service`, which here writes the service into
+`/run/umdns` (`/etc/umdns`) for umdns. The AirPlay volume slider sets the
+receiver's volume (osirisd).
 
 ## osirisd
 
