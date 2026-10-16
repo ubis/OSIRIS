@@ -7,8 +7,11 @@
 #   make dspboot [BOARD=<name>]   first-stage loader -> dist/dspboot/
 #   make dspboot-test             its host-side unit tests
 #   make dspaudio [AC3=0] [DMA=0] DSP firmware -> build/dspaudio/
-#   make buildroot                toolchain, U-Boot, kernel, root fs, bundle -> dist/images/
-#   make clean                    remove build output (not the Docker images)
+#   make toolchain                the cross toolchain (musl) -> build/toolchain/
+#   make buildroot                U-Boot, kernel, root fs, bundle -> dist/images/
+#   make clean                    remove build output, keep the toolchain, ccache and dl/
+#   make dirclean                 also remove the toolchain and ccache
+#   make distclean                also remove the downloads in dl/
 
 TOP    := $(CURDIR)
 DIST   := $(TOP)/dist
@@ -53,19 +56,44 @@ dspaudio:
 		$(if $(DMA),DMA=$(DMA)) $(if $(AC3),AC3=$(AC3)))
 
 # Buildroot (the buildroot/ submodule) with the OSIRIS tree in external/:
-# its own target toolchain, U-Boot, the kernel and the root file system in
-# one build; the sources it downloads are kept in dl/. Buildroot copies
+# U-Boot, the kernel and the root file system in one build, with the
+# toolchain below; the sources it downloads are kept in dl/. Buildroot copies
 # local sources only once, so this repository's own packages, those the
 # defconfig enables, are rebuilt every time.
 
 BUILDROOT_IMAGE := $(call image_tag,buildroot,toolchain/buildroot/Dockerfile)
+
+# The toolchain: a Buildroot SDK built once from its own defconfig, again
+# only when that, Buildroot or the build image changes, and used by the main
+# build as an external toolchain, so that "make clean" keeps it. A new
+# toolchain starts the main build over.
+
+TOOLCHAIN_DEFCONFIG := external/configs/onkyo_nr_toolchain_defconfig
+TOOLCHAIN_OUT       := $(BUILD)/toolchain-build
+TOOLCHAIN           := $(BUILD)/toolchain
+TOOLCHAIN_MAKE      := make O=$(TOOLCHAIN_OUT) BR2_EXTERNAL=$(TOP)/external
+
+toolchain:
+	@test -f buildroot/Makefile || git submodule update --init buildroot
+	@$(call ensure_image,$(BUILDROOT_IMAGE),toolchain/buildroot)
+	@s="$(BUILDROOT_IMAGE) $$(git -C buildroot rev-parse HEAD) $$(sha256sum < $(TOOLCHAIN_DEFCONFIG))"; \
+	if [ "$$(cat $(TOOLCHAIN)/.stamp 2> /dev/null)" != "$$s" ]; then \
+		rm -rf $(TOOLCHAIN) $(TOOLCHAIN_OUT) $(BUILDROOT_OUT) && mkdir -p $(TOOLCHAIN_OUT) && \
+		$(call docker_run,$(BUILDROOT_IMAGE),$(TOP)/buildroot,sh -c \
+			"$(TOOLCHAIN_MAKE) onkyo_nr_toolchain_defconfig > /dev/null && \
+			 $(TOOLCHAIN_MAKE) sdk BR2_SDK_PREFIX=toolchain && \
+			 tar -xzf $(TOOLCHAIN_OUT)/images/toolchain.tar.gz -C $(BUILD) && \
+			 $(TOOLCHAIN)/relocate-sdk.sh") && \
+		echo "$$s" > $(TOOLCHAIN)/.stamp && \
+		rm -rf $(TOOLCHAIN_OUT); \
+	fi
+	@echo "toolchain -> $(TOOLCHAIN)"
+
 BUILDROOT_OUT   := $(BUILD)/buildroot
 BUILDROOT_MAKE  := make O=$(BUILDROOT_OUT) BR2_EXTERNAL=$(TOP)/external
 BUILDROOT_LOCAL := mcud dspd dspaudio osirisd pcmd
 
-buildroot: dspaudio
-	@test -f buildroot/Makefile || git submodule update --init buildroot
-	@$(call ensure_image,$(BUILDROOT_IMAGE),toolchain/buildroot)
+buildroot: dspaudio toolchain
 	mkdir -p $(BUILDROOT_OUT)
 	$(call docker_run,$(BUILDROOT_IMAGE),$(TOP)/buildroot,sh -c \
 		"$(BUILDROOT_MAKE) onkyo_nr_defconfig > /dev/null && \
@@ -77,6 +105,12 @@ buildroot: dspaudio
 	@echo "buildroot -> $(DIST)/images"
 
 clean:
-	rm -rf $(DIST) $(BUILD)
+	rm -rf $(DIST) $(BUILDROOT_OUT) $(BUILD)/dspaudio $(BUILD)/dspboot
 
-.PHONY: help dspboot dspboot-test dspaudio buildroot clean
+dirclean: clean
+	rm -rf $(BUILD)
+
+distclean: dirclean
+	rm -rf $(TOP)/dl
+
+.PHONY: help dspboot dspboot-test dspaudio toolchain buildroot clean dirclean distclean
