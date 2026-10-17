@@ -82,14 +82,19 @@ rm -f $IMAGES/osiris-*.tar
 sh $TOP/tools/mkbundle.sh -k $IMAGES/uImage -f $IMAGES/kernel.itb -r $IMAGES/rootfs.squashfs -u $IMAGES/u-boot.dbi \
 	-v $VERSION -o $IMAGES/osiris-$VERSION.tar
 
-# the installer's initrd: this root file system with the bundle
-# (/usr/share/osiris/osiris.tar for osiris-install), to boot over TFTP with
-# the same kernel for the first install: bootm <uImage> <initrd-installer>.
+# the installer's initrd: this root file system with the bundle unpacked
+# (/usr/share/osiris/bundle for osiris-install), to boot over TFTP with the
+# same kernel for the first install: bootm <uImage> <initrd-installer>.
+# It all stays in RAM, so the bundle is unpacked already, for osiris-install
+# to write from in place, and leaves out the uImage, since the U-Boot it
+# installs boots the FIT.
 WORK=$BASE_DIR/build/installer
 rm -rf $WORK
-mkdir -p $WORK/root/usr/share/osiris
-cp $IMAGES/osiris-$VERSION.tar $WORK/root/usr/share/osiris/osiris.tar
-(cd $WORK/root && echo usr/share/osiris/osiris.tar |
+mkdir -p $WORK/root/usr/share/osiris/bundle
+sh $TOP/tools/mkbundle.sh -f $IMAGES/kernel.itb -r $IMAGES/rootfs.squashfs -u $IMAGES/u-boot.dbi \
+	-v $VERSION -o $WORK/bundle.tar
+tar -xf $WORK/bundle.tar -C $WORK/root/usr/share/osiris/bundle
+(cd $WORK/root && find usr/share/osiris |
 	cpio -o -H newc -R 0:0 --quiet) > $WORK/bundle.cpio
 cat $IMAGES/rootfs.cpio $WORK/bundle.cpio | gzip -1 > $WORK/installer.cpio.gz
 $HOST_DIR/bin/mkimage -A arm -O linux -T ramdisk -C gzip -n "OSIRIS $VERSION installer" \

@@ -118,14 +118,16 @@ you made).
    setenv ipaddr 192.168.1.50
    setenv serverip 192.168.1.10
    tftp 0xc0700000 uImage
-   tftp 0xc2000000 initrd-installer
+   tftp 0xc1000000 initrd-installer
    setenv initrd_high 0xffffffff
-   setenv bootargs console=ttyS1,115200n8 mem=56M ip=192.168.1.50:192.168.1.10:192.168.1.1:255.255.255.0::eth0:off
-   bootm 0xc0700000 0xc2000000
+   setenv bootargs console=ttyS1,115200n8 mem=56M rootfstype=ramfs ip=192.168.1.50:192.168.1.10:192.168.1.1:255.255.255.0::eth0:off
+   bootm 0xc0700000 0xc1000000
    ```
 
    `initrd_high` keeps the initrd where it was loaded, inside the 56 MiB
    Linux uses.
+   `rootfstype=ramfs` lets the installer use more than half the RAM, which
+   is all a tmpfs root may take.
 
    The board keeps the MAC address the stock firmware stored (`ethaddr`).
    On a new, empty flash U-Boot makes up a random one; set the one on the

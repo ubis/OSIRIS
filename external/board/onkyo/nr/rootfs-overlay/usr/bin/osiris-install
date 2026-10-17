@@ -3,11 +3,11 @@
 # osiris-install: put OSIRIS on the NAND of an Onkyo receiver, from the
 # installer system running in RAM (installer kernel booted over TFTP).
 #
-#   osiris-install [-s server] [bundle.tar]
+#   osiris-install [-s server] [bundle.tar | directory]
 #
-# Installs the update bundle built into the installer (/usr/share/osiris/
-# osiris.tar), or the given one: a local file, or else fetched from the
-# TFTP server (default: the boot server from ip=). It writes:
+# Installs the update bundle built into the installer, unpacked in
+# /usr/share/osiris/bundle, or the given one: a local file, or else fetched
+# from the TFTP server (default: the boot server from ip=). It writes:
 #   uboot_a, uboot_b  U-Boot as a dspboot image (ROM-compatible hardware ECC)
 #   ubi               kernel_a/b and rootfs_a/b sized to the images, an
 #                     empty data volume; the rest stays free for larger
@@ -20,7 +20,7 @@
 set -e
 
 ENV_TXT=/usr/share/osiris/u-boot-env.txt
-BUILTIN=/usr/share/osiris/osiris.tar
+BUILTIN=/usr/share/osiris/bundle
 WORK=/tmp/osiris-install
 DATA_SIZE=$(sed -n 's/^DATA_SIZE=//p' /usr/lib/preinit/20_data)
 
@@ -40,6 +40,7 @@ if [ "$1" = "-s" ]; then
 fi
 
 bundle=${1:-$BUILTIN}
+case $bundle in /*) ;; *) [ -e "$bundle" ] && bundle=$PWD/$bundle ;; esac
 grep -q "osiris.slot=" /proc/cmdline && die "running from NAND; boot the installer kernel"
 
 ENV=$(mtd env); ENV2=$(mtd env2); UBOOT_A=$(mtd uboot_a); UBOOT_B=$(mtd uboot_b); UBI=$(mtd ubi)
@@ -52,14 +53,21 @@ echo "MAC $mac"
 rm -rf $WORK
 mkdir -p $WORK
 cd $WORK
-if [ ! -f "$bundle" ]; then
-	[ -n "$server" ] || die "$bundle not found and no TFTP server, use -s <ip>"
-	echo "fetching $bundle from $server"
-	tftp -g -r "$bundle" -l bundle.tar $server || die "tftp $bundle failed"
-	bundle=$WORK/bundle.tar
+# all of this is in RAM: a bundle is written from where it is unpacked,
+# and another one takes the place of the installer's own
+if [ -d "$bundle" ]; then
+	cd "$bundle"
+else
+	rm -rf $BUILTIN
+	if [ -f "$bundle" ]; then
+		tar -xf "$bundle" || die "cannot unpack $bundle"
+	else
+		[ -n "$server" ] || die "$bundle not found and no TFTP server, use -s <ip>"
+		echo "fetching $bundle from $server"
+		tftp -g -r "$bundle" -l - $server | tar -xf - || die "cannot fetch $bundle"
+	fi
 fi
 
-tar -xf "$bundle" || die "cannot unpack $bundle"
 [ -f kernel.itb ] && kernel=kernel.itb || kernel=uImage
 [ -f md5sums ] && [ -f $kernel ] && [ -f rootfs.squashfs ] && [ -f u-boot.dbi ] ||
 	die "not an OSIRIS bundle with U-Boot"
