@@ -9,6 +9,8 @@
 #
 # A bundle (tools/mkbundle.sh) is a tar file with VERSION, md5sums, uImage,
 # rootfs.squashfs and optionally u-boot.dbi. The running slot is not touched.
+# The kernel and root file system are checked and written straight from the
+# bundle, which may itself be in /tmp: there is no room for a second copy.
 #
 set -e
 
@@ -18,6 +20,9 @@ vol() { ubinfo -d 0 -N $1 2> /dev/null | sed -n 's/^Volume ID: *\([0-9]*\).*/\1/
 md5() { md5sum | cut -d' ' -f1; }
 # same DEV FILE: the first size-of-FILE bytes of DEV match FILE
 same() { [ "$(head -c $(wc -c < $2) $1 | md5)" = "$(md5 < $2)" ]; }
+part() { tar -xOf "$bundle" $1; }
+size() { tar -tvf "$bundle" $1 | awk '{ print $3 }'; }
+sum() { sed -n "s/^\([0-9a-f]*\)  $1\$/\1/p" md5sums; }
 
 reboot=1
 [ "$1" = "-n" ] && { reboot=0; shift; }
@@ -32,9 +37,15 @@ work=/tmp/osiris-upgrade
 rm -rf $work
 mkdir -p $work
 cd $work
-tar -xf "$bundle" || die "cannot unpack $bundle"
-[ -f md5sums ] && [ -f uImage ] && [ -f rootfs.squashfs ] || die "not an OSIRIS bundle"
-md5sum -c md5sums > /dev/null 2>&1 || die "checksum mismatch, the bundle is damaged"
+tar -tf "$bundle" > list || die "cannot read $bundle"
+for f in VERSION md5sums uImage rootfs.squashfs; do
+	grep -qx $f list || die "not an OSIRIS bundle"
+done
+grep -qx u-boot.dbi list && dbi=u-boot.dbi || dbi=
+tar -xf "$bundle" VERSION md5sums $dbi || die "cannot unpack $bundle"
+for f in uImage rootfs.squashfs $dbi; do
+	[ "$(part $f | md5)" = "$(sum $f)" ] || die "checksum mismatch, the bundle is damaged"
+done
 echo "running $(cat /etc/osiris-version 2>/dev/null) in slot $cur, installing $(cat VERSION) into slot $new"
 
 for p in kernel:uImage rootfs:rootfs.squashfs; do
@@ -42,9 +53,10 @@ for p in kernel:uImage rootfs:rootfs.squashfs; do
 	file=${p#*:}
 	v=$(vol $name)
 	[ -n "$v" ] || die "no UBI volume $name"
+	n=$(size $file)
 	echo "writing $file to $name"
-	ubiupdatevol /dev/ubi0_$v $file
-	same /dev/ubi0_$v $file || die "$name read-back differs"
+	part $file | ubiupdatevol -s $n /dev/ubi0_$v -
+	[ "$(head -c $n /dev/ubi0_$v | md5)" = "$(sum $file)" ] || die "$name read-back differs"
 done
 if [ -f u-boot.dbi ]; then
 	m=$(mtd uboot_$new)
