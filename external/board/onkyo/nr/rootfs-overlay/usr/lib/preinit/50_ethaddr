@@ -1,13 +1,10 @@
-# the MAC address from the U-Boot environment
+# the MAC address from the U-Boot environment, set while eth0 runs if the
+# kernel brought it up (ip=, installer): taken down, its link would not
+# come back
 mac=$(osiris-ethaddr)
 if [ -z "$mac" ]; then
 	echo "eth0: no ethaddr in the U-Boot environment"
 elif [ "$mac" != "$(cat /sys/class/net/eth0/address 2> /dev/null)" ]; then
-	# an address set by the kernel (ip=, installer) survives the restart, its default route does not
-	gw=$(ip route | sed -n 's/^default via \([0-9.]*\).*/\1/p')
-	ip link set eth0 down
 	ip link set eth0 address "$mac"
-	ip link set eth0 up
-	[ -n "$gw" ] && ip route add default via "$gw" 2> /dev/null
 	echo "eth0: MAC $mac from the U-Boot environment"
 fi
