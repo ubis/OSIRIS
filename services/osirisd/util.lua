@@ -46,6 +46,11 @@ function M.err(fmt, ...)
 	say(LOG_ERR, fmt, ...)
 end
 
+-- s as one shell word
+function M.quote(s)
+	return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
 function M.read_file(path)
 	local f = io.open(path, "r")
 	if not f then

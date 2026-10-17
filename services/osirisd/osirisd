@@ -31,6 +31,7 @@ local stream = require "stream"
 local audio = require "audio"
 local airplay = require "airplay"
 local update = require "update"
+local netupdate = require "netupdate"
 local util = require "util"
 
 local call, err, load_state = util.call, util.err, util.load_state
@@ -55,6 +56,7 @@ util.set_conn(conn)
 events.listen(conn)
 system.set_identity()
 update.scan_media()
+netupdate.start()
 
 -- mcud may have finished its handshake before we started
 local st = call("mcu", "status")

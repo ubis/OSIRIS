@@ -1,0 +1,9 @@
+#!/bin/sh
+case "$1" in
+step|stratum)
+	[ -e /run/ntp-synced ] && exit 0
+	touch /run/ntp-synced
+	ubus send osiris.time '{ "synced": true }'
+	;;
+esac
+exit 0

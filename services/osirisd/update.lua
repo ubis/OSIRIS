@@ -1,12 +1,13 @@
 -- SPDX-License-Identifier: BSD-2-Clause
--- Updates from a USB stick: the sticks there are, the bundle on them, and
--- the steps of the receiver's update dialogue
+-- Updates: the USB sticks there are, the bundle on them or the one netupdate
+-- found, and the steps of the receiver's update dialogue
 
 local uloop = require "uloop"
 local events = require "events"
 local util = require "util"
 
-local call, log, err, read_file = util.call, util.log, util.err, util.read_file
+local call, log, err = util.call, util.log, util.err
+local read_file, quote = util.read_file, util.quote
 
 local M = {}
 
@@ -20,14 +21,11 @@ local INSTALL_STEPS = {
 
 local media = {}		-- mounted USB storage, by directory
 local bundle			-- { path, version } of an update on it
+local net			-- netupdate's bundle, offered again when a stick's goes
 local job			-- the running update step: its steps, percent, process
 local progress_timer		-- made once: cancelling one frees its callback twice
 
-local function quote(s)
-	return "'" .. s:gsub("'", "'\\''") .. "'"
-end
-
-local function running_version()
+function M.running_version()
 	return (read_file("/etc/osiris-version") or ""):gsub("%s+$", "")
 end
 
@@ -39,18 +37,18 @@ function M.set_media(dir, present)
 	media[dir] = present or nil
 	if not present and bundle and bundle.path:sub(1, #dir + 1) == dir .. "/" then
 		log("update %s gone", bundle.path)
-		bundle = nil
+		bundle = net
 	end
 
 	M.set_usb()
 end
 
 function M.set_bundle(path, version)
-	if not path or not version or version == running_version() then
+	if not path or not version or version == M.running_version() then
 		return
 	end
 
-	log("update %s (%s) on USB", path, version)
+	log("update %s (%s)", path, version)
 	bundle = { path = path, version = version }
 	-- the MCU waits ~2.5 min for an answer before it asks again
 	local st = call("mcu", "status")
@@ -58,6 +56,16 @@ function M.set_bundle(path, version)
 	if st and st.update_check then
 		call("mcu", "update", { available = true })
 	end
+end
+
+function M.set_net_bundle(path, version)
+	net = { path = path, version = version }
+	M.set_bundle(path, version)
+end
+
+-- a bundle being read or installed
+function M.busy()
+	return job ~= nil
 end
 
 -- sticks mounted before we listened
@@ -167,7 +175,7 @@ local function install()
 		call("mcu", "update", { progress = 100 })
 		call("mcu", "update", { result = ok and "ok" or "error" })
 		if ok then
-			bundle = nil
+			bundle, net = nil, nil
 		end
 	end)
 end

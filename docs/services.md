@@ -73,9 +73,11 @@ mcud -v                           # (after /etc/init.d/osiris stop mcud) log eve
 dspd sends `dsp.ready` when it has started the DSP; osirisd then sets it up
 again. `dsp.bitstream` comes when the bitstream the DSP detects changes:
 `bitstream` (`none`, `ac3`, `dts`, ...) and, while the DSP decodes it,
-`decoded` ("3/2.1"), `acmod` and `lfe`. The hotplug script (`/etc/hotplug.d/block/10-media`) sends
-`osiris.media` (`dir`, `present`) when USB storage is mounted or goes, and
-`osiris.update` (`version`, `path`) for an update bundle on it.
+`decoded` ("3/2.1"), `acmod` and `lfe`. The hotplug script
+(`/etc/hotplug.d/block/10-media`) sends `osiris.media` (`dir`, `present`)
+when USB storage is mounted or goes, and `osiris.update` (`version`,
+`path`) for an update bundle on it. ntpd's hook sends `osiris.time` once the
+clock is set.
 
 [mcu-protocol.md](mcu-protocol.md) has everything known about the
 protocol: framing, timing, the start-up sequence and every command.
@@ -219,12 +221,19 @@ What it does today:
 - offers an update bundle of another version on a USB stick when the
   receiver asks for updates: the receiver shows its update notice, and its
   update screens run `osiris-upgrade` with progress
+- looks for a newer OSIRIS release on GitHub (`netupdate.lua`): first a
+  few minutes to an hour after ntpd has set the clock, then about once a
+  day. A newer release's bundle is fetched into `/tmp`, checked against the
+  release keys in `/usr/share/osiris/keys` (usign) and offered like one on
+  a stick; it is never installed without the user.
+  `/data/osiris/update-url` points the check at another release list, for
+  tests, and `ubus send osiris.check` checks at once
 - syncs before the receiver switches the board off; a factory reset from the
   receiver's menu wipes `/data` and reboots
 
 The script is `/usr/sbin/osirisd`; its modules (`audio.lua`, `stream.lua`,
-`airplay.lua`, `update.lua`, `system.lua`, `events.lua`, `util.lua`,
-`source.lua`) are in `/usr/share/osirisd`, and a copy of the script uses
+`airplay.lua`, `update.lua`, `netupdate.lua`, `system.lua`, `events.lua`,
+`util.lua`, `source.lua`) are in `/usr/share/osirisd`, and a copy of the script uses
 the modules beside it first. To try a change, copy them all to a directory
 in `/tmp`, stop the running one and start the copy from the terminal:
 

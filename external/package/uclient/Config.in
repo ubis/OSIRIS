@@ -1,0 +1,12 @@
+config BR2_PACKAGE_UCLIENT
+	bool "uclient"
+	depends on BR2_TOOLCHAIN_HAS_SYNC_4 # json-c
+	depends on !BR2_STATIC_LIBS # libubox, dlopen
+	select BR2_PACKAGE_LIBUBOX
+	select BR2_PACKAGE_USTREAM_SSL # https
+	select BR2_PACKAGE_CA_CERTIFICATES # https
+	help
+	  OpenWrt's HTTP client library and uclient-fetch, a small wget
+	  that does HTTPS through ustream-ssl.
+
+	  https://git.openwrt.org/project/uclient.git
