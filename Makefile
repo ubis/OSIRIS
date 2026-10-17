@@ -85,30 +85,37 @@ buildroot-src:
 		mkdir -p $(BUILD) && echo "$$s" > $(BUILD)/.buildroot-patches; \
 	fi
 
-# The toolchain: a Buildroot SDK built once from its own defconfig, again
-# only when that, Buildroot or the build image changes, and used by the main
-# build as an external toolchain, so that "make clean" keeps it. A new
-# toolchain starts the main build over.
+# The toolchain: a Buildroot SDK built from its own defconfig and used by
+# the main build as an external toolchain. Each one built stays in
+# build/toolchains/, named after Buildroot's commit and the defconfig, and
+# build/toolchain links to the one in use: "make clean" keeps them, a new
+# build image needs none, and going back to an earlier Buildroot or
+# defconfig builds nothing. Another toolchain starts the main build over.
 
 TOOLCHAIN_DEFCONFIG := external/configs/onkyo_nr_toolchain_defconfig
 TOOLCHAIN_OUT       := $(BUILD)/toolchain-build
+TOOLCHAINS          := $(BUILD)/toolchains
 TOOLCHAIN           := $(BUILD)/toolchain
 TOOLCHAIN_MAKE      := make O=$(TOOLCHAIN_OUT) BR2_EXTERNAL=$(TOP)/external
+TOOLCHAIN_KEY        = $(shell { git -C buildroot rev-parse HEAD; cat $(TOOLCHAIN_DEFCONFIG); } | \
+			 sha256sum | cut -c1-12)
 
 toolchain: buildroot-src
 	@$(call ensure_image,$(BUILDROOT_IMAGE),toolchain/buildroot)
-	@s="$(BUILDROOT_IMAGE) $$(git -C buildroot rev-parse HEAD) $$(sha256sum < $(TOOLCHAIN_DEFCONFIG))"; \
-	if [ "$$(cat $(TOOLCHAIN)/.stamp 2> /dev/null)" != "$$s" ]; then \
-		rm -rf $(TOOLCHAIN) $(TOOLCHAIN_OUT) $(BUILDROOT_OUT) && mkdir -p $(TOOLCHAIN_OUT) && \
+	@k=$(TOOLCHAIN_KEY); t=$(TOOLCHAINS)/$$k; \
+	if [ ! -f $$t/.done ]; then \
+		rm -rf $$t $(TOOLCHAINS)/new $(TOOLCHAIN_OUT) && mkdir -p $(TOOLCHAIN_OUT) $(TOOLCHAINS)/new && \
 		$(call docker_run,$(BUILDROOT_IMAGE),$(TOP)/buildroot,sh -c \
 			"$(TOOLCHAIN_MAKE) onkyo_nr_toolchain_defconfig > /dev/null && \
 			 $(TOOLCHAIN_MAKE) sdk BR2_SDK_PREFIX=toolchain && \
-			 tar -xzf $(TOOLCHAIN_OUT)/images/toolchain.tar.gz -C $(BUILD) && \
-			 $(TOOLCHAIN)/relocate-sdk.sh") && \
-		echo "$$s" > $(TOOLCHAIN)/.stamp && \
-		rm -rf $(TOOLCHAIN_OUT); \
+			 tar -xzf $(TOOLCHAIN_OUT)/images/toolchain.tar.gz -C $(TOOLCHAINS)/new && \
+			 mv $(TOOLCHAINS)/new/toolchain $$t && $$t/relocate-sdk.sh") && \
+		touch $$t/.done && rm -rf $(TOOLCHAINS)/new $(TOOLCHAIN_OUT) || exit 1; \
+	fi; \
+	if [ "$$(readlink $(TOOLCHAIN))" != "toolchains/$$k" ]; then \
+		rm -rf $(TOOLCHAIN) $(BUILDROOT_OUT) && ln -s toolchains/$$k $(TOOLCHAIN); \
 	fi
-	@echo "toolchain -> $(TOOLCHAIN)"
+	@echo "toolchain -> $(TOOLCHAIN) ($$(readlink $(TOOLCHAIN)))"
 
 BUILDROOT_OUT   := $(BUILD)/buildroot
 BUILDROOT_MAKE  := make O=$(BUILDROOT_OUT) BR2_EXTERNAL=$(TOP)/external
