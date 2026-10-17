@@ -1,0 +1,68 @@
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Subject: [PATCH] package/shairport-sync: make ALSA optional
+
+shairport-sync always selected alsa-lib and built the ALSA backend,
+although it can play to a pipe or stdout instead. Make ALSA an
+option, on by default.
+---
+diff --git a/package/shairport-sync/Config.in b/package/shairport-sync/Config.in
+index dad88e9982..13a8c27e11 100644
+--- a/package/shairport-sync/Config.in
++++ b/package/shairport-sync/Config.in
+@@ -2,8 +2,6 @@ config BR2_PACKAGE_SHAIRPORT_SYNC
+ 	bool "shairport-sync"
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS_NPTL
+ 	depends on BR2_INSTALL_LIBSTDCPP
+-	select BR2_PACKAGE_ALSA_LIB
+-	select BR2_PACKAGE_ALSA_LIB_MIXER
+ 	select BR2_PACKAGE_LIBCONFIG
+ 	select BR2_PACKAGE_OPENSSL if !BR2_PACKAGE_MBEDTLS
+ 	select BR2_PACKAGE_POPT
+@@ -20,6 +18,15 @@ config BR2_PACKAGE_SHAIRPORT_SYNC
+ 
+ if BR2_PACKAGE_SHAIRPORT_SYNC
+ 
++config BR2_PACKAGE_SHAIRPORT_SYNC_ALSA
++	bool "ALSA support"
++	default y
++	select BR2_PACKAGE_ALSA_LIB
++	select BR2_PACKAGE_ALSA_LIB_MIXER
++	help
++	  Enable the ALSA output backend. Without it, audio goes only
++	  to a pipe or to stdout.
++
+ config BR2_PACKAGE_SHAIRPORT_SYNC_CONVOLUTION
+ 	bool "convolution support"
+ 	select BR2_PACKAGE_LIBSNDFILE
+diff --git a/package/shairport-sync/shairport-sync.mk b/package/shairport-sync/shairport-sync.mk
+index a792e461ef..7d82f54c6f 100644
+--- a/package/shairport-sync/shairport-sync.mk
++++ b/package/shairport-sync/shairport-sync.mk
+@@ -9,18 +9,25 @@ SHAIRPORT_SYNC_SITE = $(call github,mikebrady,shairport-sync,$(SHAIRPORT_SYNC_VE
+ 
+ SHAIRPORT_SYNC_LICENSE = MIT, BSD-3-Clause
+ SHAIRPORT_SYNC_LICENSE_FILES = LICENSES
+-SHAIRPORT_SYNC_DEPENDENCIES = alsa-lib libconfig popt host-pkgconf
++SHAIRPORT_SYNC_DEPENDENCIES = libconfig popt host-pkgconf
+ 
+ # git clone, no configure
+ SHAIRPORT_SYNC_AUTORECONF = YES
+ 
+-SHAIRPORT_SYNC_CONF_OPTS = --with-alsa \
++SHAIRPORT_SYNC_CONF_OPTS = \
+ 	--with-metadata \
+ 	--with-pipe \
+ 	--with-stdout
+ 
+ SHAIRPORT_SYNC_CONF_ENV += LIBS="$(SHAIRPORT_SYNC_CONF_LIBS)"
+ 
++ifeq ($(BR2_PACKAGE_SHAIRPORT_SYNC_ALSA),y)
++SHAIRPORT_SYNC_DEPENDENCIES += alsa-lib
++SHAIRPORT_SYNC_CONF_OPTS += --with-alsa
++else
++SHAIRPORT_SYNC_CONF_OPTS += --without-alsa
++endif
++
+ # Avahi or tinysvcmdns (shaiport-sync bundles its own version of tinysvcmdns).
+ ifeq ($(BR2_PACKAGE_AVAHI_LIBAVAHI_CLIENT),y)
+ SHAIRPORT_SYNC_DEPENDENCIES += avahi
