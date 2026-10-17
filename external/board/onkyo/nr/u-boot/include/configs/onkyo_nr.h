@@ -25,17 +25,16 @@
 #define CFG_SYS_NAND_MASK_ALE		0x8
 
 #define LINUX_BOOT_PARAM_ADDR		(PHYS_SDRAM_1 + 0x100)
+/* the device tree passed to Linux stays out of the DSP's top 8 MiB */
+#define CFG_SYS_BOOTMAPSZ		(56 << 20)
 
 /* the PHY negotiates by itself after reset; restarting it costs seconds */
 #define CONFIG_DRIVER_TI_EMAC_RMII_NO_NEGOTIATE
 
 /*
- * The OSIRIS boot: the slot "bootslot" (a/b) names, or once the one in
- * "upgrade_slot" after osiris-upgrade, cleared before it boots; then the
- * other slot. UBI volumes are created in the order kernel_a, kernel_b,
- * rootfs_a, rootfs_b, data, so behind mtd0-5 gluebi makes rootfs_a mtd8
- * and rootfs_b mtd9. This is what older systems saved in the environment,
- * so both U-Boots boot both kinds of slot the same way.
+ * Boot the slot in "upgrade_slot" once, else the one in "bootslot", then
+ * the other. gluebi makes rootfs_a mtd8 and rootfs_b mtd9; a FIT boots
+ * the configuration named in "board", if there is one.
  */
 #define CFG_EXTRA_ENV_SETTINGS \
 	"bootslot=a\0" \
@@ -46,7 +45,9 @@
 		"else setenv rootdev /dev/mtdblock8; fi\0" \
 	"bootslot_one=run bootslot_root; ubi read ${loadaddr} kernel_${slot} && " \
 		"setenv bootargs ${bootargs_base} root=${rootdev} osiris.slot=${slot} " \
-		"${bootargs_extra} && bootm ${loadaddr}\0"
+		"${bootargs_extra} && run bootslot_bootm\0" \
+	"bootslot_bootm=if test -n \"${board}\"; then bootm ${loadaddr}#${board}; fi; " \
+		"bootm ${loadaddr}\0"
 
 #include <asm/arch/hardware.h>
 

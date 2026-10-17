@@ -7,8 +7,10 @@
 #
 #   osiris-upgrade [-n] bundle.tar      -n: do not reboot afterwards
 #
-# A bundle (tools/mkbundle.sh) is a tar file with VERSION, md5sums, uImage,
-# rootfs.squashfs and optionally u-boot.dbi. The running slot is not touched.
+# A bundle (tools/mkbundle.sh) is a tar file with VERSION, md5sums, the
+# kernel as kernel.itb (FIT) or uImage or both, rootfs.squashfs and
+# optionally u-boot.dbi; the FIT is preferred. The running slot is not
+# touched.
 # The kernel and root file system are checked and written straight from the
 # bundle, which may itself be in /tmp: there is no room for a second copy.
 #
@@ -38,17 +40,20 @@ rm -rf $work
 mkdir -p $work
 cd $work
 tar -tf "$bundle" > list || die "cannot read $bundle"
-for f in VERSION md5sums uImage rootfs.squashfs; do
+# the FIT only with a U-Boot for the slot: without one the slot keeps its
+# U-Boot, which may be an older one that boots only a uImage
+grep -qx kernel.itb list && grep -qx u-boot.dbi list && kernel=kernel.itb || kernel=uImage
+for f in VERSION md5sums $kernel rootfs.squashfs; do
 	grep -qx $f list || die "not an OSIRIS bundle"
 done
 grep -qx u-boot.dbi list && dbi=u-boot.dbi || dbi=
 tar -xf "$bundle" VERSION md5sums $dbi || die "cannot unpack $bundle"
-for f in uImage rootfs.squashfs $dbi; do
+for f in $kernel rootfs.squashfs $dbi; do
 	[ "$(part $f | md5)" = "$(sum $f)" ] || die "checksum mismatch, the bundle is damaged"
 done
 echo "running $(cat /etc/osiris-version 2>/dev/null) in slot $cur, installing $(cat VERSION) into slot $new"
 
-for p in kernel:uImage rootfs:rootfs.squashfs; do
+for p in kernel:$kernel rootfs:rootfs.squashfs; do
 	name=${p%%:*}_$new
 	file=${p#*:}
 	v=$(vol $name)

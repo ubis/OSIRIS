@@ -35,7 +35,8 @@ builds only redo what changed.
 |---|---|
 | `dist/dspboot/<board>/dspboot.ais` | dspboot, for the serial cable and the flash |
 | `dist/images/osiris-<version>.tar` | the bundle: kernel, root file system and U-Boot, for installing and updating |
-| `dist/images/uImage` | Linux, with the board's device tree appended |
+| `dist/images/kernel.itb` | Linux and the device trees as a FIT, what the slots hold |
+| `dist/images/uImage` | Linux, with the board's device tree appended, for the installer and for updates from older systems |
 | `dist/images/initrd-installer` | the installer: the system with the bundle in it, runs from RAM with `uImage` |
 
 Without building, take `osiris-<version>.tar`, `uImage` and `initrd-installer` from
@@ -160,6 +161,10 @@ Over the network, copy the bundle to the receiver and install it:
 scp dist/images/osiris-<version>.tar root@TX-NR717:/tmp/
 ssh root@TX-NR717 osiris-upgrade /tmp/osiris-<version>.tar
 ```
+
+From an older OSIRIS, update from a USB stick instead: its
+`osiris-upgrade` unpacks the whole bundle into `/tmp`, which does not hold
+this bundle twice.
 
 The update goes into the copy that is not running, and the receiver restarts
 into it once. If it comes up, it becomes the default; if it does not, the

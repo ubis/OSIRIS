@@ -35,6 +35,19 @@ function M.set_model(m)
 
 	util.save_state({ make = m.make, model = m.model, code = m.code })
 
+	-- U-Boot boots the kernel FIT's configuration named after the model
+	-- if it has one; written once, the environment is in the flash. Only
+	-- when booted from a slot: started from RAM, the flash may not be ours.
+	local board = m.model:lower():gsub("[^a-z0-9]", "-")
+	if (read_file("/proc/cmdline") or ""):find("osiris%.slot=") then
+		local p = io.popen("fw_printenv -n board 2> /dev/null")
+		local cur = (p:read("*a") or ""):gsub("%s+$", "")
+		p:close()
+		if cur ~= board then
+			os.execute("fw_setenv board " .. board)
+		end
+	end
+
 	if read_file(OWN_HOSTNAME) then
 		log("%s %s, keeping the hostname from %s", m.make or "", m.model, OWN_HOSTNAME)
 		return

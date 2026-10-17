@@ -21,6 +21,7 @@ CONFIG_HAS_BOARD_SIZE_LIMIT=y
 CONFIG_BOARD_SIZE_LIMIT=524224
 CONFIG_STACK_SIZE=0x100000
 CONFIG_DYNAMIC_SYS_CLK_FREQ=y
+CONFIG_FIT=y
 CONFIG_BOOTDELAY=1
 CONFIG_USE_BOOTCOMMAND=y
 CONFIG_BOOTCOMMAND="ubi part ubi; if test \"x${upgrade_slot}\" != x; then setenv slot ${upgrade_slot}; setenv upgrade_slot; saveenv; echo Trying upgraded slot ${slot}; run bootslot_one; fi; setenv slot ${bootslot}; run bootslot_one; if test \"${bootslot}\" = b; then setenv slot a; else setenv slot b; fi; echo Slot ${bootslot} failed, trying slot ${slot}; run bootslot_one"

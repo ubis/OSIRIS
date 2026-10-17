@@ -15,8 +15,8 @@ local UPGRADE_LOG = "/tmp/osiris-upgrade.log"
 local PROGRESS_MS = 4000	-- the MCU gives up after ~20 s without progress
 -- osiris-upgrade's output -> percent
 local INSTALL_STEPS = {
-	{ "running ", 15 }, { "writing uImage", 20 }, { "writing rootfs", 30 },
-	{ "writing u-boot", 90 }, { "will be tried", 100 },
+	{ "running ", 15 }, { " to kernel_", 20 }, { " to rootfs_", 30 },
+	{ " to uboot_", 90 }, { "will be tried", 100 },
 }
 
 local media = {}		-- mounted USB storage, by directory

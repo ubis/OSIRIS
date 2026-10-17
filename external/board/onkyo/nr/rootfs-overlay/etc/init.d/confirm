@@ -3,15 +3,29 @@
 # Make the slot that just booted the default. After osiris-upgrade, U-Boot
 # boots the new slot once (upgrade_slot); getting this far confirms it.
 # The same applies when U-Boot had to fall back because the default slot
-# failed: keep booting the one that works.
+# failed: keep booting the one that works. U-Boot's boot commands become
+# this system's, where the environment has an older one's.
 #
 
 START=99
 
+ENV_TXT=/usr/share/osiris/u-boot-env.txt
+BOOT_VARS="bootcmd bootargs_base bootslot_root bootslot_one bootslot_bootm"
+
 start() {
 	local cur=$(sed -n 's/.*osiris\.slot=\([ab]\).*/\1/p' /proc/cmdline)
+	local env=$(fw_printenv 2> /dev/null) s=/tmp/confirm.env v
 
-	[ -n "$cur" ] || return 0
-	[ "$cur" = "$(fw_printenv -n bootslot 2> /dev/null)" ] && return 0
-	fw_setenv bootslot $cur && echo "slot $cur confirmed as the boot slot"
+	[ -n "$cur" ] && [ -n "$env" ] || return 0
+	: > $s
+	echo "$env" | grep -qx "bootslot=$cur" || echo "bootslot=$cur" >> $s
+	for v in $BOOT_VARS; do
+		w=$(grep "^$v=" $ENV_TXT)
+		echo "$env" | grep -qxF "$w" || echo "$w" >> $s
+	done
+	if [ -s $s ] && fw_setenv -s $s; then
+		echo "U-Boot environment: set $(cut -d= -f1 $s | tr '\n' ' ')"
+		grep -q "^bootslot=" $s && echo "slot $cur confirmed as the boot slot"
+	fi
+	rm -f $s
 }

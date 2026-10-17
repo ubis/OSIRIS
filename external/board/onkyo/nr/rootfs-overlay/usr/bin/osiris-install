@@ -59,7 +59,8 @@ if [ ! -f "$bundle" ]; then
 fi
 
 tar -xf "$bundle" || die "cannot unpack $bundle"
-[ -f md5sums ] && [ -f uImage ] && [ -f rootfs.squashfs ] && [ -f u-boot.dbi ] ||
+[ -f kernel.itb ] && kernel=kernel.itb || kernel=uImage
+[ -f md5sums ] && [ -f $kernel ] && [ -f rootfs.squashfs ] && [ -f u-boot.dbi ] ||
 	die "not an OSIRIS bundle with U-Boot"
 md5sum -c md5sums > /dev/null 2>&1 || die "checksum mismatch, the bundle is damaged"
 [ "$(head -c 4 u-boot.dbi)" = "DBI1" ] || die "u-boot.dbi is not a dspboot image"
@@ -86,7 +87,7 @@ ubimkvol /dev/ubi0 -n 1 -N kernel_b -s $KERNEL_VOL_SIZE > /dev/null
 ubimkvol /dev/ubi0 -n 2 -N rootfs_a -s $ROOTFS_VOL_SIZE > /dev/null
 ubimkvol /dev/ubi0 -n 3 -N rootfs_b -s $ROOTFS_VOL_SIZE > /dev/null
 ubimkvol /dev/ubi0 -n 4 -N data -m > /dev/null
-for v in 0 1; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v uImage; done
+for v in 0 1; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v $kernel; done
 for v in 2 3; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v rootfs.squashfs; done
 ubinfo -d 0 -a | sed -n 's/^Name: *//p' | tr '\n' ' '; echo
 

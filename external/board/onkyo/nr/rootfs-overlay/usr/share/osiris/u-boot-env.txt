@@ -3,9 +3,8 @@ bootdelay=1
 baudrate=115200
 bootslot=a
 loadaddr=0xc0700000
-mtdids=nand0=davinci_nand.1
-mtdparts=mtdparts=davinci_nand.1:16k(env),1008k(dspboot),256k(env2),512k(uboot_a),512k(uboot_b),-(ubi)
 bootargs_base=console=ttyS1,115200n8 mem=56M panic=5 ubi.mtd=5 rootfstype=squashfs ro
 bootargs_extra=
 bootslot_root=if test "${slot}" = b; then setenv rootdev /dev/mtdblock9; else setenv rootdev /dev/mtdblock8; fi
-bootslot_one=run bootslot_root; ubi read ${loadaddr} kernel_${slot} && setenv bootargs ${bootargs_base} root=${rootdev} osiris.slot=${slot} ${bootargs_extra} && bootm ${loadaddr}
+bootslot_one=run bootslot_root; ubi read ${loadaddr} kernel_${slot} && setenv bootargs ${bootargs_base} root=${rootdev} osiris.slot=${slot} ${bootargs_extra} && run bootslot_bootm
+bootslot_bootm=if test -n "${board}"; then bootm ${loadaddr}#${board}; fi; bootm ${loadaddr}
