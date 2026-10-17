@@ -95,6 +95,12 @@ own, which boot the FIT.
 | 0x1C0000 | 512 KiB | U-Boot, slot b |
 | 0x240000 | rest | UBI: `kernel_a`, `kernel_b`, `rootfs_a`, `rootfs_b`, `data` |
 
+In the UBI, each slot's volumes are as large as their images and `data`
+is 8 MiB; the rest stays free. `osiris-upgrade` resizes the slot it writes
+to the new images, so they can grow until two slots and `data` fill the
+UBI. Older systems made `data` fill it; it is made 8 MiB again, its files
+kept, the first time this one boots from its confirmed slot.
+
 The boot ROM only reads pages written with its own ECC layout (4-bit
 Reed-Solomon, parity in spare bytes 6-15), which differs from what the
 stock Linux and most flash tools write. That is why dspboot and U-Boot are

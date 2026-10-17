@@ -9,7 +9,9 @@
 # osiris.tar), or the given one: a local file, or else fetched from the
 # TFTP server (default: the boot server from ip=). It writes:
 #   uboot_a, uboot_b  U-Boot as a dspboot image (ROM-compatible hardware ECC)
-#   ubi               kernel_a/b, rootfs_a/b and an empty data volume
+#   ubi               kernel_a/b and rootfs_a/b sized to the images, an
+#                     empty data volume; the rest stays free for larger
+#                     images (osiris-upgrade)
 #   env, env2         a fresh U-Boot environment: bootslot=a, the board's
 #                     MAC address (ethaddr) kept; the installed system
 #                     configures eth0 by DHCP
@@ -20,8 +22,7 @@ set -e
 ENV_TXT=/usr/share/osiris/u-boot-env.txt
 BUILTIN=/usr/share/osiris/osiris.tar
 WORK=/tmp/osiris-install
-KERNEL_VOL_SIZE=4MiB
-ROOTFS_VOL_SIZE=12MiB
+DATA_SIZE=$(sed -n 's/^DATA_SIZE=//p' /usr/lib/preinit/20_data)
 
 die() { echo "osiris-install: $*" >&2; exit 1; }
 mtd() { sed -n "s/^mtd\([0-9]*\): .* \"$1\"\$/\1/p" /proc/mtd; }
@@ -82,11 +83,13 @@ ubidetach -m $UBI > /dev/null 2>&1 || true
 ubiformat -q -y /dev/mtd$UBI
 ubiattach -m $UBI -d 0 > /dev/null
 node /dev/ubi0
-ubimkvol /dev/ubi0 -n 0 -N kernel_a -s $KERNEL_VOL_SIZE > /dev/null
-ubimkvol /dev/ubi0 -n 1 -N kernel_b -s $KERNEL_VOL_SIZE > /dev/null
-ubimkvol /dev/ubi0 -n 2 -N rootfs_a -s $ROOTFS_VOL_SIZE > /dev/null
-ubimkvol /dev/ubi0 -n 3 -N rootfs_b -s $ROOTFS_VOL_SIZE > /dev/null
-ubimkvol /dev/ubi0 -n 4 -N data -m > /dev/null
+k=$(wc -c < $kernel)
+r=$(wc -c < rootfs.squashfs)
+ubimkvol /dev/ubi0 -n 0 -N kernel_a -s $k > /dev/null
+ubimkvol /dev/ubi0 -n 1 -N kernel_b -s $k > /dev/null
+ubimkvol /dev/ubi0 -n 2 -N rootfs_a -s $r > /dev/null
+ubimkvol /dev/ubi0 -n 3 -N rootfs_b -s $r > /dev/null
+ubimkvol /dev/ubi0 -n 4 -N data -s $DATA_SIZE > /dev/null
 for v in 0 1; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v $kernel; done
 for v in 2 3; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v rootfs.squashfs; done
 ubinfo -d 0 -a | sed -n 's/^Name: *//p' | tr '\n' ' '; echo
