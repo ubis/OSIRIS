@@ -7,11 +7,13 @@
 #   make dspboot [BOARD=<name>]   first-stage loader -> dist/dspboot/
 #   make dspboot-test             its host-side unit tests
 #   make dspaudio [AC3=0] [DMA=0] DSP firmware -> build/dspaudio/
-#   make toolchain                the cross toolchain (musl) -> build/toolchain/
 #   make buildroot                U-Boot, kernel, root fs, bundle -> dist/images/
-#   make clean                    remove build output, keep the toolchain, ccache and dl/
-#   make dirclean                 also remove the toolchain and ccache
+#   make toolchain                only the cross toolchain -> build/toolchains/
+#   make clean                    remove build output, keep the toolchains, ccache and dl/
+#   make dirclean                 also remove the toolchains and ccache
 #   make distclean                also remove the downloads in dl/
+#   DEFCONFIG=<name>              buildroot and toolchain for another
+#                                 external/configs/<name>_defconfig than onkyo_nr
 
 TOP    := $(CURDIR)
 DIST   := $(TOP)/dist
@@ -77,7 +79,7 @@ buildroot-src:
 	@test -f buildroot/Makefile || git submodule update --init buildroot
 	@s="$$(git -C buildroot rev-parse HEAD) $$(cat /dev/null $(BUILDROOT_PATCHES) | sha256sum)"; \
 	if [ "$$(cat $(BUILD)/.buildroot-patches 2> /dev/null)" != "$$s" ]; then \
-		rm -rf $(BUILDROOT_OUT) && \
+		rm -rf $(BUILD)/buildroot-* && \
 		git -C buildroot reset -q --hard && git -C buildroot clean -qfd && \
 		for p in $(BUILDROOT_PATCHES); do \
 			echo "buildroot: $$p"; git -C buildroot apply $(TOP)/$$p || exit 1; \
@@ -85,46 +87,54 @@ buildroot-src:
 		mkdir -p $(BUILD) && echo "$$s" > $(BUILD)/.buildroot-patches; \
 	fi
 
-# The toolchain: a Buildroot SDK built from its own defconfig and used by
-# the main build as an external toolchain. Each one built stays in
-# build/toolchains/, named after Buildroot's commit and the defconfig, and
-# build/toolchain links to the one in use: "make clean" keeps them, a new
-# build image needs none, and going back to an earlier Buildroot or
-# defconfig builds nothing. Another toolchain starts the main build over.
+# The main build's defconfig, external/configs/<DEFCONFIG>_defconfig, names
+# its toolchain in its external toolchain path, build/toolchains/<name>;
+# toolchain_<name>_defconfig builds that toolchain as a Buildroot SDK.
+# Each one built stays in build/toolchains/<name>-<key>, the key taken
+# from Buildroot's commit and the defconfig's settings, and <name> links to
+# the one in use: "make clean" keeps them, a new build image needs none,
+# and going back to an earlier Buildroot or defconfig builds nothing.
 
-TOOLCHAIN_DEFCONFIG := external/configs/onkyo_nr_toolchain_defconfig
-TOOLCHAIN_OUT       := $(BUILD)/toolchain-build
+DEFCONFIG           ?= onkyo_nr
 TOOLCHAINS          := $(BUILD)/toolchains
-TOOLCHAIN           := $(BUILD)/toolchain
+TOOLCHAIN_NAME      := $(shell sed -n 's|^BR2_TOOLCHAIN_EXTERNAL_PATH=".*/build/toolchains/\(.*\)"$$|\1|p' \
+			 external/configs/$(DEFCONFIG)_defconfig)
+TOOLCHAIN_DEFCONFIG := external/configs/toolchain_$(TOOLCHAIN_NAME)_defconfig
+TOOLCHAIN           := $(TOOLCHAINS)/$(TOOLCHAIN_NAME)
+TOOLCHAIN_OUT       := $(BUILD)/toolchain-build
 TOOLCHAIN_MAKE      := make O=$(TOOLCHAIN_OUT) BR2_EXTERNAL=$(TOP)/external
-TOOLCHAIN_KEY        = $(shell { git -C buildroot rev-parse HEAD; cat $(TOOLCHAIN_DEFCONFIG); } | \
+TOOLCHAIN_KEY        = $(shell { git -C buildroot rev-parse HEAD; grep -E '^(# )?BR2_' $(TOOLCHAIN_DEFCONFIG); } | \
 			 sha256sum | cut -c1-12)
 
 toolchain: buildroot-src
 	@$(call ensure_image,$(BUILDROOT_IMAGE),docker)
-	@k=$(TOOLCHAIN_KEY); t=$(TOOLCHAINS)/$$k; \
+	@test -f $(TOOLCHAIN_DEFCONFIG) || { echo "no toolchain for $(DEFCONFIG)_defconfig"; exit 1; }
+	@k=$(TOOLCHAIN_NAME)-$(TOOLCHAIN_KEY); t=$(TOOLCHAINS)/$$k; \
 	if [ ! -f $$t/.done ]; then \
 		rm -rf $$t $(TOOLCHAINS)/new $(TOOLCHAIN_OUT) && mkdir -p $(TOOLCHAIN_OUT) $(TOOLCHAINS)/new && \
 		$(call docker_run,$(BUILDROOT_IMAGE),$(TOP)/buildroot,sh -c \
-			"$(TOOLCHAIN_MAKE) onkyo_nr_toolchain_defconfig > /dev/null && \
+			"$(TOOLCHAIN_MAKE) toolchain_$(TOOLCHAIN_NAME)_defconfig > /dev/null && \
 			 $(TOOLCHAIN_MAKE) sdk BR2_SDK_PREFIX=toolchain && \
 			 tar -xzf $(TOOLCHAIN_OUT)/images/toolchain.tar.gz -C $(TOOLCHAINS)/new && \
 			 mv $(TOOLCHAINS)/new/toolchain $$t && $$t/relocate-sdk.sh") && \
 		touch $$t/.done && rm -rf $(TOOLCHAINS)/new $(TOOLCHAIN_OUT) || exit 1; \
 	fi; \
-	if [ "$$(readlink $(TOOLCHAIN))" != "toolchains/$$k" ]; then \
-		rm -rf $(TOOLCHAIN) $(BUILDROOT_OUT) && ln -s toolchains/$$k $(TOOLCHAIN); \
-	fi
+	ln -sfn $$k $(TOOLCHAIN)
 	@echo "toolchain -> $(TOOLCHAIN) ($$(readlink $(TOOLCHAIN)))"
 
-BUILDROOT_OUT   := $(BUILD)/buildroot
+# One output per defconfig; it starts over when its toolchain changes.
+
+BUILDROOT_OUT   := $(BUILD)/buildroot-$(DEFCONFIG)
 BUILDROOT_MAKE  := make O=$(BUILDROOT_OUT) BR2_EXTERNAL=$(TOP)/external
 BUILDROOT_LOCAL := mcud dspd dspaudio osirisd pcmd
 
 buildroot: dspaudio toolchain
-	mkdir -p $(BUILDROOT_OUT)
+	@t=$$(readlink $(TOOLCHAIN)); \
+	if [ "$$(cat $(BUILDROOT_OUT)/.toolchain 2> /dev/null)" != "$$t" ]; then \
+		rm -rf $(BUILDROOT_OUT) && mkdir -p $(BUILDROOT_OUT) && echo "$$t" > $(BUILDROOT_OUT)/.toolchain; \
+	fi
 	$(call docker_run,$(BUILDROOT_IMAGE),$(TOP)/buildroot,sh -c \
-		"$(BUILDROOT_MAKE) onkyo_nr_defconfig > /dev/null && \
+		"$(BUILDROOT_MAKE) $(DEFCONFIG)_defconfig > /dev/null && \
 		 $(BUILDROOT_MAKE) \$$(cd $(BUILDROOT_OUT) && for p in $(BUILDROOT_LOCAL); do \
 			grep -qix BR2_PACKAGE_\$$p=y .config && echo \$$p-rebuild; done) && \
 		 $(BUILDROOT_MAKE)")
@@ -133,7 +143,7 @@ buildroot: dspaudio toolchain
 	@echo "buildroot -> $(DIST)/images"
 
 clean:
-	rm -rf $(DIST) $(BUILDROOT_OUT) $(BUILD)/dspaudio $(BUILD)/dspboot
+	rm -rf $(DIST) $(BUILD)/buildroot-* $(BUILD)/dspaudio $(BUILD)/dspboot
 
 dirclean: clean
 	rm -rf $(BUILD)
