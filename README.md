@@ -26,7 +26,7 @@ It runs on the original D830 and on its replacement OMAP-L137, and on old
 | model | chip | status |
 |---|---|---|
 | TX-NR717 | D830 (original) | works, see [What works](#what-works) |
-| TX-NR515 | OMAP-L137 (swapped) | boots and runs; my board has a broken audio clock trace, so no sound yet |
+| TX-NR515 | OMAP-L137 (swapped) | works, not everything tested |
 
 The D830 is the OMAP-L137, and the D850 is the OMAP-L138.
 
