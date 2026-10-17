@@ -18,7 +18,7 @@ osiris_state() {
 
 printf "  %-9s %s %s (%s)\n" receiver "$(osiris_state make)" "$(osiris_state model)" \
 	"$(osiris_state code)"
-printf "  %-9s %s, slot %s\n" version "$(cat /etc/osiris-version)" \
+printf "  %-9s %s, slot %s\n" version "$(. /etc/os-release; echo $VERSION)" \
 	"$(sed -n 's/.*osiris\.slot=\([ab]\).*/\1/p' /proc/cmdline)"
 printf "  %-9s %s\n" mac "$(cat /sys/class/net/eth0/address 2> /dev/null)"
 printf "  %-9s %s\n" ip "$(ifconfig eth0 2> /dev/null | sed -n 's/.*inet addr:\([0-9.]*\).*/\1/p')"

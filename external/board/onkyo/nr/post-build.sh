@@ -30,7 +30,14 @@ for s in $TARGET/etc/init.d/*; do
 	[ -z "$stop" ] || ln -s ../init.d/$n $TARGET/etc/rc.d/K$stop$n
 done
 
-# which build this is (osiris-upgrade shows it)
-sh $(dirname $0)/../../../../tools/version.sh > $TARGET/etc/osiris-version
-# the clock starts from here until NTP syncs (/lib/preinit/40_clock)
-echo ${SOURCE_DATE_EPOCH:-$(date +%s)} > $TARGET/etc/osiris-build-time
+# os-release names this build; its time is where /lib/preinit/40_clock
+# starts the clock
+v=$(sh $(dirname $0)/../../../../tools/version.sh)
+cat > $TARGET/usr/lib/os-release <<EOF
+NAME=OSIRIS
+ID=osiris
+VERSION="$v"
+VERSION_ID=$(echo $v | sed 's/^v//; s/[^0-9a-z._-].*//')
+PRETTY_NAME="OSIRIS $v"
+HOME_URL="https://github.com/ubis/osiris"
+EOF

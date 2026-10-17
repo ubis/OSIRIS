@@ -26,7 +26,7 @@ local job			-- the running update step: its steps, percent, process
 local progress_timer		-- made once: cancelling one frees its callback twice
 
 function M.running_version()
-	return (read_file("/etc/osiris-version") or ""):gsub("%s+$", "")
+	return util.os_version()
 end
 
 function M.set_usb()

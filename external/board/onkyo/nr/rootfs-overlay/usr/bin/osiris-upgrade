@@ -51,7 +51,7 @@ tar -xf "$bundle" VERSION md5sums $dbi || die "cannot unpack $bundle"
 for f in $kernel rootfs.squashfs $dbi; do
 	[ "$(part $f | md5)" = "$(sum $f)" ] || die "checksum mismatch, the bundle is damaged"
 done
-echo "running $(cat /etc/osiris-version 2>/dev/null) in slot $cur, installing $(cat VERSION) into slot $new"
+echo "running $(. /etc/os-release; echo $VERSION) in slot $cur, installing $(cat VERSION) into slot $new"
 
 for p in kernel:$kernel rootfs:rootfs.squashfs; do
 	name=${p%%:*}_$new

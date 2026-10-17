@@ -26,7 +26,7 @@ run() {
 	{ echo "# $*"; "$@"; } > $dir/$f 2>&1 || true
 }
 
-run version.txt cat /etc/osiris-version
+run os-release.txt cat /etc/os-release
 run uname.txt uname -a
 run uptime.txt uptime
 run date.txt date

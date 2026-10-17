@@ -51,6 +51,11 @@ function M.quote(s)
 	return "'" .. s:gsub("'", "'\\''") .. "'"
 end
 
+-- the build: VERSION in /etc/os-release
+function M.os_version()
+	return (M.read_file("/etc/os-release") or ""):match('\nVERSION="?([^"\n]*)') or ""
+end
+
 function M.read_file(path)
 	local f = io.open(path, "r")
 	if not f then

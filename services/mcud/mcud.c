@@ -24,14 +24,20 @@ struct blob_buf b;
 /* "OSIRIS <build>": what the receiver shows as the DSP version */
 static void default_version(char *v, size_t size)
 {
-	char build[32] = "";
-	FILE *f = fopen("/etc/osiris-version", "r");
+	char line[64], *p;
+	const char *build = "";
+	FILE *f = fopen("/etc/os-release", "r");
+
+	while (f && fgets(line, sizeof(line), f)) {
+		if (!strncmp(line, "VERSION=", 8)) {
+			p = line + 8 + (line[8] == '"');
+			p[strcspn(p, "\"\n")] = 0;
+			build = p;
+			break;
+		}
+	}
 
 	if (f) {
-		if (fgets(build, sizeof(build), f)) {
-			build[strcspn(build, "\n")] = 0;
-		}
-
 		fclose(f);
 	}
 

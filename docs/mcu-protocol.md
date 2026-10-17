@@ -260,7 +260,7 @@ Answered by mcud itself:
 - the start-up sequence and its retries
 - E0 -> 60; EA 00 -> 6A at once, EA 01/02 after `mcu power` from the
   policy (or 3 s)
-- 41 / 46 from its identity strings (default from `/etc/osiris-version`,
+- 41 / 46 from its identity strings (default from `/etc/os-release`,
   replaced through `mcu identity`)
 - 42 / 45 / 4A when the values set through ubus change
 

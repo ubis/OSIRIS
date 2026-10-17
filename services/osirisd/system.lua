@@ -17,7 +17,7 @@ local IFACE = "eth0"
 -- the receiver shows 14 characters: "OSIRIS v0.1.0" for a release, the
 -- commit for a build in between ("v0.1.0~g1de0787" -> "OSIRIS 1de0787")
 function M.set_identity()
-	local build = (read_file("/etc/osiris-version") or ""):gsub("%s+$", "")
+	local build = util.os_version()
 	local shown = "OSIRIS " .. build
 
 	if #shown > 14 then
