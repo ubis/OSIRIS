@@ -19,6 +19,18 @@ ROOT_HASH='$1$OSIRISv1$PF45S2vBsv1PTcWryHdqr.'
 sed "s,^root:[^:]*:,root:$ROOT_HASH:," $TARGET/etc/shadow > $TARGET/usr/share/osiris/shadow
 chmod 600 $TARGET/usr/share/osiris/shadow
 
+# /var is /tmp and /run is /tmp/run (/lib/preinit/10_run)
+for d in var run; do
+	if [ -n "$(find $TARGET/$d -mindepth 1 ! -type d ! -type l 2> /dev/null)" ]; then
+		echo "post-build: files in /$d would be lost" >&2
+		exit 1
+	fi
+done
+rm -rf $TARGET/var $TARGET/run
+ln -s tmp $TARGET/var
+ln -s tmp/run $TARGET/run
+rmdir $TARGET/mnt $TARGET/opt 2> /dev/null || true
+
 # the start and stop links of the services, as "/etc/init.d/<name> enable"
 # makes them
 rm -f $TARGET/etc/rc.d/*
