@@ -42,6 +42,9 @@ fi
 bundle=${1:-$BUILTIN}
 case $bundle in /*) ;; *) [ -e "$bundle" ] && bundle=$PWD/$bundle ;; esac
 grep -q "osiris.slot=" /proc/cmdline && die "running from NAND; boot the installer kernel"
+# a flash without a bad block table gets one only so
+[ "$(cat /sys/module/davinci_nand/parameters/bbt_create 2> /dev/null)" = Y ] ||
+	die "boot the installer with davinci_nand.bbt_create=1"
 
 ENV=$(mtd env); ENV2=$(mtd env2); UBOOT_A=$(mtd uboot_a); UBOOT_B=$(mtd uboot_b); UBI=$(mtd ubi)
 [ -n "$ENV" ] && [ -n "$ENV2" ] && [ -n "$UBOOT_A" ] && [ -n "$UBOOT_B" ] && [ -n "$UBI" ] ||

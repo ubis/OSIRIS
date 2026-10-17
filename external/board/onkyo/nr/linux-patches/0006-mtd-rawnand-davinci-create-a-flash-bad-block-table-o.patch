@@ -1,0 +1,88 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Sun, 18 Oct 2026 00:04:00 +0300
+Subject: [PATCH] mtd: rawnand: davinci: create a flash bad block table only on
+ request
+
+The boot ROM layout's flash BBT descriptors made Linux write a table into
+the last blocks of any chip without one, so that booting it from RAM on
+a receiver still running its stock firmware changed that firmware's
+flash. On such a chip, build the table in memory only, unless the
+bbt_create parameter asks for one to be written, as the installer does.
+A table found on the chip is kept up to date, and read twice, the second
+time to reserve all the blocks it may move to.
+---
+ drivers/mtd/nand/raw/davinci_nand.c | 37 +++++++++++++++++++++++++++--
+ 1 file changed, 35 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mtd/nand/raw/davinci_nand.c b/drivers/mtd/nand/raw/davinci_nand.c
+index 214adf1..d32aa15 100644
+--- a/drivers/mtd/nand/raw/davinci_nand.c
++++ b/drivers/mtd/nand/raw/davinci_nand.c
+@@ -529,9 +529,19 @@ static const struct mtd_ooblayout_ops hwecc4_rbl_small_ooblayout_ops = {
+ static u8 davinci_nand_rbl_bbt_pattern[] = { 'B', 'b', 't', '0' };
+ static u8 davinci_nand_rbl_mirror_pattern[] = { '1', 't', 'b', 'B' };
+ 
++/*
++ * A flash without a table may hold another firmware, which does not expect
++ * one in its last blocks: the table is then built in memory only, unless
++ * bbt_create is set (to install). One found on the flash is kept up to
++ * date.
++ */
++static bool bbt_create;
++module_param(bbt_create, bool, 0444);
++MODULE_PARM_DESC(bbt_create, "write a bad block table to a flash without one");
++
+ static struct nand_bbt_descr davinci_nand_rbl_bbt_main_descr = {
+ 	.options	= NAND_BBT_LASTBLOCK | NAND_BBT_CREATE |
+-			  NAND_BBT_WRITE | NAND_BBT_2BIT |
++			  NAND_BBT_2BIT |
+ 			  NAND_BBT_VERSION | NAND_BBT_PERCHIP,
+ 	.offs		= 0,
+ 	.len		= 4,
+@@ -542,7 +552,7 @@ static struct nand_bbt_descr davinci_nand_rbl_bbt_main_descr = {
+ 
+ static struct nand_bbt_descr davinci_nand_rbl_bbt_mirror_descr = {
+ 	.options	= NAND_BBT_LASTBLOCK | NAND_BBT_CREATE |
+-			  NAND_BBT_WRITE | NAND_BBT_2BIT |
++			  NAND_BBT_2BIT |
+ 			  NAND_BBT_VERSION | NAND_BBT_PERCHIP,
+ 	.offs		= 0,
+ 	.len		= 4,
+@@ -768,6 +778,13 @@ static int davinci_nand_attach_chip(struct nand_chip *chip)
+ 			    !chip->bbt_td) {
+ 				chip->bbt_td = &davinci_nand_rbl_bbt_main_descr;
+ 				chip->bbt_md = &davinci_nand_rbl_bbt_mirror_descr;
++				if (bbt_create) {
++					chip->bbt_td->options |= NAND_BBT_WRITE;
++					chip->bbt_md->options |= NAND_BBT_WRITE;
++				} else {
++					chip->bbt_td->options &= ~NAND_BBT_WRITE;
++					chip->bbt_md->options &= ~NAND_BBT_WRITE;
++				}
+ 			}
+ 		} else {
+ 			/* 1bit ecc hamming */
+@@ -1072,6 +1089,22 @@ static int nand_davinci_probe(struct platform_device *pdev)
+ 		return ret;
+ 	}
+ 
++	/*
++	 * A table found: keep it up to date, and scan again so that all the
++	 * blocks it may move to are reserved, as when it was written.
++	 */
++	if (info->chip.bbt_td == &davinci_nand_rbl_bbt_main_descr &&
++	    (info->chip.bbt_td->pages[0] >= 0 ||
++	     info->chip.bbt_md->pages[0] >= 0)) {
++		info->chip.bbt_td->options |= NAND_BBT_WRITE;
++		info->chip.bbt_md->options |= NAND_BBT_WRITE;
++		kfree(info->chip.bbt);
++		info->chip.bbt = NULL;
++		ret = nand_create_bbt(&info->chip);
++		if (ret)
++			goto err_cleanup_nand;
++	}
++
+ 	if (pdata->parts)
+ 		ret = mtd_device_register(mtd, pdata->parts, pdata->nr_parts);
+ 	else

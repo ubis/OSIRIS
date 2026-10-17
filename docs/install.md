@@ -75,7 +75,7 @@ as for an install, except the backup.
 2. **The installer.** Put `uImage` and `initrd-installer` on your TFTP
    server and boot them as in step 3 of the first install below (`setenv
    ipaddr`, `setenv serverip`, `tftp`, `setenv bootargs`, `bootm`),
-   without `saveenv`. Log
+   without `davinci_nand.bbt_create=1` and without `saveenv`. Log
    in over the network or on the console as `root` (password `osiris`), and
    do not run `osiris-install`.
 
@@ -120,14 +120,17 @@ you made).
    tftp 0xc0700000 uImage
    tftp 0xc1000000 initrd-installer
    setenv initrd_high 0xffffffff
-   setenv bootargs console=ttyS1,115200n8 mem=56M rootfstype=ramfs ip=192.168.1.50:192.168.1.10:192.168.1.1:255.255.255.0::eth0:off
+   setenv bootargs console=ttyS1,115200n8 mem=56M rootfstype=ramfs davinci_nand.bbt_create=1 ip=192.168.1.50:192.168.1.10:192.168.1.1:255.255.255.0::eth0:off
    bootm 0xc0700000 0xc1000000
    ```
 
    `initrd_high` keeps the initrd where it was loaded, inside the 56 MiB
    Linux uses.
    `rootfstype=ramfs` lets the installer use more than half the RAM, which
-   is all a tmpfs root may take.
+   is all a tmpfs root may take. `davinci_nand.bbt_create=1` lets Linux
+   write a bad block table to a flash that has none, as the stock one: it
+   does so as soon as the installer starts, into the last 4 blocks.
+   Without it neither U-Boot nor Linux writes one there.
 
    The board keeps the MAC address the stock firmware stored (`ethaddr`).
    On a new, empty flash U-Boot makes up a random one; set the one on the
