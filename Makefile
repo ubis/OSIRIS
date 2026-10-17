@@ -65,7 +65,7 @@ dspaudio:
 # local sources only once, so this repository's own packages, those the
 # defconfig enables, are rebuilt every time.
 
-BUILDROOT_IMAGE := $(call image_tag,buildroot,toolchain/buildroot/Dockerfile)
+BUILDROOT_IMAGE := $(call image_tag,buildroot,docker/Dockerfile)
 
 # Patches to Buildroot for what BR2_EXTERNAL cannot change. When they or
 # the submodule's commit change, buildroot/ is reset and patched again,
@@ -101,7 +101,7 @@ TOOLCHAIN_KEY        = $(shell { git -C buildroot rev-parse HEAD; cat $(TOOLCHAI
 			 sha256sum | cut -c1-12)
 
 toolchain: buildroot-src
-	@$(call ensure_image,$(BUILDROOT_IMAGE),toolchain/buildroot)
+	@$(call ensure_image,$(BUILDROOT_IMAGE),docker)
 	@k=$(TOOLCHAIN_KEY); t=$(TOOLCHAINS)/$$k; \
 	if [ ! -f $$t/.done ]; then \
 		rm -rf $$t $(TOOLCHAINS)/new $(TOOLCHAIN_OUT) && mkdir -p $(TOOLCHAIN_OUT) $(TOOLCHAINS)/new && \
