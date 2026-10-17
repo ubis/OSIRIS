@@ -211,6 +211,7 @@ class FakeRom:
         self.entry = None
         self.crc_errors = 0
         self.last_crc = 0
+        self.glitch_last = 0
         self.gen = self.run()
         next(self.gen)
 
@@ -223,6 +224,9 @@ class FakeRom:
         return d
 
     def flush_input(self):
+        pass
+
+    def drain(self, nbytes):
         pass
 
     def w32(self, v):
@@ -254,6 +258,9 @@ class FakeRom:
                 data = bytearray()
                 for _ in range((size + 3) & ~3):
                     data.append((yield))
+                if self.glitch_last:
+                    self.glitch_last -= 1
+                    data[-1] ^= 0x34
                 self.mem[addr] = bytes(data[:size])
                 self.last_crc = mkais.ais_crc(struct.pack('<II', addr, size) + bytes(data))
             elif op == uartboot.OP_REQUEST_CRC:
@@ -298,6 +305,18 @@ if os.path.exists(elf):
         caught = 'CRC mismatch' in str(e)
     uartboot.log = _log
     check('AIS CRC catches a flipped bit', caught)
+    # a section garbled on the wire is sent again
+    rom = FakeRom()
+    rom.glitch_last = 2
+    uartboot.log = lambda m: None
+    try:
+        uartboot.AisBoot(rom, timeout=1).boot(mkais.make_ais(entry, secs, True))
+        err = ''
+    except Exception as e:     # noqa: BLE001
+        err = repr(e)
+    uartboot.log = _log
+    same = all(rom.mem.get(a, b'')[:len(d)] == d for _, a, d in secs)
+    check('AIS resends a section after a CRC mismatch', not err and rom.entry == entry and same, err)
 else:
     print('(no build/<board>/dspboot.elf, skipping AIS test)')
 
