@@ -28,31 +28,6 @@ local proc			-- the running fetch or check; the binding does not keep it
 local found			-- the newest version fetched, not fetched again
 local checked			-- a check was started, the first one is not needed
 
--- "v1.2.3" and "v1.2.3~g<hash>" -> 1, 2, 3
-local function numbers(v)
-	local a, b, c = (v or ""):match("^v(%d+)%.(%d+)%.(%d+)")
-	if a then
-		return { tonumber(a), tonumber(b), tonumber(c) }
-	end
-end
-
--- a build after a release (v1.2.3~g...) is not older than it
-local function newer(v, running)
-	local a, b = numbers(v), numbers(running)
-	if not a then
-		return false
-	end
-	if not b then
-		return true
-	end
-	for i = 1, 3 do
-		if a[i] ~= b[i] then
-			return a[i] > b[i]
-		end
-	end
-	return false
-end
-
 local function sh(cmd, done)
 	proc = uloop.process("/bin/sh", { "-c", cmd .. " > /dev/null 2>&1" },
 			     { "PATH=/usr/sbin:/usr/bin:/sbin:/bin" }, function(ret)
@@ -140,7 +115,7 @@ function M.check()
 		local i, version
 		for n, tag in ipairs(tags) do
 			local v = tag:match("^osiris%-(v.*)")
-			if v and pre[n] ~= "true" and (not version or newer(v, version)) then
+			if v and pre[n] ~= "true" and (not version or util.newer(v, version)) then
 				i, version = n - 1, v
 			end
 		end
@@ -150,7 +125,7 @@ function M.check()
 		local sig_url = json(RELEASES, asset:format(name .. ".sig"))
 		os.remove(RELEASES)
 
-		if not newer(version, update.running_version()) or version == found then
+		if not util.newer(version, update.running_version()) or version == found then
 			return
 		end
 		if tar_url == "" or sig_url == "" then

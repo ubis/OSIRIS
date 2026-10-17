@@ -51,6 +51,32 @@ function M.quote(s)
 	return "'" .. s:gsub("'", "'\\''") .. "'"
 end
 
+-- "v1.2.3" and "v1.2.3~g<hash>" -> 1, 2, 3
+local function numbers(v)
+	local a, b, c = (v or ""):match("^v(%d+)%.(%d+)%.(%d+)")
+	if a then
+		return { tonumber(a), tonumber(b), tonumber(c) }
+	end
+end
+
+-- version v is newer than w; a build after a release (v1.2.3~g...) is not
+-- newer than it
+function M.newer(v, w)
+	local a, b = numbers(v), numbers(w)
+	if not a then
+		return false
+	end
+	if not b then
+		return true
+	end
+	for i = 1, 3 do
+		if a[i] ~= b[i] then
+			return a[i] > b[i]
+		end
+	end
+	return false
+end
+
 -- the build: VERSION in /etc/os-release
 function M.os_version()
 	return (M.read_file("/etc/os-release") or ""):match('\nVERSION="?([^"\n]*)') or ""

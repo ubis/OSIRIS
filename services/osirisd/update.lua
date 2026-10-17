@@ -47,6 +47,10 @@ function M.set_bundle(path, version)
 	if not path or not version or version == M.running_version() then
 		return
 	end
+	-- of several on a stick, the newest
+	if bundle and bundle ~= net and not util.newer(version, bundle.version) then
+		return
+	end
 
 	log("update %s (%s)", path, version)
 	bundle = { path = path, version = version }
