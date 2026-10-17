@@ -169,8 +169,14 @@ local function install()
 		return
 	end
 
+	-- AirPlay and pcmd would take CPU time from it; they come back with
+	-- the new slot or, if it fails, at once
 	log("installing %s", b.version)
+	os.execute("/etc/init.d/airplay stop; /etc/init.d/osiris stop pcmd")
 	run_step("osiris-upgrade -n " .. quote(b.path), INSTALL_STEPS, function(ok)
+		if not ok then
+			os.execute("/etc/init.d/osiris start; /etc/init.d/airplay start")
+		end
 		-- the MCU takes the result, an error too, only after 100 %
 		call("mcu", "update", { progress = 100 })
 		call("mcu", "update", { result = ok and "ok" or "error" })
