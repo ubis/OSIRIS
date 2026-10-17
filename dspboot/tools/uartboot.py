@@ -55,6 +55,7 @@ OP_SEQ_READ_ENABLE = 0x58535963
 
 POS_N = 2
 OPCODE_DELAY = 0.005
+CRC_RETRIES = 8
 
 # sft (serial flash target) commands
 SFT_MAGIC_FLASH_NO_UBL = 0x55424C00    # patched sft: receive image, copy to DDR, wake the ARM
@@ -71,7 +72,7 @@ class Port:
     def __init__(self, path, baud):
         if serial is None:
             sys.exit('these tools need pyserial: pip install pyserial')
-        self.s = serial.Serial(path, baud, timeout=0)
+        self.s = serial.Serial(path, baud, timeout=0.02)
         self.s.reset_input_buffer()
         self.s.reset_output_buffer()
 
@@ -83,15 +84,17 @@ class Port:
         self.s.flush()                      # wait until it is on the wire
 
     def read(self, n, timeout):
+        # Setting self.s.timeout reconfigures the port and garbles bytes still in the
+        # adapter's FIFO, so keep the one set at open.
         out = b''
         end = time.monotonic() + timeout
-        while len(out) < n:
-            left = end - time.monotonic()
-            if left <= 0:
-                break
-            self.s.timeout = left
+        while len(out) < n and time.monotonic() < end:
             out += self.s.read(n - len(out))
         return out
+
+    def drain(self, nbytes):
+        """Wait until the adapter has sent nbytes; flush() only waits for the driver."""
+        time.sleep(nbytes * 10.0 / self.s.baudrate + 0.02)
 
     def flush_input(self):
         self.s.reset_input_buffer()
@@ -182,8 +185,11 @@ class AisBoot:
             log('ROM: ping sync...')
             if self.pos():
                 break
+        retries = 0
+        last_section = None
         while True:
             time.sleep(OPCODE_DELAY)
+            op_at = cur
             op = take()
             self.opcode_sync(op)
             if op in (OP_SECTION_LOAD, OP_CMP_SECTION_LOAD):
@@ -193,7 +199,9 @@ class AisBoot:
                 self.word(addr)
                 self.word(size)
                 self.port.write(ais[cur:cur + padded])
+                self.port.drain(padded)
                 cur += padded
+                last_section = op_at
             elif op == OP_SECTION_FILL:
                 addr, size, typ, pattern = take(), take(), take(), take()
                 log('ROM: fill 0x%08x, %d bytes with 0x%08x' % (addr, size, pattern))
@@ -216,7 +224,14 @@ class AisBoot:
                 got = self.read_word()
                 want, seek = take(), take()
                 if got != want:
-                    raise IOError('CRC mismatch: device 0x%08x, image 0x%08x' % (got, want))
+                    retries += 1
+                    if retries > CRC_RETRIES:
+                        raise IOError('CRC mismatch: device 0x%08x, image 0x%08x' % (got, want))
+                    log('ROM: CRC mismatch (device 0x%08x, image 0x%08x), resending section'
+                        % (got, want))
+                    cur = last_section          # the ROM's CRC restarts after each REQUEST_CRC
+                    continue
+                retries = 0
                 log('ROM: CRC ok')
             elif op in (OP_ENABLE_CRC, OP_DISABLE_CRC, OP_SEQ_READ_ENABLE):
                 pass
