@@ -11,9 +11,12 @@
 # kernel as kernel.itb (FIT) or uImage or both, rootfs.squashfs and
 # optionally u-boot.dbi; the FIT is preferred. The running slot is not
 # touched.
-# The kernel and root file system are checked and written straight from the
-# bundle, which may itself be in /tmp: there is no room for a second copy.
-# The slot's volumes take the images' sizes, from the free space of the UBI.
+# The kernel and root file system are written straight from the bundle,
+# which may itself be in /tmp: there is no room for a second copy. Each pass
+# reads the whole bundle, from a USB stick too, so there are few: the list,
+# the small files, one per image; the images are checked by reading them
+# back. The slot's volumes take the images' sizes, from the free space of
+# the UBI.
 #
 set -e
 
@@ -24,9 +27,18 @@ md5() { md5sum | cut -d' ' -f1; }
 # same DEV FILE: the first size-of-FILE bytes of DEV match FILE
 same() { [ "$(head -c $(wc -c < $2) $1 | md5)" = "$(md5 < $2)" ]; }
 part() { tar -xOf "$bundle" $1; }
-size() { tar -tvf "$bundle" $1 | awk '{ print $3 }'; }
+size() { awk -v f=$1 '$6 == f { print $3 }' list; }
+has() { [ -n "$(size $1)" ]; }
 sum() { sed -n "s/^\([0-9a-f]*\)  $1\$/\1/p" md5sums; }
 ubi() { ubinfo -d 0 | sed -n "s/^$1: *\([0-9]*\).*/\1/p"; }
+# vmd5 VOLUME N: md5 of a UBI volume's first N bytes, read a block at a time
+# (in small reads, as head does them, it takes three times as long)
+vmd5() {
+	{
+		dd bs=$leb count=$(($2 / leb)) 2> /dev/null
+		[ $(($2 % leb)) = 0 ] || dd bs=$(($2 % leb)) count=1 2> /dev/null
+	} < $1 | md5
+}
 lebs() { ubinfo -d 0 -N $1 2> /dev/null | sed -n 's/^Size: *\([0-9]*\) LEBs.*/\1/p'; }
 
 reboot=1
@@ -42,18 +54,19 @@ work=/tmp/osiris-upgrade
 rm -rf $work
 mkdir -p $work
 cd $work
-tar -tf "$bundle" > list || die "cannot read $bundle"
+tar -tvf "$bundle" > list || die "cannot read $bundle"
 # the FIT only with a U-Boot for the slot: without one the slot keeps its
 # U-Boot, which may be an older one that boots only a uImage
-grep -qx kernel.itb list && grep -qx u-boot.dbi list && kernel=kernel.itb || kernel=uImage
+has kernel.itb && has u-boot.dbi && kernel=kernel.itb || kernel=uImage
 for f in VERSION md5sums $kernel rootfs.squashfs; do
-	grep -qx $f list || die "not an OSIRIS bundle"
+	has $f || die "not an OSIRIS bundle"
 done
-grep -qx u-boot.dbi list && dbi=u-boot.dbi || dbi=
+has u-boot.dbi && dbi=u-boot.dbi || dbi=
 tar -xf "$bundle" VERSION md5sums $dbi || die "cannot unpack $bundle"
 for f in $kernel rootfs.squashfs $dbi; do
-	[ "$(part $f | md5)" = "$(sum $f)" ] || die "checksum mismatch, the bundle is damaged"
+	[ -n "$(sum $f)" ] || die "no checksum for $f"
 done
+[ -z "$dbi" ] || [ "$(md5 < $dbi)" = "$(sum $dbi)" ] || die "checksum mismatch, the bundle is damaged"
 echo "running $(. /etc/os-release; echo $VERSION) in slot $cur, installing $(cat VERSION) into slot $new"
 
 leb=$(ubi "Logical eraseblock size")
@@ -79,7 +92,8 @@ for p in kernel:$kernel rootfs:rootfs.squashfs; do
 	echo "writing $file to $name"
 	ubirsvol /dev/ubi0 -N $name -s $n
 	part $file | ubiupdatevol -s $n /dev/ubi0_$v -
-	[ "$(head -c $n /dev/ubi0_$v | md5)" = "$(sum $file)" ] || die "$name read-back differs"
+	[ "$(vmd5 /dev/ubi0_$v $n)" = "$(sum $file)" ] ||
+		die "$name read-back differs from the bundle's checksum"
 done
 if [ -f u-boot.dbi ]; then
 	m=$(mtd uboot_$new)
