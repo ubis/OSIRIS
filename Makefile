@@ -67,6 +67,24 @@ dspaudio:
 
 BUILDROOT_IMAGE := $(call image_tag,buildroot,toolchain/buildroot/Dockerfile)
 
+# Patches to Buildroot for what BR2_EXTERNAL cannot change. When they or
+# the submodule's commit change, buildroot/ is reset and patched again,
+# losing edits made there, and the main build starts over.
+
+BUILDROOT_PATCHES := $(sort $(wildcard buildroot-patches/*.patch))
+
+buildroot-src:
+	@test -f buildroot/Makefile || git submodule update --init buildroot
+	@s="$$(git -C buildroot rev-parse HEAD) $$(cat /dev/null $(BUILDROOT_PATCHES) | sha256sum)"; \
+	if [ "$$(cat $(BUILD)/.buildroot-patches 2> /dev/null)" != "$$s" ]; then \
+		rm -rf $(BUILDROOT_OUT) && \
+		git -C buildroot reset -q --hard && git -C buildroot clean -qfd && \
+		for p in $(BUILDROOT_PATCHES); do \
+			echo "buildroot: $$p"; git -C buildroot apply $(TOP)/$$p || exit 1; \
+		done && \
+		mkdir -p $(BUILD) && echo "$$s" > $(BUILD)/.buildroot-patches; \
+	fi
+
 # The toolchain: a Buildroot SDK built once from its own defconfig, again
 # only when that, Buildroot or the build image changes, and used by the main
 # build as an external toolchain, so that "make clean" keeps it. A new
@@ -77,8 +95,7 @@ TOOLCHAIN_OUT       := $(BUILD)/toolchain-build
 TOOLCHAIN           := $(BUILD)/toolchain
 TOOLCHAIN_MAKE      := make O=$(TOOLCHAIN_OUT) BR2_EXTERNAL=$(TOP)/external
 
-toolchain:
-	@test -f buildroot/Makefile || git submodule update --init buildroot
+toolchain: buildroot-src
 	@$(call ensure_image,$(BUILDROOT_IMAGE),toolchain/buildroot)
 	@s="$(BUILDROOT_IMAGE) $$(git -C buildroot rev-parse HEAD) $$(sha256sum < $(TOOLCHAIN_DEFCONFIG))"; \
 	if [ "$$(cat $(TOOLCHAIN)/.stamp 2> /dev/null)" != "$$s" ]; then \
@@ -117,4 +134,5 @@ dirclean: clean
 distclean: dirclean
 	rm -rf $(TOP)/dl
 
-.PHONY: help dspboot dspboot-test dspaudio toolchain buildroot clean dirclean distclean
+.PHONY: help dspboot dspboot-test dspaudio buildroot-src toolchain buildroot clean dirclean \
+	distclean
