@@ -1,33 +1,33 @@
 #!/bin/sh
-# Buildroot post-image script for the Onkyo receivers: U-Boot as the slot
-# image dspboot starts; the kernel as a FIT and as a uImage; the upgrade
-# bundle with the kernel, the root file system and U-Boot; then the
-# installer's initrd, which carries that bundle.
+# Buildroot post-image: U-Boot for dspboot, the kernel as a FIT and a
+# uImage, the update bundle and the installer's initrd.
 # $1: images directory
 set -e
 IMAGES=$1
 TOP=$(dirname $0)/../../../..
-TOOLS=$TOP/dspboot/tools
+BUILD=$BASE_DIR/build
+MKIMAGE=$HOST_DIR/bin/mkimage
 VERSION=$(sh $TOP/tools/version.sh)
-NAME="u-boot $VERSION"
 
-python3 $TOOLS/mkimage.py $IMAGES/u-boot.bin $IMAGES/u-boot.dbi --name "$NAME" > /dev/null
+# U-Boot with dspboot's image header
+uboot_image() {
+	python3 $TOP/dspboot/tools/mkimage.py $IMAGES/u-boot.bin $IMAGES/u-boot.dbi \
+		--name "u-boot $VERSION" > /dev/null
+}
 
-[ -f $IMAGES/zImage ] || exit 0
+# uImage with the device tree appended, which an older U-Boot boots on the
+# first start after an update
+kernel_uimage() {
+	cat $IMAGES/zImage $IMAGES/da830-onkyo-nr.dtb > $BUILD/zImage-dtb
+	$MKIMAGE -A arm -O linux -T kernel -C none -a 0xc0008000 -e 0xc0008000 \
+		-n "Linux OSIRIS $VERSION" -d $BUILD/zImage-dtb $IMAGES/uImage > /dev/null
+}
 
-# the kernel with its device tree appended, as a uImage: an older U-Boot
-# boots it too, with ATAGs, on the first start after an update
-cat $IMAGES/zImage $IMAGES/da830-onkyo-nr.dtb > $BASE_DIR/build/zImage-dtb
-$HOST_DIR/bin/mkimage -A arm -O linux -T kernel -C none -a 0xc0008000 -e 0xc0008000 \
-	-n "Linux OSIRIS $VERSION" -d $BASE_DIR/build/zImage-dtb $IMAGES/uImage > /dev/null
-
-# the kernel and the device trees as a FIT, which U-Boot boots: the
-# configuration named after the model (osirisd sets "board", e.g.
-# tx-nr717) if there is one, else the default. Each model OSIRIS runs on
-# has one, so that U-Boot finds it; they share a device tree until a model
-# needs its own. The zImage runs where U-Boot read the FIT (kernel_noload)
-# and unpacks itself.
-cat > $BASE_DIR/build/kernel.its <<EOF
+# FIT with a configuration per model, as "board" names it, all with the
+# same device tree for now; the zImage runs where it was loaded
+# (kernel_noload)
+kernel_fit() {
+	cat > $BUILD/kernel.its <<EOF
 /dts-v1/;
 / {
 	description = "Linux OSIRIS $VERSION";
@@ -68,35 +68,50 @@ cat > $BASE_DIR/build/kernel.its <<EOF
 	};
 };
 EOF
-$HOST_DIR/bin/mkimage -f $BASE_DIR/build/kernel.its $IMAGES/kernel.itb > /dev/null
+	$MKIMAGE -f $BUILD/kernel.its $IMAGES/kernel.itb > /dev/null
+}
 
-# older systems created the slot volumes with these sizes, and updates
-# from them write into them
+# the slot volume sizes older systems created, which updates from them
+# write into
+check_sizes() {
+	fits $IMAGES/uImage 4208640 kernel_a/b
+	fits $IMAGES/rootfs.squashfs 12595200 rootfs_a/b
+}
+
 fits() {
 	[ $(wc -c < $1) -le $2 ] || { echo "${1##*/} does not fit $3 ($2 bytes)" >&2; exit 1; }
 }
-fits $IMAGES/uImage 4208640 kernel_a/b
-fits $IMAGES/rootfs.squashfs 12595200 rootfs_a/b
 
-rm -f $IMAGES/osiris-*.tar
-sh $TOP/tools/mkbundle.sh -k $IMAGES/uImage -f $IMAGES/kernel.itb -r $IMAGES/rootfs.squashfs -u $IMAGES/u-boot.dbi \
-	-v $VERSION -o $IMAGES/osiris-$VERSION.tar
+# update bundle
+bundle() {
+	rm -f $IMAGES/osiris-*.tar
+	sh $TOP/tools/mkbundle.sh -k $IMAGES/uImage -f $IMAGES/kernel.itb \
+		-r $IMAGES/rootfs.squashfs -u $IMAGES/u-boot.dbi \
+		-v $VERSION -o $IMAGES/osiris-$VERSION.tar
+}
 
-# the installer's initrd: this root file system with the bundle unpacked
-# (/usr/share/osiris/bundle for osiris-install), to boot over TFTP with the
-# FIT for the first install: bootm <kernel.itb> <initrd-installer>, which
-# gets the flash partitions from U-Boot.
-# It all stays in RAM, so the bundle is unpacked already, for osiris-install
-# to write from in place, and leaves out the uImage, since the U-Boot it
-# installs boots the FIT.
-WORK=$BASE_DIR/build/installer
-rm -rf $WORK
-mkdir -p $WORK/root/usr/share/osiris/bundle
-sh $TOP/tools/mkbundle.sh -f $IMAGES/kernel.itb -r $IMAGES/rootfs.squashfs -u $IMAGES/u-boot.dbi \
-	-v $VERSION -o $WORK/bundle.tar
-tar -xf $WORK/bundle.tar -C $WORK/root/usr/share/osiris/bundle
-(cd $WORK/root && find usr/share/osiris |
-	cpio -o -H newc -R 0:0 --quiet) > $WORK/bundle.cpio
-cat $IMAGES/rootfs.cpio $WORK/bundle.cpio | gzip -1 > $WORK/installer.cpio.gz
-$HOST_DIR/bin/mkimage -A arm -O linux -T ramdisk -C gzip -n "OSIRIS $VERSION installer" \
-	-d $WORK/installer.cpio.gz $IMAGES/initrd-installer > /dev/null
+# installer initrd: the root file system and the unpacked bundle, which
+# osiris-install writes from RAM; no uImage, the U-Boot it installs boots
+# the FIT
+installer() {
+	work=$BUILD/installer
+	rm -rf $work
+	mkdir -p $work/root/usr/share/osiris/bundle
+	sh $TOP/tools/mkbundle.sh -f $IMAGES/kernel.itb -r $IMAGES/rootfs.squashfs \
+		-u $IMAGES/u-boot.dbi -v $VERSION -o $work/bundle.tar
+	tar -xf $work/bundle.tar -C $work/root/usr/share/osiris/bundle
+	(cd $work/root && find usr/share/osiris |
+		cpio -o -H newc -R 0:0 --quiet) > $work/bundle.cpio
+	cat $IMAGES/rootfs.cpio $work/bundle.cpio | gzip -1 > $work/installer.cpio.gz
+	$MKIMAGE -A arm -O linux -T ramdisk -C gzip -n "OSIRIS $VERSION installer" \
+		-d $work/installer.cpio.gz $IMAGES/initrd-installer > /dev/null
+}
+
+uboot_image
+# U-Boot-only builds stop here
+[ -f $IMAGES/zImage ] || exit 0
+kernel_uimage
+kernel_fit
+check_sizes
+bundle
+installer
