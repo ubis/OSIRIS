@@ -65,3 +65,45 @@ jobs:
             --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
             docker
           docker push "$img"
+
+  toolchain:
+    needs: image
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-26.04
+    outputs:
+      dir: ${{ steps.key.outputs.dir }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check out Buildroot
+        run: git submodule update --init --depth 1 buildroot
+
+      - name: Toolchain key
+        id: key
+        run: |
+          name=$(sed -n 's|^BR2_TOOLCHAIN_EXTERNAL_PATH=".*/build/toolchains/\(.*\)"$|\1|p' \
+            external/configs/onkyo_nr_defconfig)
+          key=$({ git -C buildroot rev-parse HEAD; grep -E '^(# )?BR2_' \
+            "external/configs/toolchain_${name}_defconfig"; } | sha256sum | cut -c1-12)
+          echo "dir=$name-$key" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        id: cache
+        with:
+          path: build/toolchains/${{ steps.key.outputs.dir }}
+          key: toolchain-${{ steps.key.outputs.dir }}
+
+      - name: Pull the build image
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          tag=$(sha256sum docker/Dockerfile | cut -c1-12)
+          img=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/osiris-buildroot:$tag
+          if docker pull -q "$img"; then
+            docker tag "$img" "osiris-buildroot:$tag"
+          else
+            echo "::notice::$img not published, make builds it"
+          fi
+
+      - name: Build the toolchain
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: make toolchain
