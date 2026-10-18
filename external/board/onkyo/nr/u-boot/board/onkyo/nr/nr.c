@@ -16,12 +16,8 @@
 #include <jffs2/load_kernel.h>
 #include <asm/arch/hardware.h>
 #include <asm/arch/davinci_misc.h>
-#include <asm/global_data.h>
 #include <asm/io.h>
-#include <asm/mach-types.h>
 #include <asm/ti-common/davinci_nand.h>
-
-DECLARE_GLOBAL_DATA_PTR;
 
 /* drivers/net/ti/davinci_emac.c */
 int davinci_eth_phy_read(u8 phy_addr, u8 reg_num, u16 *data);
@@ -150,10 +146,6 @@ int print_cpuinfo(void)
 int board_init(void)
 {
 	irq_init();
-
-	/* a kernel without a device tree finds the board by machine number */
-	gd->bd->bi_arch_number = MACH_TYPE_DAVINCI_DA830_EVM;
-	gd->bd->bi_boot_params = LINUX_BOOT_PARAM_ADDR;
 
 	writel(readl(&davinci_syscfg_regs->suspsrc) &
 	       ~(DAVINCI_SYSCFG_SUSPSRC_EMAC | DAVINCI_SYSCFG_SUSPSRC_TIMER0 |

@@ -24,7 +24,6 @@
 #define CFG_SYS_NAND_MASK_CLE		0x10
 #define CFG_SYS_NAND_MASK_ALE		0x8
 
-#define LINUX_BOOT_PARAM_ADDR		(PHYS_SDRAM_1 + 0x100)
 /* the device tree passed to Linux stays out of the DSP's top 8 MiB */
 #define CFG_SYS_BOOTMAPSZ		(56 << 20)
 
