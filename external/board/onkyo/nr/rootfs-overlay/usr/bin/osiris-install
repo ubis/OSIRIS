@@ -60,8 +60,7 @@ get_bundle() {
 }
 
 check_bundle() {
-	[ -f kernel.itb ] && kernel=kernel.itb || kernel=uImage
-	[ -f md5sums ] && [ -f $kernel ] && [ -f rootfs.squashfs ] && [ -f u-boot.dbi ] ||
+	[ -f md5sums ] && [ -f kernel.itb ] && [ -f rootfs.squashfs ] && [ -f u-boot.dbi ] ||
 		die "not an OSIRIS bundle with U-Boot"
 	md5sum -c md5sums > /dev/null 2>&1 || die "checksum mismatch, the bundle is damaged"
 	[ "$(head -c 4 u-boot.dbi)" = "DBI1" ] || die "u-boot.dbi is not a dspboot image"
@@ -83,7 +82,7 @@ write_uboot() {
 
 # both slots' volumes as large as the images, data DATA_SIZE, the rest free
 write_ubi() {
-	local v k=$(wc -c < $kernel) r=$(wc -c < rootfs.squashfs)
+	local v k=$(wc -c < kernel.itb) r=$(wc -c < rootfs.squashfs)
 
 	echo "creating UBI on mtd$UBI"
 	ubidetach -m $UBI > /dev/null 2>&1 || true
@@ -95,7 +94,7 @@ write_ubi() {
 	ubimkvol /dev/ubi0 -n 2 -N rootfs_a -s $r > /dev/null
 	ubimkvol /dev/ubi0 -n 3 -N rootfs_b -s $r > /dev/null
 	ubimkvol /dev/ubi0 -n 4 -N data -s $DATA_SIZE > /dev/null
-	for v in 0 1; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v $kernel; done
+	for v in 0 1; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v kernel.itb; done
 	for v in 2 3; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v rootfs.squashfs; done
 	ubinfo -d 0 -a | sed -n 's/^Name: *//p' | tr '\n' ' '; echo
 }

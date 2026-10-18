@@ -80,11 +80,8 @@ the device trees: U-Boot boots the configuration named after the model in
 one when there is no such configuration. The TX-NR515 and TX-NR717 each
 have a configuration and a device tree of their own, which so far only
 names the model on top of the board's shared one. U-Boot writes the
-flash partitions into it, laid out for the chip's block size. A slot
-written by an older OSIRIS holds a uImage, the kernel with the board's
-device tree appended, which both U-Boots boot.
-Once a slot of this system is confirmed, U-Boot's boot commands are its
-own, which boot the FIT.
+flash partitions into it, laid out for the chip's block size. Once a
+slot is confirmed, U-Boot's boot commands are the running system's.
 
 ### The flash
 

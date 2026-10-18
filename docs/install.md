@@ -172,9 +172,8 @@ scp dist/images/osiris-<version>.tar root@TX-NR717:/tmp/
 ssh root@TX-NR717 osiris-upgrade /tmp/osiris-<version>.tar
 ```
 
-From an older OSIRIS, update from a USB stick instead: its
-`osiris-upgrade` unpacks the whole bundle into `/tmp`, which does not hold
-this bundle twice.
+An OSIRIS older than 1.0 has to install 1.0.0 from a USB stick first; it
+cannot install later versions.
 
 The update goes into the copy that is not running, and the receiver restarts
 into it once. If it comes up, it becomes the default; if it does not, the

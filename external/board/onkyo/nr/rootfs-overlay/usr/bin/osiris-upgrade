@@ -28,19 +28,17 @@ vmd5() {
 	} < $1 | md5
 }
 
-# what to install, and its checksums; the FIT only with a U-Boot for the
-# slot, as the slot's own U-Boot may boot only a uImage
+# what to install, and its checksums
 read_bundle() {
 	local f
 
 	tar -tvf "$bundle" > list || die "cannot read $bundle"
-	has kernel.itb && has u-boot.dbi && kernel=kernel.itb || kernel=uImage
-	for f in VERSION md5sums $kernel rootfs.squashfs; do
+	for f in VERSION md5sums kernel.itb rootfs.squashfs; do
 		has $f || die "not an OSIRIS bundle"
 	done
 	has u-boot.dbi && dbi=u-boot.dbi || dbi=
 	tar -xf "$bundle" VERSION md5sums $dbi || die "cannot unpack $bundle"
-	for f in $kernel rootfs.squashfs $dbi; do
+	for f in kernel.itb rootfs.squashfs $dbi; do
 		[ -n "$(sum $f)" ] || die "no checksum for $f"
 	done
 	[ -z "$dbi" ] || [ "$(md5 < $dbi)" = "$(sum $dbi)" ] ||
@@ -54,7 +52,7 @@ make_room() {
 	local p n v have=$(ubi_info "Amount of available logical eraseblocks") need=0
 
 	leb=$(ubi_info "Logical eraseblock size")
-	for p in kernel:$kernel rootfs:rootfs.squashfs; do
+	for p in kernel:kernel.itb rootfs:rootfs.squashfs; do
 		n=$(ubi_info Size ${p%%:*}_$new)
 		[ -n "$n" ] || die "no UBI volume ${p%%:*}_$new"
 		have=$((have + n))
@@ -69,7 +67,7 @@ make_room() {
 write_volumes() {
 	local p name file v n
 
-	for p in kernel:$kernel rootfs:rootfs.squashfs; do
+	for p in kernel:kernel.itb rootfs:rootfs.squashfs; do
 		name=${p%%:*}_$new
 		file=${p#*:}
 		v=$(ubi_info "Volume ID" $name)
