@@ -142,13 +142,13 @@ you made).
    receiver's label with `setenv -f ethaddr <address>` and `saveenv`, so
    that the installer finds it.
 
-4. **Install.** Log in as `root` (password `osiris`) and run
+4. **Install.** Switch the board back to NAND boot; the chip only reads
+   the switch when it starts. Log in as `root` (password `osiris`) and run
    `osiris-install`. It writes the bundle built into the installer: U-Boot
    into both slots, the kernel and root file system, and a fresh U-Boot
-   environment. To install another bundle, put it on the TFTP server and
-   give its name: `osiris-install osiris-<version>.tar`.
-
-   Then switch the board back to NAND boot and power it off and on.
+   environment, then restarts the board (`-n` leaves it running). To
+   install another bundle, put it on the TFTP server and give its name:
+   `osiris-install osiris-<version>.tar`.
 
 OSIRIS now starts from the flash. The receiver shows "OSIRIS" and the build
 as its DSP version, and the board gets its address by DHCP, with the

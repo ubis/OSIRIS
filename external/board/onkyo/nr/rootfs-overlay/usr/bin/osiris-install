@@ -2,7 +2,7 @@
 #
 # osiris-install: put OSIRIS on the flash, from the installer running in RAM
 #
-#   osiris-install [-s server] [bundle.tar | directory]
+#   osiris-install [-n] [-s server] [bundle.tar | directory]   -n: do not reboot
 #
 # The bundle is the installer's own, a local file, or one fetched from the
 # TFTP server, by default the one the installer booted from. U-Boot goes
@@ -114,6 +114,8 @@ write_env() {
 	fw_printenv bootslot
 }
 
+reboot=1
+[ "$1" = "-n" ] && { reboot=0; shift; }
 server=$(sed -n 's/.* ip=[^:]*:\([^: ]*\).*/\1/p' /proc/cmdline)
 if [ "$1" = "-s" ]; then
 	server=$2
@@ -128,4 +130,8 @@ check_bundle
 write_uboot
 write_ubi
 write_env
-echo "done: reboot to start OSIRIS from NAND"
+echo "done"
+if [ $reboot = 1 ]; then
+	echo "rebooting"
+	reboot
+fi
