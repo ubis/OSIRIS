@@ -107,3 +107,82 @@ jobs:
       - name: Build the toolchain
         if: steps.cache.outputs.cache-hit != 'true'
         run: make toolchain
+
+  build:
+    needs: toolchain
+    if: ${{ !cancelled() && needs.toolchain.result == 'success' }}
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check out Buildroot
+        id: buildroot
+        run: |
+          git submodule update --init --depth 1 buildroot
+          echo "rev=$(git -C buildroot rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: build/toolchains/${{ needs.toolchain.outputs.dir }}
+          key: toolchain-${{ needs.toolchain.outputs.dir }}
+          fail-on-cache-miss: true
+
+      - uses: actions/cache/restore@v6
+        id: dl
+        with:
+          path: dl
+          key: dl-${{ steps.buildroot.outputs.rev }}-${{ hashFiles('external/configs/*', 'external/package/**') }}
+          restore-keys: dl-
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: build/ccache
+          key: ccache-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ccache-
+
+      - name: Pull the build images
+        run: |
+          for i in buildroot:docker dspboot:dspboot/docker; do
+            name=osiris-${i%%:*}
+            tag=$(sha256sum "${i#*:}/Dockerfile" | cut -c1-12)
+            img=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/$name:$tag
+            if docker pull -q "$img"; then
+              docker tag "$img" "$name:$tag"
+            else
+              echo "::notice::$img not published, make builds it"
+            fi
+          done
+
+      - name: Build
+        run: |
+          mkdir -p build/ccache
+          echo "max_size = 2G" > build/ccache/ccache.conf
+          make buildroot
+
+      - uses: actions/cache/save@v6
+        if: ${{ success() && steps.dl.outputs.cache-hit != 'true' }}
+        with:
+          path: dl
+          key: dl-${{ steps.buildroot.outputs.rev }}-${{ hashFiles('external/configs/*', 'external/package/**') }}
+
+      - uses: actions/cache/save@v6
+        if: ${{ !cancelled() }}
+        with:
+          path: build/ccache
+          key: ccache-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Disk usage
+        if: ${{ !cancelled() }}
+        run: df -h / && du -sh dl build/* 2> /dev/null || true
+
+      - name: Bundle
+        id: bundle
+        run: echo "tar=$(basename dist/images/osiris-*.tar)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: dist/images/${{ steps.bundle.outputs.tar }}
+          archive: false
+          if-no-files-found: error
