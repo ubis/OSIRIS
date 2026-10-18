@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: BSD-2-Clause
+
+name: osiris
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'buildroot'
+      - 'buildroot-patches/**'
+      - 'docker/**'
+      - 'dspboot/docker/**'
+      - 'dspboot/tools/**'
+      - 'external/**'
+      - 'services/**'
+      - 'tools/**'
+      - 'Makefile'
+      - '.github/workflows/osiris.yml'
+  pull_request:
+    paths:
+      - 'buildroot'
+      - 'buildroot-patches/**'
+      - 'docker/**'
+      - 'dspboot/docker/**'
+      - 'dspboot/tools/**'
+      - 'external/**'
+      - 'services/**'
+      - 'tools/**'
+      - 'Makefile'
+      - '.github/workflows/osiris.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: osiris-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Log in to GHCR
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the build image if missing
+        run: |
+          tag=$(sha256sum docker/Dockerfile | cut -c1-12)
+          img=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/osiris-buildroot:$tag
+          if docker manifest inspect "$img" > /dev/null 2>&1; then
+            echo "$img already published"
+            exit 0
+          fi
+          docker build -t "$img" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            docker
+          docker push "$img"
