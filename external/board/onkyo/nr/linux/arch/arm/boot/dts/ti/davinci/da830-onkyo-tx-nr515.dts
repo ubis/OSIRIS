@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/dts-v1/;
+#include "da830-onkyo-nr.dtsi"
+
+/*
+ * GP2[9] is HDMIMUT, GP4[11] the MFi chip's CS, GP4[14] open, GP1[9-12]
+ * and GP2[0-1] test points; GP2[4] (ELAN_RST) stays as it is.
+ */
+/ {
+	compatible = "onkyo,tx-nr515", "onkyo,tx-nr", "ti,da830";
+	model = "Onkyo TX-NR515";
+};

@@ -1,0 +1,255 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Onkyo DSP board: DA830 (OMAP-L137), 20 MHz crystal, 64 MiB SDRAM, NAND
+ * on EMIFA CS3, RMII Ethernet, console on UART1, SPI0 to the receiver's
+ * main MCU.
+ */
+#include <dt-bindings/gpio/gpio.h>
+#include "da830.dtsi"
+
+/ {
+	aliases {
+		serial1 = &serial1;
+		ethernet0 = &eth0;
+		spi0 = &spi0;
+	};
+
+	chosen {
+		stdout-path = "serial1:115200n8";
+	};
+
+	memory@c0000000 {
+		device_type = "memory";
+		reg = <0xc0000000 0x04000000>;
+	};
+
+	/* the rear USB port's power switch, GP5[13] low = on */
+	usb1_vbus: regulator-usb1-vbus {
+		compatible = "regulator-fixed";
+		regulator-name = "usb1_vbus";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		gpio = <&gpio 93 GPIO_ACTIVE_LOW>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/* the DSP's A/V sync buffer and decoder */
+		dsp@c3800000 {
+			reg = <0xc3800000 0x00800000>;
+			no-map;
+		};
+	};
+};
+
+&ref_clk {
+	clock-frequency = <20000000>;
+};
+
+&pmx_core {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1_pins>, <&spi0_pins>, <&control_pins>,
+		    <&mcasp1_pins>, <&emac_pins>, <&nand_pins>, <&usb_pins>,
+		    <&i2c0_pins>;
+
+	uart1_pins: uart1-pins {
+		pinctrl-single,bits = <
+			/* UART1_TXD UART1_RXD */
+			0x2c 0x00001100 0x0000ff00
+		>;
+	};
+	spi0_pins: spi0-pins {
+		pinctrl-single,bits = <
+			/* NSPI0_SCS_0, SPI0_CLK, SPI0_SIMO_0, SPI0_SOMI_0 */
+			0x1c 0x10111000 0xf0fff000
+		>;
+	};
+	/*
+	 * Control lines as GPIOs: DIGMUT GP1[0], ARMZ2MUT GP1[8], DBG/AUDIO
+	 * GP1[13], DIG_TUNER GP5[3], USB0_OC_DET GP2[15], DATA_NET GP2[8],
+	 * ARM_CS GP1[14], ARM_RDY GP2[2]. The others here, GP2[9], GP4[11],
+	 * GP4[14], GP1[9-12] and GP2[0-1], are wired differently by model
+	 * (see its .dts); nothing drives them here.
+	 */
+	control_pins: control-pins {
+		pinctrl-single,bits = <
+			0x1c 0x08000000 0x0f000000
+			0x24 0x08000000 0x0f000000
+			0x30 0x00008008 0x0000f00f
+			0x3c 0x08000000 0x0f000000
+			0x40 0x88000000 0xff000000
+			0x44 0x88088888 0xff0fffff
+			0x48 0x88000008 0xff00000f
+		>;
+	};
+	/*
+	 * McASP1 for the DSP: AHCLKX1 MCLK from the PCM9211, ACLKX1/AFSX1
+	 * and AXR1_0-3 to the PCM1690, ACLKR1/AFSR1 and AXR1_4-5 in. AMUTE1
+	 * stays GP4[14].
+	 */
+	mcasp1_pins: mcasp1-pins {
+		pinctrl-single,bits = <
+			0x2c 0x11100000 0xfff00000
+			0x30 0x11110110 0xffff0ff0
+			0x34 0x00000011 0x000000ff
+		>;
+	};
+	/* RMII, MDIO, the 50 MHz reference clock out, PHY interrupt GP3[12] */
+	emac_pins: emac-pins {
+		pinctrl-single,bits = <
+			0x24 0x80200000 0xf0f00000
+			0x28 0x22222220 0xfffffff0
+			0x2c 0x00000022 0x000000ff
+		>;
+	};
+	/* EMA_D[7:0], EMA_A[2:1], EMA_WE, EMA_CS[3], EMA_OE, EMA_WAIT[0] */
+	nand_pins: nand-pins {
+		pinctrl-single,bits = <
+			0x34 0x11000000 0xff000000
+			0x38 0x00111111 0x00ffffff
+			0x3c 0x10000000 0xf0000000
+			0x40 0x00000001 0x0000000f
+			0x48 0x00110010 0x00ff00f0
+			0x4c 0x00000001 0x0000000f
+		>;
+	};
+	/* USB0_DRVVBUS, rear USB VBUS GP5[13] and overcurrent GP5[12] */
+	usb_pins: usb-pins {
+		pinctrl-single,bits = <
+			0x20 0x80000000 0xf0000000
+			0x24 0x00000018 0x000000ff
+		>;
+	};
+	i2c0_pins: i2c0-pins {
+		pinctrl-single,bits = <
+			/* I2C0_SDA I2C0_SCL */
+			0x20 0x00022000 0x000ff000
+		>;
+	};
+};
+
+&serial1 {
+	status = "okay";
+};
+
+&wdt {
+	status = "okay";
+};
+
+&gpio {
+	status = "okay";
+};
+
+&spi0 {
+	status = "okay";
+
+	/* the receiver's main MCU; mcud talks to it through spidev */
+	mcu@0 {
+		compatible = "onkyo,tx-nr-mcu";
+		reg = <0>;
+		spi-max-frequency = <1000000>;
+	};
+};
+
+&mdio {
+	status = "okay";
+	bus_freq = <2200000>;
+
+	ethphy: ethernet-phy@1 {
+		reg = <1>;
+	};
+};
+
+&eth0 {
+	status = "okay";
+	ti,davinci-rmii-en = /bits/ 8 <1>;
+	phy-handle = <&ethphy>;
+};
+
+&usb_phy {
+	status = "okay";
+};
+
+/* USB0 is a host; the controller switches VBUS through USB0_DRVVBUS */
+&usb0 {
+	status = "okay";
+	dr_mode = "host";
+};
+
+/* USB1 is the rear port, over-current on GP5[12], low active */
+&usb1 {
+	status = "okay";
+	vbus-supply = <&usb1_vbus>;
+	oc-gpios = <&gpio 92 GPIO_ACTIVE_LOW>;
+};
+
+&aemif {
+	status = "okay";
+
+	cs3 {
+		#address-cells = <2>;
+		#size-cells = <1>;
+		clock-ranges;
+		ranges;
+
+		ti,cs-chipselect = <3>;
+		ti,cs-read-setup-ns = <19>;
+		ti,cs-read-strobe-ns = <50>;
+		ti,cs-read-hold-ns = <0>;
+		ti,cs-write-setup-ns = <24>;
+		ti,cs-write-strobe-ns = <21>;
+		ti,cs-write-hold-ns = <14>;
+		ti,cs-min-turnaround-ns = <20>;
+
+		nand@2000000,0 {
+			compatible = "ti,davinci-nand";
+			reg = <0 0x02000000 0x02000000
+			       1 0x00000000 0x00008000>;
+
+			ti,davinci-chipselect = <1>;
+			ti,davinci-mask-ale = <0>;
+			ti,davinci-mask-cle = <0>;
+			ti,davinci-mask-chipsel = <0>;
+			ti,davinci-ecc-mode = "hw";
+			ti,davinci-ecc-bits = <4>;
+			ti,davinci-nand-use-bbt;
+			nand-is-boot-medium;
+
+			/* for 16 KiB blocks; U-Boot lays them out for the chip */
+			partitions {
+				compatible = "fixed-partitions";
+				#address-cells = <1>;
+				#size-cells = <1>;
+
+				partition@0 {
+					label = "env";
+					reg = <0x000000 0x004000>;
+				};
+				partition@4000 {
+					label = "dspboot";
+					reg = <0x004000 0x0fc000>;
+				};
+				partition@100000 {
+					label = "env2";
+					reg = <0x100000 0x040000>;
+				};
+				partition@140000 {
+					label = "uboot_a";
+					reg = <0x140000 0x080000>;
+				};
+				partition@1c0000 {
+					label = "uboot_b";
+					reg = <0x1c0000 0x080000>;
+				};
+				partition@240000 {
+					label = "ubi";
+					reg = <0x240000 0>;
+				};
+			};
+		};
+	};
+};

@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/dts-v1/;
+#include "da830-onkyo-nr.dtsi"
+
+/*
+ * GP2[9] is HDMIINT, GP4[11] AFE_RESETX, GP4[14] DSD_SW, which U-Boot sets
+ * high, GP1[9-12] and GP2[0-1] the second DSP, not fitted.
+ */
+/ {
+	compatible = "onkyo,tx-nr717", "onkyo,tx-nr", "ti,da830";
+	model = "Onkyo TX-NR717";
+};
