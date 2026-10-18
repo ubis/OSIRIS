@@ -347,21 +347,45 @@ const char *soc_name(void)
 		       : "unknown SoC";
 }
 
+/* "d800k" and a three-digit revision, else "?" */
+const char *soc_rom_id(void)
+{
+	static char id[9];
+	const volatile char *rom = (const volatile char *)ROM_ID_ADDR;
+	u32 i;
+
+	for (i = 0; i < 8; i++) {
+		id[i] = rom[i];
+	}
+	id[8] = 0;
+	if (memcmp(id, "d800k", 5)) {
+		return "?";
+	}
+	for (i = 5; i < 8; i++) {
+		if (id[i] < '0' || id[i] > '9') {
+			return "?";
+		}
+	}
+
+	return id;
+}
+
+/* JTAGID reads the same on 2.0 and 2.1; the 2.1 boot ROM is d800k005 */
 const char *soc_revision(void)
 {
 	switch (SYSCFG_JTAGID >> 28) {
 	case 0x0: return "1.0";
 	case 0x8: return "1.1";
-	case 0x9: return "2.0";
+	case 0x9: return strcmp(soc_rom_id(), "d800k005") ? "2.0" : "2.1";
 	default: return "?";
 	}
 }
 
 void soc_report(void)
 {
-	printf("SoC:    %s rev %s, JTAGID %08x, REVID %08x, CHIPREVID %08x\n",
-	       soc_name(), soc_revision(), SYSCFG_JTAGID, SYSCFG_REVID,
-	       SYSCFG_CHIPREVID);
+	printf("SoC:    %s rev %s, ROM %s, JTAGID %08x, REVID %08x, CHIPREVID %08x\n",
+	       soc_name(), soc_revision(), soc_rom_id(), SYSCFG_JTAGID,
+	       SYSCFG_REVID, SYSCFG_CHIPREVID);
 	printf("        DIEID %08x %08x %08x %08x\n", SYSCFG_DIEIDR(0),
 	       SYSCFG_DIEIDR(1), SYSCFG_DIEIDR(2), SYSCFG_DIEIDR(3));
 	printf("Boot:   %s (BOOTCFG %08x)\n", soc_bootmode_name(soc_bootmode()),

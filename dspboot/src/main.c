@@ -52,7 +52,8 @@ static void banner(int pll_ok, int psc_ok)
 	soc_clocks(&clk);
 	printf("\n\ndspboot %s (%s - %s)\n\n", DSPBOOT_VERSION, __DATE__,
 	       __TIME__);
-	printf("SoC:    %s rev %s\n", soc_name(), soc_revision());
+	printf("SoC:    %s rev %s, ROM %s\n", soc_name(), soc_revision(),
+	       soc_rom_id());
 	printf("Board:  %s\n", BOARD_NAME);
 	printf("Boot:   %s\n", soc_bootmode_name(soc_bootmode()));
 	if (pll_ok) {

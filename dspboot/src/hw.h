@@ -13,7 +13,11 @@
 #include "types.h"
 
 #define REG32(a)	(*(volatile u32 *)(a))
+
 #define REG8(a)		(*(volatile u8 *)(a))
+
+/* the boot ROM's ID, "d800k001", "d800k003" or "d800k005" (SPRAB04G) */
+#define ROM_ID_ADDR	0x11700008u
 
 /* SYSCFG (System configuration module 0) */
 #define SYSCFG_BASE		0x01C14000u

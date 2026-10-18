@@ -64,7 +64,7 @@ Within a few seconds dspboot reports what it found:
 ```
 dspboot v1.0 (Oct 11 2026 - 10:13:58)
 
-SoC:    OMAP-L137/DA830 rev 2.0
+SoC:    OMAP-L137/DA830 rev 2.0, ROM d800k003
 Board:  onkyo-tx-nr
 Boot:   UART1
 Clocks: DSP/ARM 400 MHz, SDRAM 133 MHz, EMIFA 89 MHz (20 MHz crystal)

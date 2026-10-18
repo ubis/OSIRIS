@@ -55,6 +55,7 @@ enum bootmode soc_bootmode(void);
 const char *soc_bootmode_name(enum bootmode bm);
 const char *soc_name(void);
 const char *soc_revision(void);
+const char *soc_rom_id(void);
 void soc_report(void);
 
 void cache_wb_all(void);
