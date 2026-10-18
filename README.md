@@ -1,5 +1,8 @@
 # OSIRIS
 
+[![dspboot](https://github.com/ubis/OSIRIS/actions/workflows/dspboot.yml/badge.svg?branch=main)](https://github.com/ubis/OSIRIS/actions/workflows/dspboot.yml?query=branch%3Amain)
+[![osiris](https://github.com/ubis/OSIRIS/actions/workflows/osiris.yml/badge.svg?branch=main)](https://github.com/ubis/OSIRIS/actions/workflows/osiris.yml?query=branch%3Amain)
+
 Open source firmware for Onkyo AV receivers with the TI D830 /
 OMAP-L137 DSP chip - TX-NR515, TX-NR717 and friends.
 
