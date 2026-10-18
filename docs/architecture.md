@@ -97,8 +97,7 @@ slot is confirmed, U-Boot's boot commands are the running system's.
 In the UBI, each slot's volumes are as large as their images and `data`
 is 8 MiB; the rest stays free. `osiris-upgrade` resizes the slot it writes
 to the new images, so they can grow until two slots and `data` fill the
-UBI. Older systems made `data` fill it; it is made 8 MiB again, its files
-kept, the first time this one boots from its confirmed slot.
+UBI.
 
 The boot ROM only reads pages written with its own ECC layout (4-bit
 Reed-Solomon, parity in spare bytes 6-15), which differs from what the

@@ -1,39 +1,9 @@
 # /data: the UBIFS volume that keeps settings, keys and passwords, or RAM
 DATA_SIZE=8388608
 
-# Older systems made the data volume fill the UBI. Once this one boots
-# from its confirmed slot, the volume is made DATA_SIZE again, its files
-# kept, so that the rest is free for the slots (osiris-upgrade).
-data_shrink() {
-	local leb=$(ubi_info "Logical eraseblock size") n=$(ubi_info Size data)
-	local slot=$(boot_slot)
-
-	[ -n "$leb" ] && [ -n "$n" ] && [ $n -gt $(((DATA_SIZE + leb - 1) / leb)) ] || return 0
-	[ -n "$slot" ] && [ "$slot" = "$(fw_printenv -n bootslot 2> /dev/null)" ] || return 0
-	mount -t ubifs -o ro ubi0:data /data || return 0
-	# with room to spare in the smaller volume
-	if [ $(du -sk /data | cut -f1) -gt $((DATA_SIZE >> 11)) ] ||
-	   ! tar -C /data -cf /tmp/data.tar .; then
-		umount /data
-		return 0
-	fi
-	umount /data
-	if ubirmvol /dev/ubi0 -N data && ubimkvol /dev/ubi0 -n 4 -N data -s $DATA_SIZE > /dev/null &&
-	   mount -t ubifs ubi0:data /data && tar -C /data -xf /tmp/data.tar && umount /data; then
-		echo "data: volume made $((DATA_SIZE >> 20)) MiB, the rest is free for the slots"
-		rm -f /tmp/data.tar
-	else
-		echo "data: making the volume smaller failed, its files are in /tmp/data.tar"
-	fi
-}
-
-if [ -e /dev/ubi0 ]; then
-	if ubinfo -d 0 -N data > /dev/null 2>&1; then
-		data_shrink
-	# lost while it was being made smaller
-	elif ubimkvol /dev/ubi0 -n 4 -N data -s $DATA_SIZE > /dev/null; then
-		echo "data: new data volume"
-	fi
+if [ -e /dev/ubi0 ] && ! ubinfo -d 0 -N data > /dev/null 2>&1 &&
+   ubimkvol /dev/ubi0 -n 4 -N data -s $DATA_SIZE > /dev/null; then
+	echo "data: new data volume"
 fi
 if [ -e /dev/ubi0 ] && ubinfo -d 0 -N data > /dev/null 2>&1 &&
    mount -t ubifs ubi0:data /data; then
