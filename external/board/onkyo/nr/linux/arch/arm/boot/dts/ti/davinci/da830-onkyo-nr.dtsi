@@ -32,6 +32,13 @@
 		gpio = <&gpio 93 GPIO_ACTIVE_LOW>;
 	};
 
+	rmii_clk: clock-rmii {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <50000000>;
+		clock-output-names = "rmii_ref";
+	};
+
 	reserved-memory {
 		#address-cells = <1>;
 		#size-cells = <1>;
@@ -161,6 +168,8 @@
 
 	ethphy: ethernet-phy@1 {
 		reg = <1>;
+		clocks = <&rmii_clk>;
+		clock-names = "rmii-ref";
 	};
 };
 
