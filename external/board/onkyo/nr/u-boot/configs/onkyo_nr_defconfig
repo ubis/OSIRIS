@@ -23,6 +23,8 @@ CONFIG_STACK_SIZE=0x100000
 CONFIG_DYNAMIC_SYS_CLK_FREQ=y
 CONFIG_FIT=y
 CONFIG_BOOTDELAY=1
+CONFIG_OF_BOARD_SETUP=y
+CONFIG_FDT_FIXUP_PARTITIONS=y
 CONFIG_USE_BOOTCOMMAND=y
 CONFIG_BOOTCOMMAND="ubi part ubi; if test \"x${upgrade_slot}\" != x; then setenv slot ${upgrade_slot}; setenv upgrade_slot; saveenv; echo Trying upgraded slot ${slot}; run bootslot_one; fi; setenv slot ${bootslot}; run bootslot_one; if test \"${bootslot}\" = b; then setenv slot a; else setenv slot b; fi; echo Slot ${bootslot} failed, trying slot ${slot}; run bootslot_one"
 CONFIG_BOARD_EARLY_INIT_F=y
@@ -41,8 +43,6 @@ CONFIG_CMD_DHCP=y
 CONFIG_CMD_MII=y
 CONFIG_CMD_PING=y
 CONFIG_CMD_MTDPARTS=y
-CONFIG_MTDIDS_DEFAULT="nand0=davinci_nand.1"
-CONFIG_MTDPARTS_DEFAULT="mtdparts=davinci_nand.1:16k(env),1008k(dspboot),256k(env2),512k(uboot_a),512k(uboot_b),-(ubi)"
 CONFIG_CMD_UBI=y
 # CONFIG_CMD_UBIFS is not set
 CONFIG_OF_CONTROL=y
@@ -54,6 +54,7 @@ CONFIG_NET_RANDOM_ETHADDR=y
 # CONFIG_MMC is not set
 CONFIG_MTD=y
 CONFIG_DM_MTD=y
+CONFIG_SYS_MTDPARTS_RUNTIME=y
 CONFIG_MTD_RAW_NAND=y
 CONFIG_SYS_NAND_USE_FLASH_BBT=y
 CONFIG_NAND_DAVINCI=y

@@ -140,8 +140,8 @@ buildroot: dspaudio toolchain
 			grep -qix BR2_PACKAGE_\$$p=y .config && echo \$$p-rebuild; done) && \
 		 $(BUILDROOT_MAKE)")
 	rm -rf $(DIST)/images && mkdir -p $(DIST)/images
-	cd $(BUILDROOT_OUT)/images && cp -p osiris-*.tar kernel.itb uImage initrd-installer \
-		u-boot.dbi $(DIST)/images/
+	cd $(BUILDROOT_OUT)/images && cp -p osiris-*.tar kernel.itb initrd-installer u-boot.dbi \
+		$(DIST)/images/
 	@echo "buildroot -> $(DIST)/images"
 
 clean:

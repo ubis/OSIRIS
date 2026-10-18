@@ -9,7 +9,11 @@
 
 #include <config.h>
 #include <clock_legacy.h>
+#include <fdt_support.h>
 #include <init.h>
+#include <mtd_node.h>
+#include <nand.h>
+#include <jffs2/load_kernel.h>
 #include <asm/arch/hardware.h>
 #include <asm/arch/davinci_misc.h>
 #include <asm/global_data.h>
@@ -105,6 +109,35 @@ void davinci_eth_board_phy_init(u8 phy_addr)
 
 	if (davinci_eth_phy_read(phy_addr, 0x1f, &val))
 		davinci_eth_phy_write(phy_addr, 0x1f, val | BIT(7));
+}
+
+/*
+ * The environment takes block 0 and dspboot block 1 up to 1 MiB, as the
+ * boot ROM reads it from block 1; the rest are at offsets dspboot and the
+ * environment use, block aligned for blocks of up to 256 KiB.
+ */
+void board_mtdparts_default(const char **mtdids, const char **mtdparts)
+{
+	static char parts[128];
+	struct mtd_info *mtd = get_nand_dev_by_index(0);
+	unsigned int block = mtd ? mtd->erasesize >> 10 : 16;
+
+	snprintf(parts, sizeof(parts),
+		 "mtdparts=davinci_nand.1:%uk(env),%uk(dspboot),256k(env2),"
+		 "512k(uboot_a),512k(uboot_b),-(ubi)", block, 1024 - block);
+	*mtdids = "nand0=davinci_nand.1";
+	*mtdparts = parts;
+}
+
+/* the kernel's device tree gets the same partitions */
+int ft_board_setup(void *blob, struct bd_info *bd)
+{
+	static const struct node_info nodes[] = {
+		{ "ti,davinci-nand", MTD_DEV_TYPE_NAND },
+	};
+
+	fdt_fixup_mtdparts(blob, nodes, ARRAY_SIZE(nodes));
+	return 0;
 }
 
 int print_cpuinfo(void)

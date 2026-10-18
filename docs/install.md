@@ -35,16 +35,15 @@ builds only redo what changed.
 |---|---|
 | `dist/dspboot/<board>/dspboot.ais` | dspboot, for the serial cable and the flash |
 | `dist/images/osiris-<version>.tar` | the bundle: kernel, root file system and U-Boot, for installing and updating |
-| `dist/images/kernel.itb` | Linux and the device trees as a FIT, what the slots hold |
-| `dist/images/uImage` | Linux, with the board's device tree appended, for the installer and for updates from older systems |
-| `dist/images/initrd-installer` | the installer: the system with the bundle in it, runs from RAM with `uImage` |
+| `dist/images/kernel.itb` | Linux and the device trees as a FIT, what the slots hold and what starts the installer |
+| `dist/images/initrd-installer` | the installer: the system with the bundle in it, runs from RAM with `kernel.itb` |
 | `dist/images/u-boot.dbi` | U-Boot as dspboot starts it, also in the bundle |
 
 Buildroot's own output, with everything it made on the way, stays in
 `build/buildroot-onkyo_nr/`.
 
-Without building, take `osiris-<version>.tar`, `uImage` and `initrd-installer` from
-an OSIRIS release and `dspboot-<version>.zip` from a dspboot release on the
+Without building, take `osiris-<version>.tar`, `kernel.itb` and `initrd-installer`
+from an OSIRIS release and `dspboot-<version>.zip` from a dspboot release on the
 [releases](https://github.com/ubis/osiris/releases) page.
 
 ## Trying it from RAM
@@ -76,7 +75,7 @@ as for an install, except the backup.
 
    Either way, press a key in the console to stop U-Boot's autoboot.
 
-2. **The installer.** Put `uImage` and `initrd-installer` on your TFTP
+2. **The installer.** Put `kernel.itb` and `initrd-installer` on your TFTP
    server and boot them as in step 3 of the first install below (`setenv
    ipaddr`, `setenv serverip`, `tftp`, `setenv bootargs`, `bootm`),
    without `davinci_nand.bbt_create=1` and without `saveenv`. Log
@@ -114,14 +113,14 @@ you made).
    `bootram`. U-Boot starts from RAM, nothing is written yet; press a key to
    stop its autoboot.
 
-3. **The installer.** Put `uImage` and `initrd-installer` on your TFTP
+3. **The installer.** Put `kernel.itb` and `initrd-installer` on your TFTP
    server. In U-Boot, with your own addresses (board, TFTP server,
    gateway, netmask):
 
    ```
    setenv ipaddr 192.168.1.50
    setenv serverip 192.168.1.10
-   tftp 0xc0700000 uImage
+   tftp 0xc0700000 kernel.itb
    tftp 0xc1000000 initrd-installer
    setenv initrd_high 0xffffffff
    setenv bootargs console=ttyS1,115200n8 mem=56M rootfstype=ramfs davinci_nand.bbt_create=1 ip=192.168.1.50:192.168.1.10:192.168.1.1:255.255.255.0::eth0:off
@@ -130,6 +129,8 @@ you made).
 
    `initrd_high` keeps the initrd where it was loaded, inside the 56 MiB
    Linux uses.
+   Started from `kernel.itb`, Linux gets the flash partitions from U-Boot,
+   which lays them out for the chip's block size.
    `rootfstype=ramfs` lets the installer use more than half the RAM, which
    is all a tmpfs root may take. `davinci_nand.bbt_create=1` lets Linux
    write a bad block table to a flash that has none, as the stock one: it

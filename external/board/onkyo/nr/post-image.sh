@@ -84,7 +84,8 @@ sh $TOP/tools/mkbundle.sh -k $IMAGES/uImage -f $IMAGES/kernel.itb -r $IMAGES/roo
 
 # the installer's initrd: this root file system with the bundle unpacked
 # (/usr/share/osiris/bundle for osiris-install), to boot over TFTP with the
-# same kernel for the first install: bootm <uImage> <initrd-installer>.
+# FIT for the first install: bootm <kernel.itb> <initrd-installer>, which
+# gets the flash partitions from U-Boot.
 # It all stays in RAM, so the bundle is unpacked already, for osiris-install
 # to write from in place, and leaves out the uImage, since the U-Boot it
 # installs boots the FIT.
