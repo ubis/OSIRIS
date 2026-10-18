@@ -54,9 +54,8 @@ OBJS    := $(patsubst src/%,$(B)/%.o,$(SRCS))
 BCFLAGS := $(CFLAGS) -DBOARD_FILE='"../boards/$(BOARD).h"'
 LDFLAGS := -nostdlib -nostartfiles -Wl,--gc-sections -Wl,--no-warn-rwx-segments \
            -Wl,-T,dspboot.ld -Wl,-Map,$(B)/dspboot.map
-NANDS   := $(B)/dspboot-512b.nand $(B)/dspboot-2k.nand $(B)/dspboot-4k.nand
 
-all: $(B)/dspboot.ais $(B)/dspboot.lst $(NANDS)
+all: $(B)/dspboot.ais $(B)/dspboot.lst
 	@echo "$(BOARD): dspboot $(VERSION)"
 	@$(SIZE) $(B)/dspboot.elf | tail -1
 	@$(PYTHON) tools/mkais.py --info $(B)/dspboot.elf
@@ -77,14 +76,6 @@ $(B)/dspboot.elf: $(OBJS) dspboot.ld
 $(B)/dspboot.ais: $(B)/dspboot.elf tools/mkais.py
 	$(PYTHON) tools/mkais.py --crc $< -o $@
 
-# ROM-ECC NAND images for "nandrestore.py ... dspboot-<page>.nand@0x4000"
-$(B)/dspboot-512b.nand: $(B)/dspboot.ais tools/mknandimg.py
-	$(PYTHON) tools/mknandimg.py $< -o $@ --page 512 --pad-block > /dev/null
-$(B)/dspboot-2k.nand: $(B)/dspboot.ais tools/mknandimg.py
-	$(PYTHON) tools/mknandimg.py $< -o $@ --page 2048 --pad-block > /dev/null
-$(B)/dspboot-4k.nand: $(B)/dspboot.ais tools/mknandimg.py
-	$(PYTHON) tools/mknandimg.py $< -o $@ --page 4096 --pad-block > /dev/null
-
 $(B)/dspboot.lst: $(B)/dspboot.elf
 	$(OBJDUMP) -d -h $< > $@
 
@@ -99,9 +90,9 @@ dist: all
 	mkdir -p $(DIST)
 	for b in $(if $(BOARD),$(BOARD),$(BOARDS)); do \
 		mkdir -p $(DIST)/$$b && \
-		cp $(O)/$$b/dspboot.ais $(O)/$$b/dspboot-*.nand $(DIST)/$$b/ || exit 1; \
+		cp $(O)/$$b/dspboot.ais $(DIST)/$$b/ || exit 1; \
 	done
-	cd $(DIST) && sha256sum */dspboot.ais */*.nand > SHA256SUMS
+	cd $(DIST) && sha256sum */dspboot.ais > SHA256SUMS
 	echo "dspboot $(VERSION)" > $(DIST)/VERSION
 
 # Host-side unit tests (native gcc + python3)

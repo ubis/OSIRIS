@@ -2,11 +2,14 @@
 """
 nandrestore: byte-exact NAND restore through dspboot, no Linux needed.
 
-UART-boots dspboot, then for every IMAGE@OFFSET (a nanddump-with-OOB file or mknandimg.py output)
-does `loady` -> `nand writeraw` -> `nand crcraw` and compares the CRC32 with the local file.
-Records are page + spare: 528 bytes for 512-byte pages, 2112 for 2 KiB (--page 2048), 4224 for 4 KiB.
+UART-boots dspboot, then for every IMAGE@OFFSET does `loady` -> `nand writeraw` -> `nand crcraw`
+and compares the CRC32 with what it sent. An image is a nanddump-with-OOB file, page + spare
+records: 528 bytes for 512-byte pages, 2112 for 2 KiB (--page 2048), 4224 for 4 KiB. A .ais or
+.dbi file (dspboot, U-Boot) is turned into such records here, with the boot ROM's ECC, padded to
+a whole block.
 
     nandrestore.py -p /dev/cu.usbserial-XXX --ais dspboot.ais mtd1.oob@0x4000 mtd3.oob@0x54000 ...
+    nandrestore.py -p /dev/cu.usbserial-XXX --ais dspboot.ais --page 2048 dspboot.ais@0x20000
 """
 
 import argparse
@@ -17,6 +20,7 @@ import time
 import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import mknandimg                            # noqa: E402
 import uartboot as ub                       # noqa: E402
 
 LOAD_ADDR = 0xC1000000
@@ -71,7 +75,9 @@ def main():
     for spec in args.images:
         path, ofs = spec.rsplit('@', 1)
         data = open(path, 'rb').read()
-        if len(data) % rec:
+        if path.endswith(('.ais', '.dbi')):
+            data = mknandimg.records(data, args.page, mknandimg.DEFAULT_BLOCK[args.page])
+        elif len(data) % rec:
             sys.exit('%s: size %d is not a multiple of %d (page+spare records)' % (path, len(data), rec))
         jobs.append((path, int(ofs, 0), data))
 

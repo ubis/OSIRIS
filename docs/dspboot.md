@@ -40,7 +40,6 @@ needs a serial cable and a computer.
 | file | what |
 |---|---|
 | `dist/dspboot/<board>/dspboot.ais` | dspboot itself, for the serial cable or the flash |
-| `dist/dspboot/<board>/dspboot-512b.nand`, `-2k.nand`, `-4k.nand` | dspboot ready to put into flash, one per page size |
 | `dspboot/tools/uartboot.py` | starts dspboot over the serial cable |
 | `dspboot/tools/nandrestore.py` | writes files into the flash through dspboot and checks them |
 | `dspboot/tools/aisdump.py` | reads the settings out of a stock first stage (for new boards) |
@@ -100,16 +99,18 @@ the whole range with the file. Blocks marked bad are never written. For
 ### Put dspboot into the flash
 
 To start dspboot from the flash at every power-on (needed for the OSIRIS
-firmware), write it to block 1, using the file for your chip's page size
-(dspboot shows it on the `NAND:` line):
+firmware), write it to block 1. nandrestore adds the spare bytes with the
+boot ROM's ECC for your chip's page size (dspboot shows it on the `NAND:`
+line; `--page 2048` or `--page 4096` for the larger ones):
 
 ```sh
 python3 dspboot/tools/nandrestore.py -p /dev/ttyUSB0 --ais dist/dspboot/<board>/dspboot.ais \
-    dist/dspboot/<board>/dspboot-512b.nand@0x4000
+    dist/dspboot/<board>/dspboot.ais@0x4000
 ```
 
 Block 1 starts at 0x4000 on 512-byte-page chips, 0x20000 on 2 KiB-page
-chips with 128 KiB blocks and 0x40000 on 4 KiB-page chips.
+chips with 128 KiB blocks and 0x40000 on 4 KiB-page chips. U-Boot goes
+into its slots the same way, from `u-boot.dbi`.
 
 If dspboot already runs from the flash, stop it at `Hit any key`, close the
 terminal and use `-b 115200 --skip-ais` instead of booting it over the cable.

@@ -26,6 +26,17 @@ def spare_for(page):
                     for i in range(0, len(page), STEP))
 
 
+def records(data, page_sz, block=None):
+    """data as page+spare records, padded with 0xFF to whole pages, or to a whole block"""
+    npages = -(-len(data) // page_sz)
+    if block:
+        ppb = block // page_sz
+        npages = -(-npages // ppb) * ppb
+    data = data.ljust(npages * page_sz, b'\xff')
+    return b''.join(data[i * page_sz:(i + 1) * page_sz] + spare_for(data[i * page_sz:(i + 1) * page_sz])
+                    for i in range(npages))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('input')
@@ -61,15 +72,9 @@ def main():
     block = args.block or DEFAULT_BLOCK[page_sz]
     if block % page_sz:
         ap.error('block size must be a multiple of the page size')
-    npages = -(-len(data) // page_sz)
-    if args.pad_block:
-        ppb = block // page_sz
-        npages = -(-npages // ppb) * ppb
-    data = data.ljust(npages * page_sz, b'\xff')
-    out = b''.join(data[i * page_sz:(i + 1) * page_sz] + spare_for(data[i * page_sz:(i + 1) * page_sz])
-                   for i in range(npages))
+    out = records(data, page_sz, block if args.pad_block else None)
     open(args.output, 'wb').write(out)
-    print('%s: %d pages of %d+%d bytes, %d bytes' % (args.output, npages, page_sz, spare_sz, len(out)))
+    print('%s: %d pages of %d+%d bytes, %d bytes' % (args.output, len(out) // rec, page_sz, spare_sz, len(out)))
     return 0
 
 

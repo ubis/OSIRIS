@@ -32,7 +32,7 @@ The first `make buildroot` downloads the sources Buildroot needs (kept in
 
 | file | what |
 |---|---|
-| `dist/dspboot/<board>/` | dspboot: `dspboot.ais` for the serial cable, `dspboot-512b.nand` (`-2k`, `-4k`) for the flash |
+| `dist/dspboot/<board>/dspboot.ais` | dspboot, for the serial cable and the flash |
 | `dist/images/osiris-<version>.tar` | the bundle: kernel, root file system and U-Boot, for installing and updating |
 | `dist/images/uImage-installer` | the installer: Linux with the system and the bundle built in, runs from RAM |
 
@@ -83,13 +83,13 @@ writes the rest. It erases the stock firmware (except your backup, which
 you made).
 
 1. **dspboot.** Put the board into UART boot mode, power it on and write
-   dspboot into the flash (for chips with 512-byte pages; for others take
-   the `-2k`/`-4k` file and offset from [dspboot.md](dspboot.md)):
+   dspboot into the flash (for chips with 512-byte pages; for others add
+   `--page` and take the offset from [dspboot.md](dspboot.md)):
 
    ```sh
    python3 dspboot/tools/nandrestore.py -p /dev/ttyUSB0 \
        --ais dist/dspboot/onkyo-tx-nr/dspboot.ais \
-       dist/dspboot/onkyo-tx-nr/dspboot-512b.nand@0x4000
+       dist/dspboot/onkyo-tx-nr/dspboot.ais@0x4000
    ```
 
    nandrestore leaves dspboot running at its `dspboot>` prompt.
