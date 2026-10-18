@@ -9,6 +9,7 @@
 # The file contains the board's MAC and IP addresses.
 #
 set -e
+. /usr/lib/osiris/functions.sh
 
 events=0
 [ "$1" = "-e" ] && events=${2:-30}
@@ -36,20 +37,15 @@ attrs() {
 	done
 }
 
-# the mtd device of a partition, by name
-mtd_dev() {
-	sed -n "s/^\(mtd[0-9]*\): .* \"$1\"$/\1/p" /proc/mtd
-}
-
 # dspboot's version and the U-Boot each slot holds (image name, see
 # dspboot/tools/mkimage.py)
 flash_images() {
 	local p d
 
-	echo "dspboot: $(dd if=/dev/$(mtd_dev dspboot) bs=16384 count=4 2> /dev/null |
+	echo "dspboot: $(dd if=/dev/mtd$(mtd_index dspboot) bs=16384 count=4 2> /dev/null |
 		grep -a -o -E -m1 'v[0-9]+\.[0-9][0-9.]*(~g[0-9a-f]+)?(-dirty)?')"
 	for p in uboot_a uboot_b; do
-		d=/dev/$(mtd_dev $p)
+		d=/dev/mtd$(mtd_index $p)
 		if [ "$(dd if=$d bs=4 count=1 2> /dev/null)" = DBI1 ]; then
 			echo "$p: $(dd if=$d bs=64 count=1 2> /dev/null |
 				dd bs=1 skip=28 count=32 2> /dev/null | tr -d '\0')"

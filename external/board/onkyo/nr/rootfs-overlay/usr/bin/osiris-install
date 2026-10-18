@@ -1,66 +1,54 @@
 #!/bin/sh
 #
-# osiris-install: put OSIRIS on the NAND of an Onkyo receiver, from the
-# installer system running in RAM (installer kernel booted over TFTP).
+# osiris-install: put OSIRIS on the flash, from the installer running in RAM
 #
 #   osiris-install [-s server] [bundle.tar | directory]
 #
-# Installs the update bundle built into the installer, unpacked in
-# /usr/share/osiris/bundle, or the given one: a local file, or else fetched
-# from the TFTP server (default: the boot server from ip=). It writes:
-#   uboot_a, uboot_b  U-Boot as a dspboot image (ROM-compatible hardware ECC)
-#   ubi               kernel_a/b and rootfs_a/b sized to the images, an
-#                     empty data volume; the rest stays free for larger
-#                     images (osiris-upgrade)
-#   env, env2         a fresh U-Boot environment: bootslot=a, the board's
-#                     MAC address (ethaddr) kept; the installed system
-#                     configures eth0 by DHCP
-# dspboot (block 1) is left alone. Everything else on the NAND is erased.
+# The bundle is the installer's own, a local file, or one fetched from the
+# TFTP server, by default the one the installer booted from. U-Boot goes
+# into both slots, the kernel and root file system into both slots' UBI
+# volumes, and a new U-Boot environment keeps the board's MAC address.
 #
 set -e
+. /usr/lib/osiris/functions.sh
 
 ENV_TXT=/usr/share/osiris/u-boot-env.txt
 BUILTIN=/usr/share/osiris/bundle
 WORK=/tmp/osiris-install
 DATA_SIZE=$(sed -n 's/^DATA_SIZE=//p' /usr/lib/preinit/20_data)
 
-die() { echo "osiris-install: $*" >&2; exit 1; }
-mtd() { sed -n "s/^mtd\([0-9]*\): .* \"$1\"\$/\1/p" /proc/mtd; }
 # devtmpfs makes a device node a moment after the device appears
 node() {
 	for i in 1 2 3 4 5 6 7 8 9 10; do [ -c $1 ] && return; sleep 0.2; done
 	die "no $1"
 }
-md5() { md5sum | cut -d' ' -f1; }
 
-server=$(sed -n 's/.* ip=[^:]*:\([^: ]*\).*/\1/p' /proc/cmdline)
-if [ "$1" = "-s" ]; then
-	server=$2
-	shift 2
-fi
+preflight() {
+	grep -q "osiris.slot=" /proc/cmdline && die "running from NAND; boot the installer kernel"
+	# a flash without a bad block table gets one only so
+	[ "$(cat /sys/module/davinci_nand/parameters/bbt_create 2> /dev/null)" = Y ] ||
+		die "boot the installer with davinci_nand.bbt_create=1"
 
-bundle=${1:-$BUILTIN}
-case $bundle in /*) ;; *) [ -e "$bundle" ] && bundle=$PWD/$bundle ;; esac
-grep -q "osiris.slot=" /proc/cmdline && die "running from NAND; boot the installer kernel"
-# a flash without a bad block table gets one only so
-[ "$(cat /sys/module/davinci_nand/parameters/bbt_create 2> /dev/null)" = Y ] ||
-	die "boot the installer with davinci_nand.bbt_create=1"
+	ENV=$(mtd_index env); ENV2=$(mtd_index env2); UBOOT_A=$(mtd_index uboot_a)
+	UBOOT_B=$(mtd_index uboot_b); UBI=$(mtd_index ubi)
+	[ -n "$ENV" ] && [ -n "$ENV2" ] && [ -n "$UBOOT_A" ] && [ -n "$UBOOT_B" ] && [ -n "$UBI" ] ||
+		die "OSIRIS flash partitions not found in /proc/mtd (old kernel?)"
 
-ENV=$(mtd env); ENV2=$(mtd env2); UBOOT_A=$(mtd uboot_a); UBOOT_B=$(mtd uboot_b); UBI=$(mtd ubi)
-[ -n "$ENV" ] && [ -n "$ENV2" ] && [ -n "$UBOOT_A" ] && [ -n "$UBOOT_B" ] && [ -n "$UBI" ] ||
-	die "OSIRIS flash partitions not found in /proc/mtd (old kernel?)"
+	mac=$(osiris-ethaddr) || die "no MAC address (ethaddr) in the U-Boot environment"
+	echo "MAC $mac"
+}
 
-mac=$(osiris-ethaddr) || die "no MAC address (ethaddr) in the U-Boot environment"
-echo "MAC $mac"
+# into the bundle's directory; there is RAM for one bundle only, so another
+# one replaces the installer's own
+get_bundle() {
+	rm -rf $WORK
+	mkdir -p $WORK
+	cd $WORK
+	if [ -d "$bundle" ]; then
+		cd "$bundle"
+		return
+	fi
 
-rm -rf $WORK
-mkdir -p $WORK
-cd $WORK
-# all of this is in RAM: a bundle is written from where it is unpacked,
-# and another one takes the place of the installer's own
-if [ -d "$bundle" ]; then
-	cd "$bundle"
-else
 	rm -rf $BUILTIN
 	if [ -f "$bundle" ]; then
 		tar -xf "$bundle" || die "cannot unpack $bundle"
@@ -69,50 +57,75 @@ else
 		echo "fetching $bundle from $server"
 		tftp -g -r "$bundle" -l - $server | tar -xf - || die "cannot fetch $bundle"
 	fi
+}
+
+check_bundle() {
+	[ -f kernel.itb ] && kernel=kernel.itb || kernel=uImage
+	[ -f md5sums ] && [ -f $kernel ] && [ -f rootfs.squashfs ] && [ -f u-boot.dbi ] ||
+		die "not an OSIRIS bundle with U-Boot"
+	md5sum -c md5sums > /dev/null 2>&1 || die "checksum mismatch, the bundle is damaged"
+	[ "$(head -c 4 u-boot.dbi)" = "DBI1" ] || die "u-boot.dbi is not a dspboot image"
+	echo "installing OSIRIS $(cat VERSION)"
+}
+
+write_uboot() {
+	local m len=$(wc -c < u-boot.dbi) want=$(md5 < u-boot.dbi)
+
+	for m in $UBOOT_A $UBOOT_B; do
+		echo "writing U-Boot to mtd$m"
+		flash_erase -q /dev/mtd$m 0 0
+		nandwrite -q -p /dev/mtd$m u-boot.dbi
+		nanddump -q -l $len -f /tmp/check /dev/mtd$m
+		[ "$(head -c $len /tmp/check | md5)" = "$want" ] || die "U-Boot read-back differs on mtd$m"
+	done
+	rm -f /tmp/check
+}
+
+# both slots' volumes as large as the images, data DATA_SIZE, the rest free
+write_ubi() {
+	local v k=$(wc -c < $kernel) r=$(wc -c < rootfs.squashfs)
+
+	echo "creating UBI on mtd$UBI"
+	ubidetach -m $UBI > /dev/null 2>&1 || true
+	ubiformat -q -y /dev/mtd$UBI
+	ubiattach -m $UBI -d 0 > /dev/null
+	node /dev/ubi0
+	ubimkvol /dev/ubi0 -n 0 -N kernel_a -s $k > /dev/null
+	ubimkvol /dev/ubi0 -n 1 -N kernel_b -s $k > /dev/null
+	ubimkvol /dev/ubi0 -n 2 -N rootfs_a -s $r > /dev/null
+	ubimkvol /dev/ubi0 -n 3 -N rootfs_b -s $r > /dev/null
+	ubimkvol /dev/ubi0 -n 4 -N data -s $DATA_SIZE > /dev/null
+	for v in 0 1; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v $kernel; done
+	for v in 2 3; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v rootfs.squashfs; done
+	ubinfo -d 0 -a | sed -n 's/^Name: *//p' | tr '\n' ' '; echo
+}
+
+write_env() {
+	local m
+
+	echo "writing the U-Boot environment"
+	{ cat $ENV_TXT; echo "ethaddr=$mac"; } > /tmp/env.txt
+	mkenvimage -r -s 0x4000 -o /tmp/env.bin /tmp/env.txt
+	for m in $ENV $ENV2; do
+		flash_erase -q /dev/mtd$m 0 0
+		nandwrite -q -p /dev/mtd$m /tmp/env.bin
+	done
+	[ "$(fw_printenv -n ethaddr)" = "$mac" ] || die "environment does not read back"
+	fw_printenv bootslot
+}
+
+server=$(sed -n 's/.* ip=[^:]*:\([^: ]*\).*/\1/p' /proc/cmdline)
+if [ "$1" = "-s" ]; then
+	server=$2
+	shift 2
 fi
+bundle=${1:-$BUILTIN}
+case $bundle in /*) ;; *) [ -e "$bundle" ] && bundle=$PWD/$bundle ;; esac
 
-[ -f kernel.itb ] && kernel=kernel.itb || kernel=uImage
-[ -f md5sums ] && [ -f $kernel ] && [ -f rootfs.squashfs ] && [ -f u-boot.dbi ] ||
-	die "not an OSIRIS bundle with U-Boot"
-md5sum -c md5sums > /dev/null 2>&1 || die "checksum mismatch, the bundle is damaged"
-[ "$(head -c 4 u-boot.dbi)" = "DBI1" ] || die "u-boot.dbi is not a dspboot image"
-echo "installing OSIRIS $(cat VERSION)"
-
-len=$(wc -c < u-boot.dbi)
-want=$(md5 < u-boot.dbi)
-for m in $UBOOT_A $UBOOT_B; do
-	echo "writing U-Boot to mtd$m"
-	flash_erase -q /dev/mtd$m 0 0
-	nandwrite -q -p /dev/mtd$m u-boot.dbi
-	nanddump -q -l $len -f /tmp/check /dev/mtd$m
-	[ "$(head -c $len /tmp/check | md5)" = "$want" ] || die "U-Boot read-back differs on mtd$m"
-done
-rm -f /tmp/check
-
-echo "creating UBI on mtd$UBI"
-ubidetach -m $UBI > /dev/null 2>&1 || true
-ubiformat -q -y /dev/mtd$UBI
-ubiattach -m $UBI -d 0 > /dev/null
-node /dev/ubi0
-k=$(wc -c < $kernel)
-r=$(wc -c < rootfs.squashfs)
-ubimkvol /dev/ubi0 -n 0 -N kernel_a -s $k > /dev/null
-ubimkvol /dev/ubi0 -n 1 -N kernel_b -s $k > /dev/null
-ubimkvol /dev/ubi0 -n 2 -N rootfs_a -s $r > /dev/null
-ubimkvol /dev/ubi0 -n 3 -N rootfs_b -s $r > /dev/null
-ubimkvol /dev/ubi0 -n 4 -N data -s $DATA_SIZE > /dev/null
-for v in 0 1; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v $kernel; done
-for v in 2 3; do node /dev/ubi0_$v; ubiupdatevol /dev/ubi0_$v rootfs.squashfs; done
-ubinfo -d 0 -a | sed -n 's/^Name: *//p' | tr '\n' ' '; echo
-
-echo "writing the U-Boot environment"
-{ cat $ENV_TXT; echo "ethaddr=$mac"; } > /tmp/env.txt
-mkenvimage -r -s 0x4000 -o /tmp/env.bin /tmp/env.txt
-for m in $ENV $ENV2; do
-	flash_erase -q /dev/mtd$m 0 0
-	nandwrite -q -p /dev/mtd$m /tmp/env.bin
-done
-[ "$(fw_printenv -n ethaddr)" = "$mac" ] || die "environment does not read back"
-fw_printenv bootslot
-
+preflight
+get_bundle
+check_bundle
+write_uboot
+write_ubi
+write_env
 echo "done: reboot to start OSIRIS from NAND"

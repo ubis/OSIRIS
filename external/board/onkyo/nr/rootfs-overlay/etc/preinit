@@ -6,6 +6,7 @@
 [ -z "$PREINIT" ] && exec /sbin/init
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+. /usr/lib/osiris/functions.sh
 
 for pi in /lib/preinit/*; do
 	. $pi

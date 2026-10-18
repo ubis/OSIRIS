@@ -5,9 +5,8 @@ DATA_SIZE=8388608
 # from its confirmed slot, the volume is made DATA_SIZE again, its files
 # kept, so that the rest is free for the slots (osiris-upgrade).
 data_shrink() {
-	local leb=$(ubinfo -d 0 | sed -n 's/^Logical eraseblock size: *\([0-9]*\).*/\1/p')
-	local n=$(ubinfo -d 0 -N data | sed -n 's/^Size: *\([0-9]*\) LEBs.*/\1/p')
-	local slot=$(sed -n 's/.*osiris\.slot=\([ab]\).*/\1/p' /proc/cmdline)
+	local leb=$(ubi_info "Logical eraseblock size") n=$(ubi_info Size data)
+	local slot=$(boot_slot)
 
 	[ -n "$leb" ] && [ -n "$n" ] && [ $n -gt $(((DATA_SIZE + leb - 1) / leb)) ] || return 0
 	[ -n "$slot" ] && [ "$slot" = "$(fw_printenv -n bootslot 2> /dev/null)" ] || return 0
