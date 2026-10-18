@@ -4,13 +4,19 @@ name: dspboot
 
 on:
   push:
+    branches:
+      - '**'
+    tags:
+      - 'dspboot-v*'
     paths:
       - 'dspboot/**'
+      - 'docs/dspboot.md'
       - 'Makefile'
       - '.github/workflows/dspboot.yml'
   pull_request:
     paths:
       - 'dspboot/**'
+      - 'docs/dspboot.md'
       - 'Makefile'
       - '.github/workflows/dspboot.yml'
   workflow_dispatch:
@@ -54,6 +60,8 @@ jobs:
     needs: toolchain
     if: ${{ !cancelled() }}
     runs-on: ubuntu-26.04
+    outputs:
+      zip: ${{ steps.zip.outputs.zip }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -75,8 +83,68 @@ jobs:
       - name: Test
         run: make dspboot-test
 
+      - name: Zip
+        id: zip
+        run: |
+          name=dspboot-$(cut -d' ' -f2 dist/dspboot/VERSION)
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$name" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::$name does not match the tag $GITHUB_REF_NAME"
+            exit 1
+          fi
+          d=build/zip/$name
+          mkdir -p "$d/tools" "$d/tests"
+          cp -Rp dist/dspboot/. "$d/"
+          cp -p dspboot/tools/{aisdump,mknandimg,nandrestore,uartboot}.py "$d/tools/"
+          cp -p dspboot/tests/rs_ti.py "$d/tests/"
+          cp -p dspboot/LICENSE "$d/"
+          sed -E 's#dspboot/(tools|docker|boards|LICENSE)#\1#g' docs/dspboot.md > "$d/README.md"
+          (cd build/zip && zip -qrX "$GITHUB_WORKSPACE/dist/$name.zip" "$name")
+          echo "zip=$name.zip" >> "$GITHUB_OUTPUT"
+
       - uses: actions/upload-artifact@v7
         with:
-          name: dspboot-${{ github.sha }}
-          path: dist/dspboot/
+          name: ${{ steps.zip.outputs.zip }}
+          path: dist/${{ steps.zip.outputs.zip }}
           if-no-files-found: error
+
+  release:
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' && startsWith(github.ref, 'refs/tags/dspboot-v') }}
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - run: git fetch --force --tags
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.zip }}
+          path: dist
+
+      - name: Create a draft release
+        run: |
+          tag=$GITHUB_REF_NAME
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "::error::a release for $tag exists already"
+            exit 1
+          fi
+          prev=$(git describe --tags --abbrev=0 --match 'dspboot-v*' "$tag^" 2>/dev/null || true)
+          {
+            git tag -l --format='%(contents:body)' "$tag" | sed '/./,$!d'
+            if [ -n "$prev" ]; then
+              echo "## Changelog"
+              echo
+              git log --reverse --no-merges --format='- %s (%h)' --abbrev=8 "$prev..$tag" -- dspboot docs/dspboot.md
+              echo
+              echo "Full changelog: https://github.com/$GITHUB_REPOSITORY/compare/$prev...$tag"
+            fi
+          } > notes.md
+          gh release create "$tag" "dist/$ZIP" \
+            --draft --verify-tag --title "dspboot ${tag#dspboot-}" --notes-file notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ZIP: ${{ needs.build.outputs.zip }}
