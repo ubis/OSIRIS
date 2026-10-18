@@ -2,7 +2,8 @@
 /*
  * dspboot - NAND driver for EMIFA CS3 with the ROM compatible 4-bit hardware
  * ECC, for small-page (512 + 16) and large-page (2/4 KiB, 16 spare bytes per
- * 512) parts. The geometry comes from the READ ID bytes (nand_id.c).
+ * 512) parts. The geometry comes from the ONFI parameter page or the READ ID
+ * bytes (nand_id.c), as the boot ROM takes it.
  *
  * The 4-bit ECC read/correct sequence follows the DA830 EMIFA documentation as
  * implemented by TI's device_nand.c (FlashAndBootUtils 2.40, BSD-3-Clause) and
@@ -37,6 +38,7 @@ static u8 spare[NAND_MAX_OOB] __attribute__((aligned(8)));
 #define CMD_RNDOUTSTART	0xE0
 #define CMD_READOOB	0x50	/* small page: read area C (spare) */
 #define CMD_READID	0x90
+#define CMD_READPARAM	0xEC
 #define CMD_STATUS	0x70
 #define CMD_RESET	0xFF
 #define CMD_SEQIN	0x80
@@ -155,8 +157,45 @@ static void skip_buf(u32 len)
 	}
 }
 
+/*
+ * Geometry from the ONFI parameter page, the first of its copies with a
+ * valid CRC: -ENODEV no ONFI signature, -EINVAL no valid copy.
+ */
+static int read_onfi(void)
+{
+	u8 sig[4];
+	u32 i;
+	int rc;
+
+	NAND_CMD(CMD_READID);
+	NAND_ADDR(0x20);
+	udelay(1);
+	read_buf(sig, 4);
+	if (memcmp(sig, "ONFI", 4)) {
+		return -ENODEV;
+	}
+
+	NAND_CMD(CMD_READPARAM);
+	NAND_ADDR(0);
+	if (wait_ready()) {
+		return -ETIMEDOUT;
+	}
+
+	for (i = 0; i < 3; i++) {
+		read_buf(nand_pagebuf, 256);
+		rc = nand_decode_onfi(nand_pagebuf, &nand);
+		if (rc != -EINVAL) {
+			return rc;
+		}
+	}
+
+	return -EINVAL;
+}
+
 int nand_init(void)
 {
+	int rc;
+
 	memset(&nand, 0, sizeof(nand));
 	if (psc_set(0, LPSC0_EMIFA, PSC_STATE_ENABLE)) {
 		return -ETIMEDOUT;
@@ -174,7 +213,12 @@ int nand_init(void)
 	udelay(1);
 	read_buf(nand.id, 5);
 	nand.vendor = vendor_name(nand.id[0]);
-	return nand_decode_id(nand.id, &nand);
+	rc = read_onfi();
+	if (rc == -ENODEV || rc == -EINVAL) {
+		rc = nand_decode_id(nand.id, &nand);
+	}
+
+	return rc;
 }
 
 int nand_read_raw(u32 page, u8 *data, u8 *oob)
@@ -213,23 +257,6 @@ static int read_oob_only(u32 page, u8 *oob)
 	return rc;
 }
 
-/*
- * Factory bad block marker in page 0 or 1: spare byte 5 (small page) or 0
- * (large page) != 0xFF.
- */
-int nand_block_is_bad(u32 block)
-{
-	u32 p = block * nand.pages_per_block;
-
-	read_oob_only(p, spare);
-	if (spare[nand.bbm_ofs] != 0xFF) {
-		return 1;
-	}
-
-	read_oob_only(p + 1, spare);
-	return spare[nand.bbm_ofs] != 0xFF;
-}
-
 static int all_ff(const u8 *p, u32 n)
 {
 	while (n--) {
@@ -239,6 +266,39 @@ static int all_ff(const u8 *p, u32 n)
 	}
 
 	return 1;
+}
+
+/*
+ * The boot ROM's rule: a block is bad unless the first 6 spare bytes of every
+ * 512-byte step are 0xFF in pages 0 and 1, or in the first and last page of an
+ * ONFI part. The factory marker (spare byte 5 or 0) is among them.
+ */
+static int page_marked_bad(u32 page)
+{
+	u32 s;
+
+	read_oob_only(page, spare);
+	for (s = 0; s < nand.steps; s++) {
+		if (!all_ff(spare + 16 * s, 6)) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int nand_block_is_bad(u32 block)
+{
+	u32 p = block * nand.pages_per_block;
+
+	return page_marked_bad(p) ||
+	       page_marked_bad(nand.onfi ? p + nand.pages_per_block - 1 : p + 1);
+}
+
+int nand_block_is_bbt(u32 block)
+{
+	read_oob_only(block * nand.pages_per_block, spare);
+	return !memcmp(spare, "Bbt0", 4) || !memcmp(spare, "1tbB", 4);
 }
 
 /* Read 512 bytes from the current column with the 4-bit ECC engine running. */
@@ -481,12 +541,13 @@ static void print_size(u32 bytes)
 	}
 }
 
+/* bad blocks, not counting the ones that hold the bad block table */
 u32 nand_count_bad(void)
 {
 	u32 b, n = 0;
 
 	for (b = 0; b < nand.blocks; b++) {
-		n += nand_block_is_bad(b) ? 1 : 0;
+		n += nand_block_is_bad(b) && !nand_block_is_bbt(b) ? 1 : 0;
 	}
 
 	return n;
@@ -536,19 +597,19 @@ void nand_report(void)
 		return;
 	}
 
-	printf(", %u MiB, %s page\n",
+	printf(", %u MiB, %s page%s\n",
 	       nand.blocks * (nand.block_size >> 10) >> 10,
-	       nand.large ? "large" : "small");
+	       nand.large ? "large" : "small", nand.onfi ? ", ONFI" : "");
 	printf("        page %u + %u spare, block %u KiB (%u pages), %u blocks, %u+%u address cycles\n",
 	       nand.page_size, nand.oob_size, nand.block_size >> 10,
 	       nand.pages_per_block, nand.blocks, nand.col_cycles,
 	       nand.row_cycles);
 	printf("        CE3CFG %08x, NANDFCR %08x\n", EMIFA_CE3CFG,
 	       EMIFA_NANDFCR);
-	printf("        bad blocks (marker in spare byte %u of page 0/1):",
-	       nand.bbm_ofs);
+	printf("        bad blocks (spare bytes 0-5 not FF in the %s page):",
+	       nand.onfi ? "first or last" : "first or second");
 	for (b = 0; b < nand.blocks; b++) {
-		if (nand_block_is_bad(b)) {
+		if (nand_block_is_bad(b) && !nand_block_is_bbt(b)) {
 			if (nbad < 16) {
 				printf(" %u", b);
 			}
@@ -562,6 +623,16 @@ void nand_report(void)
 	}
 
 	printf("%s (%u total)\n", nbad ? "" : " none", nbad);
+	con_puts("        bad block table:");
+	nbad = 0;
+	for (b = nand.blocks; b-- > 0 && b + 4 >= nand.blocks;) {
+		if (nand_block_is_bbt(b)) {
+			printf(" %u", b);
+			nbad++;
+		}
+	}
+
+	con_puts(nbad ? "\n" : " none\n");
 	if (rb_timeouts) {
 		printf("        WARNING: %u R/B (EMA_WAIT0) timeouts - is R/B wired to WAIT0?\n",
 		       rb_timeouts);

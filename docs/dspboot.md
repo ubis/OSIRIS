@@ -108,9 +108,9 @@ python3 dspboot/tools/nandrestore.py -p /dev/ttyUSB0 --ais dist/dspboot/<board>/
     dist/dspboot/<board>/dspboot.ais@0x4000
 ```
 
-Block 1 starts at 0x4000 on 512-byte-page chips, 0x20000 on 2 KiB-page
-chips with 128 KiB blocks and 0x40000 on 4 KiB-page chips. U-Boot goes
-into its slots the same way, from `u-boot.dbi`.
+Block 1 starts one block in: at 0x4000 with 16 KiB blocks, 0x20000 with
+128 KiB and 0x40000 with 256 KiB; dspboot shows the block size on the
+`NAND:` line. U-Boot goes into its slots the same way, from `u-boot.dbi`.
 
 If dspboot already runs from the flash, stop it at `Hit any key`, close the
 terminal and use `-b 115200 --skip-ais` instead of booting it over the cable.
@@ -121,7 +121,7 @@ terminal and use `-b 115200 --skip-ais` instead of booting it over the cable.
 |---|---|
 | `info` | everything about the hardware: chip IDs, boot pins, clocks, memory and flash details, flash layout |
 | `memtest` | full memory test (takes a minute) |
-| `nand info` | flash details and the list of bad blocks |
+| `nand info` | flash details, the bad blocks and where the bad block table is |
 | `nand dump <page>` | show one flash page with its spare bytes and ECC state |
 | `boot [a\|b]` | start U-Boot from the flash |
 | `loady`, `bootram` | receive a program over the cable (YMODEM) and start it |
@@ -134,10 +134,15 @@ terminal and use `-b 115200 --skip-ais` instead of booting it over the cable.
 
 For a replacement chip, look for:
 
-- **8-bit** bus (not 16-bit), **SLC** flash, 3.3 V,
+- **8-bit** bus (not 16-bit), **SLC** flash, at the voltage the board
+  gives the old chip (3.3 V on the Onkyo boards),
 - pages of **512 bytes, 2 KiB or 4 KiB** with **16 spare bytes per 512
   bytes** (64 per 2 KiB page, 128 per 4 KiB page),
-- **1-bit or 4-bit ECC** required by the data sheet, blocks of at most 256 KiB.
+- **1-bit or 4-bit ECC** required by the data sheet, blocks of at most 256 KiB,
+- for OSIRIS, at least **64 MiB** and blocks of at least **16 KiB**,
+- either **ONFI** (the data sheet says so; the boot ROM and dspboot then read
+  the chip's parameters from it) or one of the device IDs in the boot ROM's
+  table (TI's SPRAB04G, appendix B).
 
 Chips that need stronger ECC (most newer small-geometry and all MLC flash)
 do not work: the boot ROM and the chip's ECC engine stop at 4 bits per 512

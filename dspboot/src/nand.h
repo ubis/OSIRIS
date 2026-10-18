@@ -23,8 +23,11 @@ struct nand_info {
 	u32 block_size; /* bytes */
 	u32 col_cycles;
 	u32 row_cycles;
-	/* factory bad block marker: spare byte 5 (small) or 0 (large) */
-	u32 bbm_ofs;
+	/*
+	 * geometry from the ONFI parameter page: the boot ROM then checks the
+	 * first and last page of a block for bad block marks, else pages 0, 1
+	 */
+	int onfi;
 	const char *vendor;
 	const char *why; /* reason the device is not supported */
 };
@@ -38,7 +41,10 @@ int nand_init(void); /* 0, -ETIMEDOUT, -ENODEV, -EOPNOTSUPP */
 void nand_summary(void); /* one banner line */
 void nand_report(void); /* full report */
 u32 nand_count_bad(void);
+/* bad as the boot ROM sees it, the bad block table's blocks included */
 int nand_block_is_bad(u32 block);
+/* holds a flash bad block table ("Bbt0" or its mirror "1tbB") */
+int nand_block_is_bbt(u32 block);
 /*
  * Reads return the number of corrected symbols (>= 0) or -ENODATA (erased:
  * all 0xFF, no ECC), -ENOMSG (data but no ECC bytes: written without ECC),
@@ -71,6 +77,11 @@ int nand_program_raw(u32 page, const u8 *buf);
  * -EOPNOTSUPP unsupported (n->why).
  */
 int nand_decode_id(const u8 *id, struct nand_info *n);
+/*
+ * The same from a 256-byte ONFI parameter page: -EINVAL if its signature or
+ * CRC is wrong.
+ */
+int nand_decode_onfi(const u8 *pp, struct nand_info *n);
 /* Unpack 10 stored ECC bytes into eight 10-bit values */
 void nand_ecc_unpack(const u8 *ecc10_bytes, u16 *out8);
 

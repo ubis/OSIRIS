@@ -30,6 +30,18 @@ static unsigned char *slurp(const char *path, long *len)
 	return b;
 }
 
+static void print_geom(int rc, const struct nand_info *n)
+{
+	if (rc) {
+		printf("rc=%d %s\n", rc, n->why);
+	} else {
+		printf("page=%u spare=%u steps=%u ppb=%u block=%uK blocks=%u cyc=%u+%u onfi=%d\n",
+		       n->page_size, n->oob_size, n->steps, n->pages_per_block,
+		       n->block_size >> 10, n->blocks, n->col_cycles,
+		       n->row_cycles, n->onfi);
+	}
+}
+
 int main(int argc, char **argv)
 {
 	long len;
@@ -81,14 +93,21 @@ int main(int argc, char **argv)
 		}
 
 		rc = nand_decode_id(id, &n);
-		if (rc) {
-			printf("rc=%d %s\n", rc, n.why);
-		} else {
-			printf("page=%u spare=%u steps=%u ppb=%u block=%uK blocks=%u cyc=%u+%u bbm=%u\n",
-			       n.page_size, n.oob_size, n.steps,
-			       n.pages_per_block, n.block_size >> 10, n.blocks,
-			       n.col_cycles, n.row_cycles, n.bbm_ofs);
+		print_geom(rc, &n);
+	} else if (argc == 3 && !strcmp(argv[1], "onfi")) {
+		/* onfi FILE: a 256-byte ONFI parameter page */
+		struct nand_info n;
+		unsigned char pp[256] = { 0 };
+		FILE *f = fopen(argv[2], "rb");
+
+		if (!f || fread(pp, 1, sizeof(pp), f) != sizeof(pp)) {
+			fprintf(stderr, "cannot read %s\n", argv[2]);
+			return 1;
 		}
+
+		fclose(f);
+		memset(&n, 0, sizeof(n));
+		print_geom(nand_decode_onfi(pp, &n), &n);
 	} else if ((argc == 4 || argc == 5) && !strcmp(argv[1], "env")) {
 		/*
 		 * env NAME FILE [FILE2]: one file = single copy, two =
@@ -115,7 +134,7 @@ int main(int argc, char **argv)
 		       v ? v : "(none)", env_slot(v, n) ? env_slot(v, n) : '-');
 	} else {
 		fprintf(stderr,
-			"usage: test_host crc32|crc16|img FILE | unpack HEX20 | geom HEX8 | env NAME FILE [FILE2]\n");
+			"usage: test_host crc32|crc16|img FILE | unpack HEX20 | geom HEX8 | onfi FILE | env NAME FILE [FILE2]\n");
 		return 2;
 	}
 

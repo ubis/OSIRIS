@@ -10,7 +10,8 @@ Host-side tests for dspboot (run via `make test` after building the target):
   5. AIS: mkais.py output of build/<board>/dspboot.elf fed through uartboot.py's ROM
      protocol code into a simulated boot ROM that checks every CRC
   6. U-Boot environment parsing (bootslot selection, redundant copies)
-  7. NAND geometry from READ ID bytes, mknandimg.py page+spare records for 512 B / 2 KiB / 4 KiB
+  7. NAND geometry from READ ID bytes and ONFI parameter pages, mknandimg.py page+spare
+     records for 512 B / 2 KiB / 4 KiB
 """
 import glob
 import os
@@ -367,22 +368,62 @@ def geom_case(name, idhex, want):
 
 
 geom_case('20 76 ST 64 MiB small page (the 717)', '20760000',
-          'page=512 spare=16 steps=1 ppb=32 block=16K blocks=4096 cyc=1+3 bbm=5')
+          'page=512 spare=16 steps=1 ppb=32 block=16K blocks=4096 cyc=1+3 onfi=0')
 geom_case('EC 75 Samsung 32 MiB small page', 'EC750000',
-          'page=512 spare=16 steps=1 ppb=32 block=16K blocks=2048 cyc=1+2 bbm=5')
+          'page=512 spare=16 steps=1 ppb=32 block=16K blocks=2048 cyc=1+2 onfi=0')
+geom_case('20 39 8 MiB small page, 16 pages per block', '20390000',
+          'page=512 spare=16 steps=1 ppb=16 block=8K blocks=1024 cyc=1+2 onfi=0')
+geom_case('20 71 256 MiB small page', '20710000',
+          'page=512 spare=16 steps=1 ppb=32 block=16K blocks=16384 cyc=1+3 onfi=0')
 geom_case('EC F1 00 15 K9F1G08 128 MiB 2K', 'ECF10015',
-          'page=2048 spare=64 steps=4 ppb=64 block=128K blocks=1024 cyc=2+2 bbm=0')
+          'page=2048 spare=64 steps=4 ppb=64 block=128K blocks=1024 cyc=2+2 onfi=0')
+geom_case('EC F1 128 MiB: the ROM table, not the 4th ID byte', 'ECF10011',
+          'page=2048 spare=64 steps=4 ppb=64 block=128K blocks=1024 cyc=2+2 onfi=0')
 geom_case('2C DA 90 95 MT29F2G08 256 MiB 2K', '2CDA9095',
-          'page=2048 spare=64 steps=4 ppb=64 block=128K blocks=2048 cyc=2+3 bbm=0')
-geom_case('01 D1 80 1D S34ML01G1-like 128 MiB 2K', '01D1801D',
-          'page=2048 spare=64 steps=4 ppb=64 block=128K blocks=1024 cyc=2+2 bbm=0')
+          'page=2048 spare=64 steps=4 ppb=64 block=128K blocks=2048 cyc=2+3 onfi=0')
 geom_case('4K page, 256 KiB block, 1 GiB', 'ADD30026',
-          'page=4096 spare=128 steps=8 ppb=64 block=256K blocks=4096 cyc=2+3 bbm=0')
+          'page=4096 spare=128 steps=8 ppb=64 block=256K blocks=4096 cyc=2+3 onfi=0')
 geom_case('16-bit bus rejected', '2CDA90D5', 'rc=-95 16-bit bus')
-geom_case('8 spare bytes per 512 rejected', 'ECF10011', 'rc=-95 8 spare bytes per 512 (ROM ECC needs 16)')
+geom_case('8 spare bytes per 512 rejected', 'ECD30011', 'rc=-95 8 spare bytes per 512 (ROM ECC needs 16)')
 geom_case('512 KiB block rejected', 'ADD30036', 'rc=-95 block larger than 256 KiB')
-geom_case('1 KiB page rejected', 'ECF10014', 'rc=-95 page size not 2 or 4 KiB')
+geom_case('1 KiB page rejected', 'ECD30014', 'rc=-95 page size not 512 B, 2 or 4 KiB')
+geom_case('01 D1 not in the ROM table (ONFI only)', '01D1801D', 'rc=-19 unknown device code')
 geom_case('unknown device code', 'EC420015', 'rc=-19 unknown device code')
+
+
+def onfi_page(page, spare, ppb, blocks, luns=1, cycles=0x23, features=0, crc_ok=True):
+    pp = bytearray(256)
+    pp[0:4] = b'ONFI'
+    pp[6:8] = struct.pack('<H', features)
+    pp[80:84] = struct.pack('<I', page)
+    pp[84:86] = struct.pack('<H', spare)
+    pp[92:96] = struct.pack('<I', ppb)
+    pp[96:100] = struct.pack('<I', blocks)
+    pp[100] = luns
+    pp[101] = cycles
+    crc = 0x4F4E
+    for b in pp[:254]:
+        crc ^= b << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x8005 if crc & 0x8000 else crc << 1) & 0xFFFF
+    pp[254:256] = struct.pack('<H', crc if crc_ok else crc ^ 1)
+    return bytes(pp)
+
+
+def onfi_case(name, pp, want):
+    out = th('onfi', write('onfi.bin', pp))
+    check('onfi: ' + name, out == want, '' if out == want else '(%s)' % out)
+
+
+onfi_case('S34ML01G1-like 128 MiB 2K', onfi_page(2048, 64, 64, 1024),
+          'page=2048 spare=64 steps=4 ppb=64 block=128K blocks=1024 cyc=2+3 onfi=1')
+onfi_case('4K page, 2 LUNs', onfi_page(4096, 128, 64, 2048, luns=2),
+          'page=4096 spare=128 steps=8 ppb=64 block=256K blocks=4096 cyc=2+3 onfi=1')
+onfi_case('wrong CRC', onfi_page(2048, 64, 64, 1024, crc_ok=False),
+          'rc=-22 no valid ONFI parameter page')
+onfi_case('16-bit bus rejected', onfi_page(2048, 64, 64, 1024, features=1), 'rc=-95 16-bit bus')
+onfi_case('224 spare bytes per 4K page rejected', onfi_page(4096, 224, 64, 2048),
+          'rc=-95 spare bytes per 512 not 16 (ROM ECC)')
 
 MKN = os.path.join(ROOT, 'tools', 'mknandimg.py')
 
