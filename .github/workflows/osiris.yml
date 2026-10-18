@@ -142,6 +142,25 @@ jobs:
           key: ccache-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: ccache-
 
+      - name: Patch Buildroot
+        run: make buildroot-src
+
+      - name: Output key
+        id: key
+        run: |
+          inputs=$({ git rev-parse HEAD:Makefile HEAD:buildroot-patches HEAD:docker/Dockerfile HEAD:external
+                     git ls-files services; git ls-files -s ':(glob)services/*/Makefile'; } | sha256sum | cut -c1-16)
+          echo "output=output-$TOOLCHAIN-$BUILDROOT-$inputs" >> "$GITHUB_OUTPUT"
+        env:
+          TOOLCHAIN: ${{ needs.toolchain.outputs.dir }}
+          BUILDROOT: ${{ steps.buildroot.outputs.rev }}
+
+      - uses: actions/cache/restore@v6
+        id: output
+        with:
+          path: build/buildroot-onkyo_nr
+          key: ${{ steps.key.outputs.output }}
+
       - name: Pull the build images
         run: |
           for i in buildroot:docker dspboot:dspboot/docker; do
@@ -168,7 +187,13 @@ jobs:
           key: dl-${{ steps.buildroot.outputs.rev }}-${{ hashFiles('external/configs/*', 'external/package/**') }}
 
       - uses: actions/cache/save@v6
-        if: ${{ !cancelled() }}
+        if: ${{ success() && github.event_name != 'pull_request' && steps.output.outputs.cache-hit != 'true' }}
+        with:
+          path: build/buildroot-onkyo_nr
+          key: ${{ steps.output.outputs.cache-primary-key }}
+
+      - uses: actions/cache/save@v6
+        if: ${{ !cancelled() && steps.output.outputs.cache-hit != 'true' }}
         with:
           path: build/ccache
           key: ccache-${{ github.run_id }}-${{ github.run_attempt }}
