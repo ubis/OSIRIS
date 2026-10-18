@@ -26,6 +26,49 @@ run() {
 	{ echo "# $*"; "$@"; } > $dir/$f 2>&1 || true
 }
 
+# attrs <dir> <name...>: "name: value" for each file in dir
+attrs() {
+	local d=$1 a
+
+	shift
+	for a in "$@"; do
+		echo "$a: $(cat $d/$a 2> /dev/null)"
+	done
+}
+
+# the mtd device of a partition, by name
+mtd_dev() {
+	sed -n "s/^\(mtd[0-9]*\): .* \"$1\"$/\1/p" /proc/mtd
+}
+
+# dspboot's version and the U-Boot each slot holds (image name, see
+# dspboot/tools/mkimage.py)
+flash_images() {
+	local p d
+
+	echo "dspboot: $(dd if=/dev/$(mtd_dev dspboot) bs=16384 count=4 2> /dev/null |
+		grep -a -o -E -m1 'v[0-9]+\.[0-9][0-9.]*(~g[0-9a-f]+)?(-dirty)?')"
+	for p in uboot_a uboot_b; do
+		d=/dev/$(mtd_dev $p)
+		if [ "$(dd if=$d bs=4 count=1 2> /dev/null)" = DBI1 ]; then
+			echo "$p: $(dd if=$d bs=64 count=1 2> /dev/null |
+				dd bs=1 skip=28 count=32 2> /dev/null | tr -d '\0')"
+		else
+			echo "$p: no image"
+		fi
+	done
+}
+
+# bad blocks and ECC counts of every partition
+mtd_health() {
+	local m
+
+	for m in /sys/class/mtd/mtd*[0-9]; do
+		echo "${m##*/} $(cat $m/name):" $(attrs $m bad_blocks bbt_blocks \
+			corrected_bits ecc_failures)
+	done
+}
+
 run os-release.txt cat /etc/os-release
 run uname.txt uname -a
 run uptime.txt uptime
@@ -40,10 +83,20 @@ run ps.txt ps
 run memory.txt free
 run df.txt df
 run interrupts.txt cat /proc/interrupts
+run modules.txt lsmod
+run sysvipc.txt sh -c 'cat /proc/sysvipc/msg /proc/sysvipc/sem /proc/sysvipc/shm'
+run device-tree.txt sh -c 'tr -d "\0" < /proc/device-tree/model; echo
+	tr "\0" " " < /proc/device-tree/compatible; echo'
 run mtd.txt cat /proc/mtd
+run flash-images.txt flash_images
+run mtd-health.txt mtd_health
+run nand.txt attrs /sys/module/davinci_nand/parameters bbt_create
 run ubi.txt ubinfo -a
+run ubi-health.txt attrs /sys/class/ubi/ubi0 max_ec bad_peb_count \
+	reserved_for_bad avail_eraseblocks total_eraseblocks
 run u-boot-env.txt fw_printenv
 run network.txt ifconfig -a
+run eth0.txt attrs /sys/class/net/eth0 carrier operstate speed duplex
 run net-dev.txt cat /proc/net/dev
 run route.txt route -n
 run state.txt cat /data/osiris/state
