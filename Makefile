@@ -2,7 +2,8 @@
 #
 # OSIRIS top-level build. Every part builds inside its own Docker toolchain
 # image; an image is built on first use and rebuilt whenever its Dockerfile
-# changes (the tag carries a hash of the Dockerfile). Results go to dist/.
+# changes (the tag carries a hash of the Dockerfile). Results go to dist/,
+# copied out of build/.
 #
 #   make dspboot [BOARD=<name>]   first-stage loader -> dist/dspboot/
 #   make dspboot-test             its host-side unit tests
@@ -138,8 +139,9 @@ buildroot: dspaudio toolchain
 		 $(BUILDROOT_MAKE) \$$(cd $(BUILDROOT_OUT) && for p in $(BUILDROOT_LOCAL); do \
 			grep -qix BR2_PACKAGE_\$$p=y .config && echo \$$p-rebuild; done) && \
 		 $(BUILDROOT_MAKE)")
-	mkdir -p $(DIST)
-	ln -sfn $(BUILDROOT_OUT)/images $(DIST)/images
+	rm -rf $(DIST)/images && mkdir -p $(DIST)/images
+	cd $(BUILDROOT_OUT)/images && cp -p osiris-*.tar kernel.itb uImage initrd-installer \
+		u-boot.dbi $(DIST)/images/
 	@echo "buildroot -> $(DIST)/images"
 
 clean:

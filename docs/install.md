@@ -38,6 +38,10 @@ builds only redo what changed.
 | `dist/images/kernel.itb` | Linux and the device trees as a FIT, what the slots hold |
 | `dist/images/uImage` | Linux, with the board's device tree appended, for the installer and for updates from older systems |
 | `dist/images/initrd-installer` | the installer: the system with the bundle in it, runs from RAM with `uImage` |
+| `dist/images/u-boot.dbi` | U-Boot as dspboot starts it, also in the bundle |
+
+Buildroot's own output, with everything it made on the way, stays in
+`build/buildroot-onkyo_nr/`.
 
 Without building, take `osiris-<version>.tar`, `uImage` and `initrd-installer` from
 an OSIRIS release and `dspboot-<version>.zip` from a dspboot release on the
