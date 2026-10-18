@@ -110,7 +110,9 @@ python3 dspboot/tools/nandrestore.py -p /dev/ttyUSB0 --ais dist/dspboot/<board>/
 
 Block 1 starts one block in: at 0x4000 with 16 KiB blocks, 0x20000 with
 128 KiB and 0x40000 with 256 KiB; dspboot shows the block size on the
-`NAND:` line. U-Boot goes into its slots the same way, from `u-boot.dbi`.
+`NAND:` line. If block 1 is bad, dspboot goes into the next good block,
+where the boot ROM looks next, but never past 1 MiB. U-Boot goes into its
+slots the same way, from `u-boot.dbi`, each within its 512 KiB.
 
 If dspboot already runs from the flash, stop it at `Hit any key`, close the
 terminal and use `-b 115200 --skip-ais` instead of booting it over the cable.

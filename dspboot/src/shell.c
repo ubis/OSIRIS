@@ -194,11 +194,48 @@ static int raw_range(u32 ofs, u32 len, u32 *first, u32 *pages)
 	return 0;
 }
 
-static void do_writeraw(u32 addr, u32 ofs, u32 len)
+/*
+ * Where a range written with 'skip' has to end: inside the part of the flash
+ * layout it starts in, dspboot's blocks or a U-Boot slot, as the boot ROM and
+ * dspboot read them; else at the end of the flash.
+ */
+static u32 skip_end(u32 ofs)
+{
+	static const u32 area[][2] = {
+		{ 0, BOARD_ENV_REDUND_OFS },
+		{ BOARD_UBOOT_A_OFS, BOARD_UBOOT_A_OFS + BOARD_UBOOT_SLOT_LEN },
+		{ BOARD_UBOOT_B_OFS, BOARD_UBOOT_B_OFS + BOARD_UBOOT_SLOT_LEN },
+	};
+	u32 i;
+
+	for (i = 0; i < ARRAY_SIZE(area); i++) {
+		if (ofs >= area[i][0] && ofs < area[i][1]) {
+			return area[i][1] / nand.block_size;
+		}
+	}
+
+	return nand.blocks;
+}
+
+/*
+ * The block the next block of a range goes to: the following one, or with
+ * 'skip' the next good one, as the boot ROM, dspboot and nandwrite read and
+ * write images. -ERANGE at block 'end'.
+ */
+static int next_block(u32 *blk, int skip, u32 end)
+{
+	while (skip && *blk < end && nand_block_is_bad(*blk)) {
+		(*blk)++;
+	}
+
+	return *blk < end ? 0 : -ERANGE;
+}
+
+static void do_writeraw(u32 addr, u32 ofs, u32 len, int skip)
 {
 	u8 *rb = rawbuf;
 	const u8 *src = (const u8 *)addr;
-	u32 first, pages, i, page, bad_verify = 0;
+	u32 first, pages, i, page, blk, nblk, end, bad_verify = 0, skipped = 0;
 	int rc;
 
 	if (raw_range(ofs, len, &first, &pages)) {
@@ -210,8 +247,8 @@ static void do_writeraw(u32 addr, u32 ofs, u32 len)
 		return;
 	}
 
-	for (i = 0; i < pages; i += nand.pages_per_block) {
-		u32 blk = (first + i) / nand.pages_per_block;
+	for (i = 0; !skip && i < pages; i += nand.pages_per_block) {
+		blk = (first + i) / nand.pages_per_block;
 		if (nand_block_is_bad(blk)) {
 			printf("block %u (0x%08x) is marked bad - nothing written\n",
 			       blk, blk * nand.block_size);
@@ -219,25 +256,37 @@ static void do_writeraw(u32 addr, u32 ofs, u32 len)
 		}
 	}
 
+	nblk = (pages + nand.pages_per_block - 1) / nand.pages_per_block;
 	printf("writeraw: %u pages (%u blocks) from 0x%08x to NAND 0x%08x\n",
-	       pages, (pages + nand.pages_per_block - 1) / nand.pages_per_block,
-	       addr, ofs);
+	       pages, nblk, addr, ofs);
+	blk = first / nand.pages_per_block;
+	end = skip ? skip_end(ofs) : nand.blocks;
 	for (i = 0; i < pages; i++, src += RAW_REC) {
-		page = first + i;
-		if (!(page % nand.pages_per_block)) {
-			rc = nand_erase_block(page / nand.pages_per_block);
+		if (!(i % nand.pages_per_block)) {
+			if (i) {
+				blk++;
+			}
+
+			page = blk;
+			if (next_block(&blk, skip, end)) {
+				printf("\nran past 0x%08x - stopped\n",
+				       end * nand.block_size);
+				return;
+			}
+
+			skipped += blk - page;
+			rc = nand_erase_block(blk);
 			if (rc) {
-				printf("\nerase block %u: %s - stopped\n",
-				       page / nand.pages_per_block,
+				printf("\nerase block %u: %s - stopped\n", blk,
 				       nand_strerror(rc));
 				return;
 			}
 
 			printf("\r  block %u/%u", i / nand.pages_per_block + 1,
-			       (pages + nand.pages_per_block - 1) /
-				       nand.pages_per_block);
+			       nblk);
 		}
 
+		page = blk * nand.pages_per_block + i % nand.pages_per_block;
 		rc = nand_program_raw(page, src);
 		if (rc) {
 			printf("\nprogram page %u: %s - stopped\n", page,
@@ -251,22 +300,43 @@ static void do_writeraw(u32 addr, u32 ofs, u32 len)
 		}
 	}
 
+	if (skipped) {
+		printf("\n  %u bad block%s skipped, ends at 0x%08x", skipped,
+		       skipped == 1 ? "" : "s", (blk + 1) * nand.block_size);
+	}
+
 	printf("\nwriteraw: done, %u pages differ on raw read-back%s\n",
 	       bad_verify,
 	       bad_verify ? " (bit flips? check with crcraw/nand dump)" : "");
 }
 
-static void do_crcraw(u32 ofs, u32 len)
+static void do_crcraw(u32 ofs, u32 len, int skip)
 {
 	u8 *rb = rawbuf;
-	u32 first, pages, i, crc = 0;
+	u32 first, pages, i, blk, end, crc = 0;
 
 	if (raw_range(ofs, len, &first, &pages)) {
 		return;
 	}
 
+	blk = first / nand.pages_per_block;
+	end = skip ? skip_end(ofs) : nand.blocks;
 	for (i = 0; i < pages; i++) {
-		nand_read_raw(first + i, rb, rb + nand.page_size);
+		if (!(i % nand.pages_per_block)) {
+			if (i) {
+				blk++;
+			}
+
+			if (next_block(&blk, skip, end)) {
+				printf("crcraw: ran past 0x%08x\n",
+				       end * nand.block_size);
+				return;
+			}
+		}
+
+		nand_read_raw(blk * nand.pages_per_block +
+				      i % nand.pages_per_block,
+			      rb, rb + nand.page_size);
 		crc = crc32_update(crc, rb, RAW_REC);
 	}
 
@@ -291,13 +361,14 @@ static void cmd_nand(int argc, char **argv)
 	if (argc >= 5 && !strcmp(argv[1], "writeraw") &&
 	    parse_u32(argv[2], &addr) && parse_u32(argv[3], &ofs) &&
 	    parse_u32(argv[4], &len)) {
-		do_writeraw(addr, ofs, len);
+		do_writeraw(addr, ofs, len,
+			    argc >= 6 && !strcmp(argv[5], "skip"));
 		return;
 	}
 
 	if (argc >= 4 && !strcmp(argv[1], "crcraw") &&
 	    parse_u32(argv[2], &ofs) && parse_u32(argv[3], &len)) {
-		do_crcraw(ofs, len);
+		do_crcraw(ofs, len, argc >= 5 && !strcmp(argv[4], "skip"));
 		return;
 	}
 
@@ -356,7 +427,7 @@ static void cmd_nand(int argc, char **argv)
 
 	con_puts(
 		"usage: nand info | nand dump <page> | nand read <addr> <ofs> <len>\n"
-		"       nand writeraw <addr> <ofs> <len> | nand crcraw <ofs> <len>\n");
+		"       nand writeraw <addr> <ofs> <len> [skip] | nand crcraw <ofs> <len> [skip]\n");
 }
 
 struct cmd {
@@ -379,11 +450,14 @@ static const struct cmd cmds[] = {
 	  "nand info                     NAND geometry and bad blocks\n"
 	  "  nand dump <page>              raw page + spare, with ECC check\n"
 	  "  nand read <addr> <ofs> <len>  ECC-checked read to SDRAM (no bad block skip)\n"
-	  "  nand writeraw <addr> <ofs> <len>\n"
+	  "  nand writeraw <addr> <ofs> <len> [skip]\n"
 	  "                                raw restore of page + spare records (528, 2112\n"
 	  "                                or 4224 bytes per page) from SDRAM; erases each\n"
-	  "                                block first, verifies every page, refuses bad blocks\n"
-	  "  nand crcraw <ofs> <len>       CRC32 of raw page + spare records" },
+	  "                                block first, verifies every page, refuses bad\n"
+	  "                                blocks, or with skip goes on in the next good one,\n"
+	  "                                within dspboot's blocks or the U-Boot slot\n"
+	  "  nand crcraw <ofs> <len> [skip]\n"
+	  "                                CRC32 of raw page + spare records" },
 	{ "md", cmd_md, "md <addr> [len]               memory dump" },
 	{ "memtest", cmd_memtest,
 	  "memtest [addr len]            SDRAM test (destroys SDRAM contents)" },

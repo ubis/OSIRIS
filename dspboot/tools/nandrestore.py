@@ -4,9 +4,10 @@ nandrestore: byte-exact NAND restore through dspboot, no Linux needed.
 
 UART-boots dspboot, then for every IMAGE@OFFSET does `loady` -> `nand writeraw` -> `nand crcraw`
 and compares the CRC32 with what it sent. An image is a nanddump-with-OOB file, page + spare
-records: 528 bytes for 512-byte pages, 2112 for 2 KiB (--page 2048), 4224 for 4 KiB. A .ais or
-.dbi file (dspboot, U-Boot) is turned into such records here, with the boot ROM's ECC, padded to
-a whole block.
+records: 528 bytes for 512-byte pages, 2112 for 2 KiB (--page 2048), 4224 for 4 KiB, written to
+the same blocks it came from. A .ais or .dbi file (dspboot, U-Boot) is turned into such records
+here, with the boot ROM's ECC, padded to a whole block, and goes on past bad blocks into the next
+good one, where the boot ROM and dspboot look for it.
 
     nandrestore.py -p /dev/cu.usbserial-XXX --ais dspboot.ais mtd1.oob@0x4000 mtd3.oob@0x54000 ...
     nandrestore.py -p /dev/cu.usbserial-XXX --ais dspboot.ais --page 2048 dspboot.ais@0x20000
@@ -75,11 +76,12 @@ def main():
     for spec in args.images:
         path, ofs = spec.rsplit('@', 1)
         data = open(path, 'rb').read()
-        if path.endswith(('.ais', '.dbi')):
+        skip = path.endswith(('.ais', '.dbi'))
+        if skip:
             data = mknandimg.records(data, args.page, mknandimg.DEFAULT_BLOCK[args.page])
         elif len(data) % rec:
             sys.exit('%s: size %d is not a multiple of %d (page+spare records)' % (path, len(data), rec))
-        jobs.append((path, int(ofs, 0), data))
+        jobs.append((path, int(ofs, 0), data, ' skip' if skip else ''))
 
     if args.skip_ais:
         port = ub.Port(args.port, args.baud)
@@ -106,7 +108,7 @@ def main():
     expect(port, r'dspboot> $', 30)
 
     results = []
-    for path, ofs, data in jobs:
+    for path, ofs, data, skip in jobs:
         name = os.path.basename(path)
         ub.log('\n=== %s -> NAND 0x%08x (%d bytes, %d pages)' % (name, ofs, len(data), len(data) // rec))
         cmd(port, 'loady 0x%08x' % LOAD_ADDR)
@@ -115,13 +117,13 @@ def main():
         ub.ymodem_send(port, data, name)
         expect(port, r'ymodem: received[^\n]*\n', 15)
         expect(port, r'dspboot> $', 10)
-        cmd(port, 'nand writeraw 0x%08x 0x%x %d' % (LOAD_ADDR, ofs, len(data)))
+        cmd(port, 'nand writeraw 0x%08x 0x%x %d%s' % (LOAD_ADDR, ofs, len(data), skip))
         expect(port, r'(writeraw: done[^\n]*\n|stopped|nothing written|must be)', 600)
         expect(port, r'dspboot> $', 10)
-        cmd(port, 'nand crcraw 0x%x %d' % (ofs, len(data)))
-        m = expect(port, r'CRC32 ([0-9a-f]{8})', 120)
-        got, want = int(m.group(1), 16), zlib.crc32(data) & 0xFFFFFFFF
-        ok = got == want
+        cmd(port, 'nand crcraw 0x%x %d%s' % (ofs, len(data), skip))
+        m = expect(port, r'(CRC32 ([0-9a-f]{8})|ran past [^\n]*)', 120)
+        got, want = int(m.group(2) or '0', 16), zlib.crc32(data) & 0xFFFFFFFF
+        ok = bool(m.group(2)) and got == want
         results.append((name, ofs, ok, got, want))
         ub.log('\n%s: NAND CRC32 %08x, file CRC32 %08x -> %s' % (name, got, want, 'MATCH' if ok else 'MISMATCH'))
         expect(port, r'dspboot> $', 10)
