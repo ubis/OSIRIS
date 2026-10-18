@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: BSD-2-Clause
+
+name: dspboot
+
+on:
+  push:
+    paths:
+      - 'dspboot/**'
+      - 'Makefile'
+      - '.github/workflows/dspboot.yml'
+  pull_request:
+    paths:
+      - 'dspboot/**'
+      - 'Makefile'
+      - '.github/workflows/dspboot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dspboot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  toolchain:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Log in to GHCR
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the toolchain image if missing
+        run: |
+          tag=$(sha256sum dspboot/docker/Dockerfile | cut -c1-12)
+          img=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/osiris-dspboot:$tag
+          if docker manifest inspect "$img" > /dev/null 2>&1; then
+            echo "$img already published"
+            exit 0
+          fi
+          docker build -t "$img" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            dspboot/docker
+          docker push "$img"
+
+  build:
+    needs: toolchain
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Pull the toolchain image
+        run: |
+          tag=$(sha256sum dspboot/docker/Dockerfile | cut -c1-12)
+          img=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/osiris-dspboot:$tag
+          if docker pull -q "$img"; then
+            docker tag "$img" "osiris-dspboot:$tag"
+          else
+            echo "::notice::$img not published, make builds it"
+          fi
+
+      - name: Build
+        run: make dspboot
+
+      - name: Test
+        run: make dspboot-test
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dspboot-${{ github.sha }}
+          path: dist/dspboot/
+          if-no-files-found: error
