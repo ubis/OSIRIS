@@ -1,12 +1,16 @@
 # /data: the UBIFS volume that keeps settings, keys and passwords, or RAM
 DATA_SIZE=8388608
 
-if [ -e /dev/ubi0 ] && ! ubinfo -d 0 -N data > /dev/null 2>&1 &&
-   ubimkvol /dev/ubi0 -n 4 -N data -s $DATA_SIZE > /dev/null; then
+# mounted at once when it is there, made only when it is not
+data_mount() {
+	mount -t ubifs ubi0:data /data 2> /dev/null && return
+	ubinfo -d 0 -N data > /dev/null 2>&1 && return 1
+	ubimkvol /dev/ubi0 -n 4 -N data -s $DATA_SIZE > /dev/null || return 1
 	echo "data: new data volume"
-fi
-if [ -e /dev/ubi0 ] && ubinfo -d 0 -N data > /dev/null 2>&1 &&
-   mount -t ubifs ubi0:data /data; then
+	mount -t ubifs ubi0:data /data
+}
+
+if [ -e /dev/ubi0 ] && data_mount; then
 	echo "data: ubi0:data mounted on /data"
 else
 	mount -t tmpfs -o mode=0755 tmpfs /data
