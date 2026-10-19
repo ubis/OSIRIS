@@ -6,6 +6,8 @@ on:
   push:
     branches:
       - '**'
+    tags:
+      - 'osiris-v*'
     paths:
       - 'buildroot'
       - 'buildroot-patches/**'
@@ -112,10 +114,14 @@ jobs:
     needs: toolchain
     if: ${{ !cancelled() && needs.toolchain.result == 'success' }}
     runs-on: ubuntu-26.04
+    outputs:
+      tar: ${{ steps.bundle.outputs.tar }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - run: git fetch --force --tags
 
       - name: Check out Buildroot
         id: buildroot
@@ -181,19 +187,19 @@ jobs:
           make buildroot
 
       - uses: actions/cache/save@v6
-        if: ${{ success() && steps.dl.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.ref_type != 'tag' && steps.dl.outputs.cache-hit != 'true' }}
         with:
           path: dl
           key: dl-${{ steps.buildroot.outputs.rev }}-${{ hashFiles('external/configs/*', 'external/package/**') }}
 
       - uses: actions/cache/save@v6
-        if: ${{ success() && github.event_name != 'pull_request' && steps.output.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.event_name != 'pull_request' && github.ref_type != 'tag' && steps.output.outputs.cache-hit != 'true' }}
         with:
           path: build/buildroot-onkyo_nr
           key: ${{ steps.output.outputs.cache-primary-key }}
 
       - uses: actions/cache/save@v6
-        if: ${{ !cancelled() && steps.output.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && github.ref_type != 'tag' && steps.output.outputs.cache-hit != 'true' }}
         with:
           path: build/ccache
           key: ccache-${{ github.run_id }}-${{ github.run_attempt }}
@@ -204,10 +210,75 @@ jobs:
 
       - name: Bundle
         id: bundle
-        run: echo "tar=$(basename dist/images/osiris-*.tar)" >> "$GITHUB_OUTPUT"
+        run: |
+          tar=$(basename dist/images/osiris-*.tar)
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$tar" != "$GITHUB_REF_NAME.tar" ]; then
+            echo "::error::$tar does not match the tag $GITHUB_REF_NAME"
+            exit 1
+          fi
+          echo "tar=$tar" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v7
         with:
           path: dist/images/${{ steps.bundle.outputs.tar }}
           archive: false
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        if: github.ref_type == 'tag'
+        with:
+          name: install
+          path: |
+            dist/images/kernel.itb
+            dist/images/initrd-installer
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' && startsWith(github.ref, 'refs/tags/osiris-v') }}
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - run: git fetch --force --tags
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.tar }}
+          path: dist
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: install
+          path: dist
+
+      - name: Create a draft release
+        run: |
+          tag=$GITHUB_REF_NAME
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "::error::a release for $tag exists already"
+            exit 1
+          fi
+          prev=$(git describe --tags --abbrev=0 --match 'osiris-v*' "$tag^" 2>/dev/null || true)
+          {
+            git tag -l --format='%(contents:body)' "$tag" | sed '/./,$!d'
+            if [ -n "$prev" ]; then
+              n=$(git rev-list --count --no-merges "$prev..$tag" -- . ':!dspboot' ':!docs/dspboot.md')
+              echo "## Changelog"
+              echo
+              echo "<details><summary>$n commits since ${prev#osiris-}</summary>"
+              echo
+              git log --reverse --no-merges --format='- %s (%h)' --abbrev=7 "$prev..$tag" \
+                -- . ':!dspboot' ':!docs/dspboot.md'
+              echo
+              echo "</details>"
+            fi
+          } > notes.md
+          gh release create "$tag" dist/* \
+            --draft --verify-tag --title "OSIRIS ${tag#osiris-}" --notes-file notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
