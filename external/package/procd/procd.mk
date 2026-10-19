@@ -8,11 +8,11 @@
 PROCD_VERSION = b72282fe33c2b3ac49915c797c237df94a3883b3
 PROCD_SITE = https://git.openwrt.org/project/procd.git
 PROCD_SITE_METHOD = git
-PROCD_LICENSE = LGPL-2.1, GPL-2.0 (udevtrigger, scripts)
+PROCD_LICENSE = LGPL-2.1, GPL-2.0 (scripts)
 PROCD_DEPENDENCIES = libubox ubus json-c udebug
 
 PROCD_CONF_OPTS = -DEARLY_PATH="/usr/sbin:/usr/bin:/sbin:/bin"
-PROCD_MAKE_OPTS = init procd udevtrigger setlbf
+PROCD_MAKE_OPTS = init procd setlbf
 
 # the shell side of procd, rc.common and the hotplug rules, from OpenWrt
 PROCD_OPENWRT_VERSION = 71e991a8c01af94fb1fd6d6e4e2d259ce0ff36da
@@ -29,7 +29,7 @@ PROCD_EXTRA_DOWNLOADS = $(addprefix \
 	$(PROCD_OPENWRT_FILES))
 
 define PROCD_INSTALL_TARGET_CMDS
-	for f in init procd udevtrigger; do \
+	for f in init procd; do \
 		$(INSTALL) -D -m 0755 $(@D)/$$f $(TARGET_DIR)/sbin/$$f || exit 1; \
 	done
 	$(INSTALL) -D -m 0644 $(@D)/libsetlbf.so $(TARGET_DIR)/lib/libsetlbf.so

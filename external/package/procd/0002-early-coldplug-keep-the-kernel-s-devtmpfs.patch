@@ -1,0 +1,128 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Mon, 19 Oct 2026 21:52:57 +0300
+Subject: [PATCH 2/2] early, coldplug: keep the kernel's devtmpfs
+
+procd put a tmpfs over the kernel's devtmpfs and made the device nodes
+twice: from /sys in early(), and again from the uevents udevtrigger
+resends at coldplug, which then waits half a second after the last one.
+On the DA830 that took over a second of the boot. devtmpfs already has
+every node; keep it, mounting it only where the kernel did not (an
+initramfs), add the /dev/fd and std* links hotplug.json made for
+/dev/null, and let coldplug go on to the next state at once.
+---
+ initd/early.c   | 21 ++++++++++++++++-----
+ plug/coldplug.c | 48 ++++++++++--------------------------------------
+ 2 files changed, 26 insertions(+), 43 deletions(-)
+
+diff --git a/initd/early.c b/initd/early.c
+index dae6068..18d0556 100644
+--- a/initd/early.c
++++ b/initd/early.c
+@@ -27,11 +27,24 @@
+ #include "../libc-compat.h"
+ #include "../container.h"
+ 
++/*
++ * /dev: the kernel's devtmpfs, which has every device node already, rather
++ * than a tmpfs filled in from /sys and again by coldplug; mounted here if
++ * the kernel has not (an initramfs). The links are what hotplug.json makes
++ * when coldplug brings /dev/null.
++ */
+ static void
+ early_dev(void)
+ {
+-	mkdev("*", 0600);
+-	mknod("/dev/null", 0666, makedev(1, 3));
++	struct stat root, dev;
++
++	if (stat("/", &root) || stat("/dev", &dev) || root.st_dev == dev.st_dev)
++		mount("devtmpfs", "/dev", "devtmpfs", MS_NOEXEC | MS_NOSUID | MS_RELATIME, "mode=0755");
++
++	ignore(symlink("/proc/self/fd", "/dev/fd"));
++	ignore(symlink("/proc/self/fd/0", "/dev/stdin"));
++	ignore(symlink("/proc/self/fd/1", "/dev/stdout"));
++	ignore(symlink("/proc/self/fd/2", "/dev/stderr"));
+ }
+ 
+ static void
+@@ -81,12 +94,10 @@ early_mounts(void)
+ 		mount("sysfs", "/sys", "sysfs", MS_NODEV | MS_NOEXEC | MS_NOSUID | MS_RELATIME, NULL);
+ 		mount("efivars", "/sys/firmware/efi/efivars", "efivarfs", MS_NODEV | MS_NOEXEC | MS_NOSUID | MS_RELATIME, NULL);
+ 		mount("cgroup2", "/sys/fs/cgroup", "cgroup2",  MS_NODEV | MS_NOEXEC | MS_NOSUID | MS_RELATIME, "nsdelegate");
+-		mount("tmpfs", "/dev", "tmpfs", MS_NOEXEC | MS_NOSUID | MS_RELATIME, "mode=0755,size=512K");
++		early_dev();
+ 		ignore(symlink("/tmp/shm", "/dev/shm"));
+ 		mkdir("/dev/pts", 0755);
+ 		mount("devpts", "/dev/pts", "devpts", MS_NOEXEC | MS_NOSUID | MS_RELATIME, NULL);
+-
+-		early_dev();
+ 	}
+ 
+ 	early_console("/dev/console");
+diff --git a/plug/coldplug.c b/plug/coldplug.c
+index 557d069..95098ba 100644
+--- a/plug/coldplug.c
++++ b/plug/coldplug.c
+@@ -26,51 +26,23 @@
+ #include "hotplug.h"
+ #include "../container.h"
+ 
+-static struct uloop_process udevtrigger;
+-
++/*
++ * Coldplug: nothing to do, as /dev is the kernel's devtmpfs (early.c), and
++ * no hotplug rule here has to see the devices there at boot. udevtrigger
++ * resending every device's uevent and the wait for the last one took a
++ * second on this board.
++ */
+ static void coldplug_complete(struct uloop_timeout *t)
+ {
+ 	P_DEBUG(4, "Coldplug complete\n");
+-	hotplug_last_event(NULL);
+ 	procd_state_next();
+ }
+ 
+-static void udevtrigger_complete(struct uloop_process *proc, int ret)
+-{
+-	P_DEBUG(4, "Finished udevtrigger\n");
+-	hotplug_last_event(coldplug_complete);
+-}
++static struct uloop_timeout coldplug_timeout = {
++	.cb = coldplug_complete,
++};
+ 
+ void procd_coldplug(void)
+ {
+-	char *argv[] = { "udevtrigger", NULL };
+-	unsigned int oldumask = umask(0);
+-
+-	if (!is_container()) {
+-		umount2("/dev/pts", MNT_DETACH);
+-		umount2("/dev/", MNT_DETACH);
+-		mount("tmpfs", "/dev", "tmpfs", MS_NOATIME | MS_NOEXEC | MS_NOSUID, "mode=0755,size=512K");
+-		mknod("/dev/null", S_IFCHR | 0666, makedev(1, 3));
+-		mkdir("/dev/pts", 0755);
+-		mount("devpts", "/dev/pts", "devpts", MS_NOATIME | MS_NOEXEC | MS_NOSUID, 0);
+-	}
+-
+-	ignore(symlink("/tmp/shm", "/dev/shm"));
+-	umask(oldumask);
+-	udevtrigger.cb = udevtrigger_complete;
+-	udevtrigger.pid = fork();
+-	if (!udevtrigger.pid) {
+-		execvp(argv[0], argv);
+-		ERROR("Failed to start coldplug: %m\n");
+-		exit(EXIT_FAILURE);
+-	}
+-
+-	if (udevtrigger.pid <= 0) {
+-		ERROR("Failed to start new coldplug instance: %m\n");
+-		return;
+-	}
+-
+-	uloop_process_add(&udevtrigger);
+-
+-	P_DEBUG(4, "Launched coldplug instance, pid=%d\n", (int) udevtrigger.pid);
++	uloop_timeout_set(&coldplug_timeout, 0);
+ }
