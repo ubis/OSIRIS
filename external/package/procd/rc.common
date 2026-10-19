@@ -1,0 +1,160 @@
+#!/bin/sh
+initscript=$1
+action=${2:-help}
+shift 2
+name=${initscript##*/}
+name=${name#[SK][0-9][0-9]}
+[ "$action" = running ] && [ "$PPID" = 1 ] && exit 0
+
+start() {
+	return 0
+}
+
+stop() {
+	return 0
+}
+
+restart() {
+	trap '' TERM
+	stop "$@"
+	trap - TERM
+	start "$@"
+}
+
+reload() {
+	restart "$@"
+}
+
+boot() {
+	start "$@"
+}
+
+shutdown() {
+	stop
+}
+
+enabled() {
+	{ [ -z "$START" ] || [ -L /etc/rc.d/S$START$name ]; } &&
+		{ [ -z "$STOP" ] || [ -L /etc/rc.d/K$STOP$name ]; }
+}
+
+help() {
+	echo "Syntax: /etc/init.d/$name {$_rc_commands}"
+}
+
+_rc_commands="start|stop|restart|reload|boot|shutdown|enabled"
+
+start_service() {
+	return 0
+}
+
+stop_service() {
+	return 0
+}
+
+_json_str() {
+	local s=$2
+
+	s=${s//\\/\\\\}
+	s=${s//\"/\\\"}
+	eval "$1=\"\${$1}\${$1:+,}\\\"\$s\\\"\""
+}
+
+procd_open_instance() {
+	_procd_seq=$((_procd_seq + 1))
+	_procd_name=${1:-instance$_procd_seq}
+	_procd_command= _procd_respawn= _procd_rest=
+}
+
+procd_append_param() {
+	local type=$1 a
+
+	shift
+	case "$type" in
+	command|respawn)
+		for a; do
+			_json_str _procd_$type "$a"
+		done
+		;;
+	*)
+		echo "$name: procd parameter $type not supported" >&2
+		return 1
+		;;
+	esac
+}
+
+procd_set_param() {
+	local type=$1
+
+	shift
+	case "$type" in
+	command|respawn)
+		eval "_procd_$type="
+		procd_append_param $type "$@"
+		[ "$type" = respawn ] && [ -z "$_procd_respawn" ] &&
+			procd_append_param respawn 3600 5 5
+		;;
+	stdout|stderr)
+		[ "$1" = 1 ] && _procd_rest="$_procd_rest,\"$type\":true"
+		;;
+	pidfile|user|group)
+		_json_str _procd_value "$1"
+		_procd_rest="$_procd_rest,\"$type\":$_procd_value"
+		_procd_value=
+		;;
+	*)
+		echo "$name: procd parameter $type not supported" >&2
+		return 1
+		;;
+	esac
+}
+
+procd_close_instance() {
+	_procd_instances="$_procd_instances${_procd_instances:+,}\"$_procd_name\":{\"command\":[$_procd_command]"
+	[ -z "$_procd_respawn" ] ||
+		_procd_instances="$_procd_instances,\"respawn\":[$_procd_respawn]"
+	_procd_instances="$_procd_instances$_procd_rest}"
+}
+
+. "$initscript"
+
+if [ -n "$USE_PROCD" ]; then
+	_rc_commands="$_rc_commands|running|status"
+
+	start() {
+		local method=set
+
+		[ -n "$1" ] && method=add
+		_procd_seq=0 _procd_instances=
+		start_service "$@"
+		ubus call service $method "{\"name\":\"$name\",\"script\":\"/etc/init.d/$name\",\"instances\":{$_procd_instances}}"
+	}
+
+	stop() {
+		stop_service "$@"
+		ubus call service delete "{\"name\":\"$name\"${1:+,\"instance\":\"$1\"}}"
+	}
+
+	running() {
+		ubus call service list "{\"name\":\"$name\"}" 2> /dev/null |
+			grep -q '"running": true'
+	}
+
+	status() {
+		if running; then
+			echo running
+		else
+			echo inactive
+			return 3
+		fi
+	}
+fi
+
+case "|$_rc_commands|" in
+*"|$action|"*)
+	$action "$@"
+	;;
+*)
+	help
+	;;
+esac

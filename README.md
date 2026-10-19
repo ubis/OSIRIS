@@ -113,9 +113,9 @@ doesn't start - keep your NAND backup.
 
 Everything written for OSIRIS (dspboot, the services, the tools and the
 build) is BSD-2-Clause, see `LICENSE`. U-Boot, Linux, Buildroot and
-OpenWrt's procd scripts stay GPL-2.0, and so do OSIRIS's changes and
-board files for them (`external/board/onkyo/nr/linux` and `u-boot`,
-`buildroot-patches`, `external/package/procd/rc.common-running.diff`). liba52
+OpenWrt's hotplug scripts stay GPL-2.0 and procd LGPL-2.1, and so do
+OSIRIS's changes and board files for them (`external/board/onkyo/nr/linux`
+and `u-boot`, `buildroot-patches`, `external/package/procd/*.patch`). liba52
 (`services/dspaudio/libs/liba52`) is GPL-2.0-or-later, as are `ac3.c` and
 `lib.c` around it and the dspaudio image built with it.
 

@@ -4,7 +4,6 @@ config BR2_PACKAGE_PROCD
 	depends on BR2_TOOLCHAIN_HAS_SYNC_4 # ubus
 	depends on !BR2_STATIC_LIBS # ubus
 	select BR2_PACKAGE_JSON_C
-	select BR2_PACKAGE_JSONFILTER # procd.sh
 	select BR2_PACKAGE_LIBUBOX
 	select BR2_PACKAGE_UBOX # logd
 	select BR2_PACKAGE_UBUS
@@ -14,7 +13,7 @@ config BR2_PACKAGE_PROCD
 	  kernel's uevents, services that procd starts, watches and
 	  restarts, and the system watchdog. Without ujail, uxc and the
 	  seccomp tools, so no uci; without kmodloader and coldplug, with
-	  the kernel's devtmpfs as /dev. OpenWrt's rc.common, procd.sh and
-	  hotplug rules come with it.
+	  the kernel's devtmpfs as /dev. OpenWrt's hotplug rules come with
+	  it, and a small rc.common of its own for the init scripts.
 
 	  https://git.openwrt.org/project/procd.git
