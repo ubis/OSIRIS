@@ -45,6 +45,7 @@ function M.set_media(dir, present)
 	M.set_usb()
 end
 
+-- answered at once if the MCU is waiting
 local function offer(b)
 	log("update %s (%s)", b.path, b.version)
 	bundle = b
@@ -53,6 +54,7 @@ local function offer(b)
 
 	if st and st.update_check then
 		call("mcu", "update", { available = true })
+		return true
 	end
 end
 
@@ -76,7 +78,10 @@ function M.set_net_bundle(b)
 		return
 	end
 
-	offer(b)
+	-- the MCU does not ask again by itself once the release is found
+	if not offer(b) then
+		call("mcu", "update", { ask = true })
+	end
 end
 
 -- a bundle being read or installed

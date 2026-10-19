@@ -223,8 +223,10 @@ What it does today:
   update screens run `osiris-upgrade` with progress
 - looks for a newer OSIRIS release on GitHub (`netupdate.lua`): first a
   few minutes to an hour after ntpd has set the clock, then about once a
-  day. A newer release is offered like a bundle on a stick; only when the
-  user downloads it from the update screens is its bundle fetched into
+  day. A newer release is offered like a bundle on a stick, and the
+  receiver is made to check for updates again (`mcu update ask`), as it
+  does not ask by itself once the release is found; only when the user
+  downloads it from the update screens is its bundle fetched into
   `/tmp` and checked against the release keys in `/usr/share/osiris/keys`
   (usign), and it is never installed without the user.
   `/data/osiris/update-url` points the check at another release list, for

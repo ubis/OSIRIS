@@ -225,11 +225,14 @@ The MCU runs the update screens; the network side only answers. E8 [0]:
 | 03 percent | progress; the MCU gives up after ~20 s without one |
 | 04 code | written; taken only after progress 100 |
 
-The MCU asks (E8 00 + 01) at power-on and again about every 150 s until it
-gets an answer, and when USB storage appears (65 03). An answer with a part
-set to 1 to the power-on check shows the update notice (if the receiver's
-update notice setting is on) and adds "Update via NET"; to a USB check it
-adds "Update via USB" to Setup / Firmware Update.
+The MCU asks (E8 00 + 01) when USB storage appears (65 03), and when the
+network module reports start and then ready (65 00 01, 65 00 02) after the
+handshake, within about a minute. Under OSIRIS v0.x it also asked at
+power-on and repeated an unanswered question about every 150 s; under
+OSIRIS v1 no question comes at power-on. An answer with a part set to 1 to
+a network check adds "Update via NET", and to the power-on one also shows
+the update notice (if the receiver's update notice setting is on); to a
+USB check it adds "Update via USB" to Setup / Firmware Update.
 
 OSIRIS answers for part 4 (DSP1, shown as "ARM"): the MCU sends E8 03 04,
 shows "ARM writing" after E8 04 and "Completed!" after 68 04 00.
@@ -273,7 +276,7 @@ ubus object `mcu`:
 | `stream` | 0x42 fields by name: `type`, `fs`, `channels` (" 5.1"), `mask`, `input_mask`, `lfe`, `format`; or all of it as `hex` | updates the stream status, sent if changed; the next speaker setup frame sets the mask again |
 | `outputs` | `mask` | 4A |
 | `levels` | 13 values | 45 |
-| `update` | one of `available` (bool), `progress` (%), `downloaded` (bytes), `result` (`ok`/`error`) | the 68 answers; a failed download is told as a failed 68 01 |
+| `update` | one of `available` (bool), `progress` (%), `downloaded` (bytes), `result` (`ok`/`error`), `ask` (bool) | the 68 answers; a failed download is told as a failed 68 01; `ask` sends 65 00 01 and 65 00 02, so that the MCU checks for an update again |
 | `usb` | `present`, `port` | 65 03 |
 | `network` | `link`, `dhcp`, `ip`, `netmask`, `gateway`, `dns`, `mac`, `name` | the answer to E6 (66) |
 | `power` | `state` (`off`, `reset`) | the answer to EA (6A) |

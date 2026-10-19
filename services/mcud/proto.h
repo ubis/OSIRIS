@@ -74,6 +74,8 @@ int proto_update_waiting(void);
 void proto_update_downloaded(uint32_t size);
 void proto_update_progress(uint8_t percent);
 void proto_update_result(int ok);
+/* have the MCU check for an update on the network again */
+int proto_update_ask(void);
 
 const char *proto_cmd_name(uint8_t cmd);
 

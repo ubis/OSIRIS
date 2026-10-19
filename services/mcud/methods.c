@@ -435,13 +435,14 @@ static int m_power(struct ubus_context *c, struct ubus_object *obj,
 	return proto_power_done(i) ? UBUS_STATUS_NOT_FOUND : 0;
 }
 
-enum { UP_AVAILABLE, UP_DOWNLOADED, UP_PROGRESS, UP_RESULT, __UP_MAX };
+enum { UP_AVAILABLE, UP_DOWNLOADED, UP_PROGRESS, UP_RESULT, UP_ASK, __UP_MAX };
 
 static const struct blobmsg_policy update_policy[__UP_MAX] = {
 	[UP_AVAILABLE] = { .name = "available", .type = BLOBMSG_TYPE_BOOL },
 	[UP_DOWNLOADED] = { .name = "downloaded", .type = BLOBMSG_TYPE_INT32 },
 	[UP_PROGRESS] = { .name = "progress", .type = BLOBMSG_TYPE_INT32 },
 	[UP_RESULT] = { .name = "result", .type = BLOBMSG_TYPE_STRING },
+	[UP_ASK] = { .name = "ask", .type = BLOBMSG_TYPE_BOOL },
 };
 
 /* the answers in the update dialogue: one of them per call */
@@ -462,6 +463,8 @@ static int m_update(struct ubus_context *c, struct ubus_object *obj,
 		proto_update_downloaded(blobmsg_get_u32(tb[UP_DOWNLOADED]));
 	} else if (tb[UP_RESULT]) {
 		proto_update_result(!strcmp(blobmsg_get_string(tb[UP_RESULT]), "ok"));
+	} else if (tb[UP_ASK]) {
+		return proto_update_ask() ? UBUS_STATUS_NOT_FOUND : 0;
 	} else {
 		return UBUS_STATUS_INVALID_ARGUMENT;
 	}

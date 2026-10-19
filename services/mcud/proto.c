@@ -611,6 +611,20 @@ void proto_update_result(int ok)
 	queue(NET_UPDATE, d, 2);
 }
 
+/* network start, then ready: the MCU looks for an update on the network again */
+int proto_update_ask(void)
+{
+	static const uint8_t start[2] = { NET_STATE_START }, ready[2] = { NET_STATE_READY };
+
+	if (stage != STAGE_READY) {
+		return -1;
+	}
+
+	queue(NET_STATE, start, 2);
+	queue(NET_STATE, ready, 2);
+	return 0;
+}
+
 /* storage on a USB port makes the MCU look for an update there */
 void proto_set_usb(uint8_t port, int present)
 {
