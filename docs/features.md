@@ -10,6 +10,7 @@ What works with OSIRIS, tested on the TX-NR717.
 | Ethernet (DHCP, NTP), ssh | ✅ |
 | A/B updates with fallback to the previous version | ✅ |
 | Updates from a USB stick through the receiver's update screens | ✅ |
+| Updates from GitHub releases under Update via NET | ✅ |
 | USB sticks in the front and rear ports | ✅ |
 | The receiver accepts the board as its DSP | ✅ |
 | Model detection, host name after the model | ✅ |
