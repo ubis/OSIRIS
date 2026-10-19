@@ -113,7 +113,6 @@ CONFIG_STATIC=y
 # CONFIG_MT is not set
 # CONFIG_PARTPROBE is not set
 # CONFIG_RUNLEVEL is not set
-# CONFIG_SEEDRNG is not set
 # CONFIG_SETFATTR is not set
 # CONFIG_SETSERIAL is not set
 # CONFIG_TREE is not set

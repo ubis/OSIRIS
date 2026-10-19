@@ -1,0 +1,2 @@
+# the random pool from the last boot's seed, or ubusd waits for it until ~6 s
+seedrng -d /data/seedrng > /dev/null
