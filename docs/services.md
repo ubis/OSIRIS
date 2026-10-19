@@ -223,9 +223,10 @@ What it does today:
   update screens run `osiris-upgrade` with progress
 - looks for a newer OSIRIS release on GitHub (`netupdate.lua`): first a
   few minutes to an hour after ntpd has set the clock, then about once a
-  day. A newer release's bundle is fetched into `/tmp`, checked against the
-  release keys in `/usr/share/osiris/keys` (usign) and offered like one on
-  a stick; it is never installed without the user.
+  day. A newer release is offered like a bundle on a stick; only when the
+  user downloads it from the update screens is its bundle fetched into
+  `/tmp` and checked against the release keys in `/usr/share/osiris/keys`
+  (usign), and it is never installed without the user.
   `/data/osiris/update-url` points the check at another release list, for
   tests, and `ubus send osiris.check` checks at once
 - syncs before the receiver switches the board off; a factory reset from the

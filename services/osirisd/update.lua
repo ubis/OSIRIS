@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: BSD-2-Clause
--- Updates: the USB sticks there are, the bundle on them or the one netupdate
--- found, and the steps of the receiver's update dialogue
+-- Updates: the USB sticks there are, the bundle on them or the release
+-- netupdate found, and the steps of the receiver's update dialogue
 
 local uloop = require "uloop"
 local events = require "events"
@@ -20,8 +20,10 @@ local INSTALL_STEPS = {
 }
 
 local media = {}		-- mounted USB storage, by directory
-local bundle			-- { path, version } of an update on it
-local net			-- netupdate's bundle, offered again when a stick's goes
+local bundle			-- { path, version } of an update on it, or the release
+local net			-- netupdate's release, offered again when a stick's goes:
+				-- also { size, fetch(done) }, fetched only once the user asks
+local chosen			-- the bundle downloaded: the one installed, whatever comes since
 local job			-- the running update step: its steps, percent, process
 local progress_timer		-- made once: cancelling one frees its callback twice
 
@@ -43,6 +45,17 @@ function M.set_media(dir, present)
 	M.set_usb()
 end
 
+local function offer(b)
+	log("update %s (%s)", b.path, b.version)
+	bundle = b
+	-- the MCU waits ~2.5 min for an answer before it asks again
+	local st = call("mcu", "status")
+
+	if st and st.update_check then
+		call("mcu", "update", { available = true })
+	end
+end
+
 function M.set_bundle(path, version)
 	if not path or not version or version == M.running_version() then
 		return
@@ -52,19 +65,18 @@ function M.set_bundle(path, version)
 		return
 	end
 
-	log("update %s (%s)", path, version)
-	bundle = { path = path, version = version }
-	-- the MCU waits ~2.5 min for an answer before it asks again
-	local st = call("mcu", "status")
-
-	if st and st.update_check then
-		call("mcu", "update", { available = true })
-	end
+	offer({ path = path, version = version })
 end
 
-function M.set_net_bundle(path, version)
-	net = { path = path, version = version }
-	M.set_bundle(path, version)
+-- a stick's bundle comes first, unless the release is newer
+function M.set_net_bundle(b)
+	local stick = bundle ~= net and bundle
+	net = b
+	if stick and not util.newer(b.version, stick.version) then
+		return
+	end
+
+	offer(b)
 end
 
 -- a bundle being read or installed
@@ -99,18 +111,22 @@ function M.answer_check(st)
 	end
 end
 
--- the percent the steps reach in UPGRADE_LOG, repeated so that the MCU does
--- not give up
+-- the percent the steps reach in UPGRADE_LOG, or a function gives, repeated
+-- so that the MCU does not give up
 local function progress_tick()
 	if not job then
 		return
 	end
 
-	local out = read_file(UPGRADE_LOG) or ""
+	if type(job.steps) == "function" then
+		job.percent = math.max(job.percent, job.steps())
+	else
+		local out = read_file(UPGRADE_LOG) or ""
 
-	for _, s in ipairs(job.steps) do
-		if s[2] > job.percent and out:find(s[1], 1, true) then
-			job.percent = s[2]
+		for _, s in ipairs(job.steps) do
+			if s[2] > job.percent and out:find(s[1], 1, true) then
+				job.percent = s[2]
+			end
 		end
 	end
 
@@ -118,13 +134,17 @@ local function progress_tick()
 	progress_timer:set(PROGRESS_MS)
 end
 
--- run an update step, its output to UPGRADE_LOG
-local function run_step(cmd, steps, done)
-	os.remove(UPGRADE_LOG)
+local function start_job(steps)
 	call("mcu", "update", { progress = 0 })
 	job = { steps = steps, percent = 0 }
 	progress_timer = progress_timer or uloop.timer(progress_tick)
 	progress_timer:set(PROGRESS_MS)
+end
+
+-- run an update step, its output to UPGRADE_LOG
+local function run_step(cmd, steps, done)
+	os.remove(UPGRADE_LOG)
+	start_job(steps)
 
 	-- kept in job: uloop lists the process, and the binding does not keep it
 	job.process = uloop.process("/bin/sh", { "-c", cmd .. " > " .. UPGRADE_LOG .. " 2>&1" },
@@ -138,7 +158,28 @@ local function run_step(cmd, steps, done)
 	end)
 end
 
--- the stick is read once in full before the MCU is told to go on
+local function file_size(path)
+	local f = io.open(path, "r")
+	local n = f and f:seek("end") or 0
+	if f then
+		f:close()
+	end
+	return n
+end
+
+local function downloaded(ok, b)
+	chosen = ok and b or nil
+	if not ok then
+		call("mcu", "update", { result = "error" })
+		return
+	end
+
+	call("mcu", "update", { progress = 100 })
+	call("mcu", "update", { downloaded = file_size(b.path) })
+end
+
+-- a release is fetched, and its signature checked, only now; the stick is
+-- read once in full before the MCU is told to go on
 local function download()
 	local b = bundle
 
@@ -147,28 +188,31 @@ local function download()
 		return
 	end
 
-	log("reading %s", b.path)
-	run_step("tar -tf " .. quote(b.path), {}, function(ok)
-		if not ok then
-			call("mcu", "update", { result = "error" })
-			return
-		end
-
-		call("mcu", "update", { progress = 100 })
-		local f = io.open(b.path, "r")
-		call("mcu", "update", { downloaded = f and f:seek("end") or 0 })
-		if f then
-			f:close()
-		end
-	end)
+	chosen = nil
+	if b.fetch and not b.fetched then
+		start_job(function()
+			return b.size and b.size > 0 and math.min(99, math.floor(file_size(b.path) * 100 / b.size)) or 0
+		end)
+		b.fetch(function(ok)
+			job = nil
+			b.fetched = ok
+			downloaded(ok, b)
+		end)
+	elseif b.fetch then
+		downloaded(true, b)
+	else
+		log("reading %s", b.path)
+		run_step("tar -tf " .. quote(b.path), {}, function(ok) downloaded(ok, b) end)
+	end
 end
 
 -- the new slot boots when the user switches the receiver off and on again,
 -- as the MCU asks after "Completed!"
 local function install()
-	local b = bundle
+	local b = chosen
 
-	if not b or job then
+	-- a stick pulled out since
+	if not b or job or file_size(b.path) == 0 then
 		call("mcu", "update", { result = "error" })
 		return
 	end
@@ -185,7 +229,7 @@ local function install()
 		call("mcu", "update", { progress = 100 })
 		call("mcu", "update", { result = ok and "ok" or "error" })
 		if ok then
-			bundle, net = nil, nil
+			bundle, net, chosen = nil, nil, nil
 		end
 	end)
 end

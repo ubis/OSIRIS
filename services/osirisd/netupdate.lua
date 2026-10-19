@@ -1,9 +1,9 @@
 -- SPDX-License-Identifier: BSD-2-Clause
 -- Updates from the network: the newest OSIRIS release on GitHub, checked a
 -- while after the clock is set and about once a day after that. A newer one
--- is fetched into /tmp and, once its signature checks out, offered like a
--- bundle on a USB stick; the user installs it from the receiver's update
--- dialogue.
+-- is offered like a bundle on a USB stick; only when the user downloads it
+-- from the receiver's update dialogue is it fetched into /tmp and its
+-- signature checked.
 
 local uloop = require "uloop"
 local events = require "events"
@@ -25,7 +25,7 @@ local MINUTE = 60 * 1000
 
 local timer
 local proc			-- the running fetch or check; the binding does not keep it
-local found			-- the newest version fetched, not fetched again
+local found			-- the newest version offered, not offered again
 local checked			-- a check was started, the first one is not needed
 
 local function sh(cmd, done)
@@ -55,18 +55,26 @@ local function lines(s)
 	return t
 end
 
--- the release's bundle and signature, the signature checked, the bundle offered
-local function get(version, tar_url, sig_url)
+-- the release's bundle and signature, the signature checked; update's
+-- download step runs it once the user asks
+local function get(version, tar_url, sig_url, done)
 	local name = "osiris-" .. version .. ".tar"
 	local tar, sig = DIR .. "/" .. name, DIR .. "/" .. name .. ".sig"
 
 	local function fail(fmt, ...)
-		err("update check: " .. fmt, ...)
+		err("update: " .. fmt, ...)
 		os.remove(tar)
 		os.remove(sig)
+		done(false)
 	end
 
-	log("update %s found, fetching it", version)
+	-- the check's own fetch shares proc
+	if proc then
+		return fail("an update check is running")
+	end
+	log("fetching %s", version)
+	-- an older release fetched before
+	os.execute("rm -f " .. DIR .. "/osiris-*")
 	fetch(sig_url, sig, function(ok)
 		if not ok then
 			return fail("cannot fetch %s", sig_url)
@@ -85,11 +93,7 @@ local function get(version, tar_url, sig_url)
 				if v ~= version then
 					return fail("%s says it is %s", name, v)
 				end
-				found = version
-				update.set_net_bundle(tar, version)
-				-- an older release fetched before
-				os.execute("cd " .. DIR .. " && ls | grep -vxF -e " .. quote(name) ..
-					   " -e " .. quote(name .. ".sig") .. " | xargs -r rm -f")
+				done(true)
 			end)
 		end)
 	end)
@@ -120,9 +124,10 @@ function M.check()
 			end
 		end
 		local name = "osiris-" .. (version or "") .. ".tar"
-		local asset = "@[" .. (i or 0) .. "].assets[@.name=\"%s\"].browser_download_url"
-		local tar_url = json(RELEASES, asset:format(name))
-		local sig_url = json(RELEASES, asset:format(name .. ".sig"))
+		local asset = "@[" .. (i or 0) .. "].assets[@.name=\"%s\"].%s"
+		local tar_url = json(RELEASES, asset:format(name, "browser_download_url"))
+		local sig_url = json(RELEASES, asset:format(name .. ".sig", "browser_download_url"))
+		local size = tonumber(json(RELEASES, asset:format(name, "size")))
 		os.remove(RELEASES)
 
 		if not util.newer(version, update.running_version()) or version == found then
@@ -131,7 +136,11 @@ function M.check()
 		if tar_url == "" or sig_url == "" then
 			return err("update check: %s has no signed bundle", version)
 		end
-		get(version, tar_url, sig_url)
+		found = version
+		update.set_net_bundle({
+			path = DIR .. "/" .. name, version = version, size = size,
+			fetch = function(done) get(version, tar_url, sig_url, done) end,
+		})
 	end)
 end
 
