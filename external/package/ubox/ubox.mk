@@ -10,20 +10,15 @@ UBOX_SITE_METHOD = git
 UBOX_LICENSE = GPL-2.0
 UBOX_DEPENDENCIES = libubox ubus json-c udebug
 
-# only logd, logread and kmodloader, which procd's init runs and which
-# is also insmod, rmmod, lsmod, modinfo and modprobe; the other tools want
-# uci. CMake looks for uci.h on every target, so point it at a directory
-# that exists.
+# only logd and logread: the other tools want uci, and the kernel has no
+# modules for kmodloader. CMake looks for uci.h on every target, so point
+# it at a directory that exists.
 UBOX_CONF_OPTS = -Duci_include_dir=$(STAGING_DIR)/usr/include
-UBOX_MAKE_OPTS = logd logread kmodloader
+UBOX_MAKE_OPTS = logd logread
 
 define UBOX_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 0755 $(UBOX_BUILDDIR)/logd $(TARGET_DIR)/sbin/logd
 	$(INSTALL) -D -m 0755 $(UBOX_BUILDDIR)/logread $(TARGET_DIR)/sbin/logread
-	$(INSTALL) -D -m 0755 $(UBOX_BUILDDIR)/kmodloader $(TARGET_DIR)/sbin/kmodloader
-	for t in insmod rmmod lsmod modinfo modprobe; do \
-		ln -sf kmodloader $(TARGET_DIR)/sbin/$$t; \
-	done
 endef
 
 $(eval $(cmake-package))

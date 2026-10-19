@@ -7,7 +7,6 @@ config BR2_PACKAGE_UBOX
 	help
 	  logd and logread from OpenWrt's ubox: the system log in a RAM
 	  ring buffer, kernel messages included, read and followed over
-	  ubus. Also kmodloader, which procd's init runs, as insmod,
-	  rmmod, lsmod, modinfo and modprobe.
+	  ubus.
 
 	  https://git.openwrt.org/project/ubox.git

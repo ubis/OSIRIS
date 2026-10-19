@@ -1,0 +1,55 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Mon, 19 Oct 2026 21:52:11 +0300
+Subject: [PATCH 1/2] init: do not run kmodloader
+
+The kernel has no modules, so there is nothing for kmodloader to load,
+and starting it and waiting for it only delays preinit.
+---
+ initd/init.c | 26 --------------------------
+ 1 file changed, 26 deletions(-)
+
+diff --git a/initd/init.c b/initd/init.c
+index ab6a7e1..cf71287 100644
+--- a/initd/init.c
++++ b/initd/init.c
+@@ -120,8 +120,6 @@ selinux(char **argv)
+ int
+ main(int argc, char **argv)
+ {
+-	pid_t pid;
+-
+ 	ulog_open(ULOG_KMSG, LOG_DAEMON, "init");
+ 
+ 	sigaction(SIGTERM, &sa_shutdown, NULL);
+@@ -135,30 +133,6 @@ main(int argc, char **argv)
+ 	cmdline();
+ 	watchdog_init(1);
+ 
+-	pid = fork();
+-	if (!pid) {
+-		char *kmod[] = { "/sbin/kmodloader", "/etc/modules-boot.d/", NULL };
+-
+-		if (debug < 3)
+-			patch_stdio("/dev/null");
+-
+-		execvp(kmod[0], kmod);
+-		ERROR("Failed to start kmodloader: %m\n");
+-		exit(EXIT_FAILURE);
+-	}
+-	if (pid <= 0) {
+-		ERROR("Failed to start kmodloader instance: %m\n");
+-	} else {
+-		const struct timespec req = {0, 10 * 1000 * 1000};
+-		int i;
+-
+-		for (i = 0; i < 1200; i++) {
+-			if (waitpid(pid, NULL, WNOHANG) > 0)
+-				break;
+-			nanosleep(&req, NULL);
+-			watchdog_ping();
+-		}
+-	}
+ 	uloop_init();
+ 	preinit();
+ 	uloop_run();
