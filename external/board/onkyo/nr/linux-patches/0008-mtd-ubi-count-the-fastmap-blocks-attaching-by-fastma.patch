@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Mon, 19 Oct 2026 22:58:53 +0300
+Subject: [PATCH] mtd: ubi: count the fastmap blocks attaching by fastmap did
+ not scan
+
+A fastmap that does not fit into one PEB has data blocks that can be
+anywhere, but attaching by fastmap scans only the first
+UBI_FM_MAX_START PEBs and so finds just the anchor and whatever else is
+there. ubi_wl_init() counts the fastmap PEBs from that list, comes up
+short of good_peb_count by the data blocks it missed, and fails its
+assertion with a stack dump on every attach, here with 16 KiB PEBs and
+a four block fastmap. Count the current fastmap blocks that were not in
+the list too.
+---
+ drivers/mtd/ubi/wl.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/mtd/ubi/wl.c b/drivers/mtd/ubi/wl.c
+index fefcbaf..b24d716 100644
+--- a/drivers/mtd/ubi/wl.c
++++ b/drivers/mtd/ubi/wl.c
+@@ -1801,7 +1801,7 @@ out_free:
+  */
+ int ubi_wl_init(struct ubi_device *ubi, struct ubi_attach_info *ai)
+ {
+-	int err, i, reserved_pebs, found_pebs = 0;
++	int err, i, reserved_pebs, found_pebs = 0, fm_pebs = 0;
+ 	struct rb_node *rb1, *rb2;
+ 	struct ubi_ainf_volume *av;
+ 	struct ubi_ainf_peb *aeb, *tmp;
+@@ -1893,6 +1893,7 @@ int ubi_wl_init(struct ubi_device *ubi, struct ubi_attach_info *ai)
+ 		if (e) {
+ 			ubi_assert(!ubi->lookuptbl[e->pnum]);
+ 			ubi->lookuptbl[e->pnum] = e;
++			fm_pebs++;
+ 		} else {
+ 			bool sync = false;
+ 
+@@ -1925,6 +1926,14 @@ int ubi_wl_init(struct ubi_device *ubi, struct ubi_attach_info *ai)
+ 		found_pebs++;
+ 	}
+ 
++	/*
++	 * Attaching by fastmap only scans the first UBI_FM_MAX_START PEBs, so
++	 * the fastmap's data blocks after them are not in @ai->fastmap. They
++	 * are in use all the same.
++	 */
++	if (ubi->fm)
++		found_pebs += ubi->fm->used_blocks - fm_pebs;
++
+ 	dbg_wl("found %i PEBs", found_pebs);
+ 
+ 	ubi_assert(ubi->good_peb_count == found_pebs);

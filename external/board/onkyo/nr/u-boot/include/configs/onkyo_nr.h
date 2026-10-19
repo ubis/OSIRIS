@@ -38,7 +38,7 @@
 #define CFG_EXTRA_ENV_SETTINGS \
 	"bootslot=a\0" \
 	"bootargs_base=console=ttyS1,115200n8 mem=56M panic=5 " \
-		"ubi.mtd=5 rootfstype=squashfs ro\0" \
+		"ubi.mtd=5,0,0,0,1 ubi.fm_autoconvert=1 rootfstype=squashfs ro\0" \
 	"bootargs_extra=\0" \
 	"bootslot_root=if test \"${slot}\" = b; then setenv rootdev /dev/mtdblock9; " \
 		"else setenv rootdev /dev/mtdblock8; fi\0" \

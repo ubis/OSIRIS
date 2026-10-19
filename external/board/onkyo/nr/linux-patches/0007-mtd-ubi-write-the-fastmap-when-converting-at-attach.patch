@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jokubas Maciulaitis <ubitas52@gmail.com>
+Date: Mon, 19 Oct 2026 22:29:11 +0300
+Subject: [PATCH] mtd: ubi: write the fastmap when converting at attach
+
+With fm_autoconvert, an image without a fastmap gets one only on the
+next volume change, when a fastmap pool runs out, or at detach. A
+device that mounts its root file system from UBI read-only, keeps
+little else there and is switched off rather than shut down can go on
+attaching by scanning at every boot, here 1.9 s for a 64 MiB NAND.
+Write the fastmap right after attaching by scanning instead.
+---
+ drivers/mtd/ubi/build.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/drivers/mtd/ubi/build.c b/drivers/mtd/ubi/build.c
+index fb121b6..b36f0f8 100644
+--- a/drivers/mtd/ubi/build.c
++++ b/drivers/mtd/ubi/build.c
+@@ -1058,6 +1058,20 @@ int ubi_attach_mtd_dev(struct mtd_info *mtd, int ubi_num,
+ 	wake_up_process(ubi->bgt_thread);
+ 	spin_unlock(&ubi->wl_lock);
+ 
++#ifdef CONFIG_MTD_UBI_FASTMAP
++	/*
++	 * Attached by scanning with fm_autoconvert set: write the fastmap
++	 * now. Otherwise it waits for a volume change, a pool running out or
++	 * a detach, which a device that only reads its root file system and
++	 * is switched off may never see.
++	 */
++	if (!ubi->fm && !ubi->fm_disabled) {
++		err = ubi_update_fastmap(ubi);
++		if (err)
++			ubi_msg(ubi, "Unable to write a new fastmap: %i", err);
++	}
++#endif
++
+ 	ubi_devices[ubi_num] = ubi;
+ 	ubi_notify_all(ubi, UBI_VOLUME_ADDED, NULL);
+ 	return ubi_num;
