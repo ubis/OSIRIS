@@ -201,7 +201,7 @@ state, counters and levels.
 
 U-Boot is mainline U-Boot 2026.07 and the kernel Linux 6.18, both with
 the DA830 support and a board of their own for these receivers, built by
-Buildroot 2026.02 with its GCC together with the root file system.
+Buildroot 2026.08 with its GCC together with the root file system.
 Init is OpenWrt's procd, without uci: `/etc/preinit` and its hooks in
 `/lib/preinit` mount `/data` and set the host name, the clock and the MAC
 address, then procd starts the services in `/etc/init.d`, restarts any
